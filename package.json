@@ -1,0 +1,17 @@
+{
+    "name": "bascula-central-app",
+    "version": "1.0.0",
+    "description": "Terminal de Pesaje para Báscula de Camiones de Palma Africana",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron ."
+    },
+    "dependencies": {
+        "serialport": "^12.0.0"
+    },
+    "devDependencies": {
+        "electron": "^31.0.0"
+    },
+    "author": "Báscula Central Team",
+    "license": "ISC"
+}

@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Báscula Central - Terminal</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Share Tech Mono', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            900: '#064e3b',
+                            800: '#065f46',
+                            700: '#047857',
+                            500: '#10b981',
+                            100: '#d1fae5',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f4f6; }
+        .digital-glow { text-shadow: 0 0 15px rgba(16, 185, 129, 0.6); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .tab-active { background-color: #047857; border-left: 4px solid #10b981; }
+        .tab-inactive { border-left: 4px solid transparent; }
+        .tab-inactive:hover { background-color: #065f46; }
+    </style>
+</head>
+<body class="h-screen flex font-sans text-gray-800 overflow-hidden select-none">
+
+    <!-- SIDEBAR NAVIGATION -->
+    <nav class="w-20 bg-brand-900 text-white flex flex-col items-center py-6 shadow-2xl z-20 shrink-0">
+        <div class="mb-10 text-brand-500">
+            <span class="material-icons text-4xl">monitor_weight</span>
+        </div>
+        
+        <div class="flex flex-col w-full gap-2">
+            <button onclick="switchTab('pesaje')" id="nav-pesaje" class="w-full py-4 flex flex-col items-center gap-1 tab-active transition-colors">
+                <span class="material-icons">local_shipping</span>
+                <span class="text-[10px] font-bold tracking-wider">PESAJE</span>
+            </button>
+            <button onclick="switchTab('clientes')" id="nav-clientes" class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors">
+                <span class="material-icons">people</span>
+                <span class="text-[10px] font-bold tracking-wider">CLIENTES</span>
+            </button>
+            <button onclick="switchTab('reportes')" id="nav-reportes" class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors">
+                <span class="material-icons">insert_chart</span>
+                <span class="text-[10px] font-bold tracking-wider">REPORTES</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- MAIN CONTENT AREA -->
+    <div class="flex-1 flex flex-col h-screen overflow-hidden">
+        
+        <!-- HEADER -->
+        <header class="bg-white px-6 py-4 flex justify-between items-center shadow-sm shrink-0 border-b border-gray-200">
+            <div>
+                <h1 class="text-xl font-bold text-gray-800 tracking-tight" id="header-title">Terminal de Pesaje</h1>
+                <p class="text-xs text-gray-500">Operador: Turno Principal</p>
+            </div>
+            <div class="flex items-center gap-6">
+                <div class="flex flex-col items-end">
+                    <span id="current-time" class="font-mono text-lg font-bold text-brand-900">--:--:--</span>
+                    <span id="current-date" class="text-xs text-gray-500">--/--/----</span>
+                </div>
+                <div class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full border border-green-200">
+                    <div class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
+                    <span class="text-xs font-bold uppercase tracking-wide">Servidor Conectado</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- VIEWS CONTAINER -->
+        <div class="flex-1 relative overflow-hidden bg-gray-100">
+            
+            <!-- ========================================== -->
+            <!-- VIEW 1: PESAJE (WEIGHING HOME)             -->
+            <!-- ========================================== -->
+            <main id="view-pesaje" class="absolute inset-0 p-6 flex gap-6 overflow-hidden">
+                
+                <!-- LEFT COLUMN: Live Scale & Queue -->
+                <div class="w-1/2 flex flex-col gap-6 h-full">
+                    
+                    <!-- Live Weight Display Box -->
+                    <div class="bg-gray-900 rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center relative border-4 border-gray-800 shrink-0 h-64">
+                        <div class="absolute top-4 left-4 flex items-center gap-2 text-gray-400">
+                            <span class="material-icons text-sm">settings_input_component</span>
+                            <span class="text-xs font-bold tracking-widest uppercase">COM3: LECTURA EN VIVO</span>
+                        </div>
+                        
+                        <div class="mt-2 flex items-baseline gap-2 text-green-500 digital-glow font-mono">
+                            <span id="live-weight" class="text-8xl font-bold tracking-tighter">00000</span>
+                            <span class="text-3xl font-bold">KG</span>
+                        </div>
+                        <p class="text-gray-500 text-sm mt-2 font-mono" id="scale-status">Estabilizando...</p>
+                    </div>
+
+                    <!-- Active Trucks Queue (Camiones en Patio) -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col flex-1 overflow-hidden">
+                        <div class="bg-brand-50 px-5 py-3 border-b border-brand-100 flex justify-between items-center">
+                            <div class="flex items-center gap-2 text-brand-900">
+                                <span class="material-icons">rv_hookup</span>
+                                <h2 class="text-sm font-bold uppercase tracking-wide">Camiones en Patio (Cola)</h2>
+                            </div>
+                            <span id="queue-count" class="bg-brand-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm z-10">
+                                    <tr class="text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="p-3 font-semibold">Placa</th>
+                                        <th class="p-3 font-semibold">Cliente</th>
+                                        <th class="p-3 font-semibold text-right">Bruto (KG)</th>
+                                        <th class="p-3 font-semibold text-center">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="queue-list" class="divide-y divide-gray-100">
+                                    <!-- Queue items injected here -->
+                                    <tr><td colspan="4" class="p-8 text-center text-gray-400 text-sm">No hay camiones en patio.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT COLUMN: Transaction Form & Summary -->
+                <div class="w-1/2 flex flex-col gap-6 h-full overflow-y-auto pr-2 pb-2">
+                    
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col gap-5 shrink-0">
+                        <div class="flex justify-between items-center border-b pb-3">
+                            <h2 class="text-lg font-bold text-gray-800">Datos de la Transacción</h2>
+                            <button onclick="limpiarFormulario()" class="text-sm text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1">
+                                <span class="material-icons text-[16px]">refresh</span> Limpiar Formulario
+                            </button>
+                        </div>
+                        
+                        <!-- Client Selection & Price Display -->
+                        <div class="flex flex-col gap-2">
+                            <label class="block text-sm font-semibold text-gray-600">Cliente / Productor</label>
+                            <select id="cliente-select" onchange="mostrarInfoCliente()" class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-3 focus:ring-2 focus:ring-brand-500 outline-none transition-all font-semibold">
+                                <option value="" disabled selected>Seleccione un cliente...</option>
+                                <!-- Injected via JS -->
+                            </select>
+                            
+                            <!-- Dynamic Price Box -->
+                            <div id="client-price-box" class="hidden bg-blue-50 border border-blue-100 rounded-lg p-3 flex justify-between items-center">
+                                <div class="flex items-center gap-2 text-blue-800">
+                                    <span class="material-icons text-[18px]">payments</span>
+                                    <span class="text-xs font-bold uppercase">Precio Pactado:</span>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-blue-900 font-bold"><span id="precio-ton">0</span> HNL / Ton</div>
+                                    <div class="text-blue-600 text-[10px] font-semibold"><span id="precio-qq">0</span> HNL / Quintal (1000 lbs)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Truck Info -->
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-sm font-semibold text-gray-600 mb-1">Placa del Vehículo</label>
+                                <input type="text" id="placa-input" placeholder="HAA-1234" class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-3 focus:ring-2 focus:ring-brand-500 uppercase outline-none font-bold text-lg tracking-widest placeholder-gray-300">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-sm font-semibold text-gray-600 mb-1">Flete</label>
+                                <select id="flete-select" class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-3 focus:ring-2 focus:ring-brand-500 outline-none font-semibold">
+                                    <option value="Propio">🚛 Flete Nuestro</option>
+                                    <option value="Cliente">🚜 Flete Cliente</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Weight Summary & Actions -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex-1 flex flex-col justify-between shrink-0">
+                        
+                        <div class="flex flex-col gap-4">
+                            <div class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                <span class="text-gray-500 font-bold uppercase text-sm">1. Peso Bruto (Lleno)</span>
+                                <div class="flex items-center gap-3">
+                                    <span id="bruto-display" class="font-mono text-2xl font-bold text-gray-800 w-32 text-right">----- KG</span>
+                                    <button id="btn-bruto" onclick="capturarBruto()" class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
+                                        <span class="material-icons text-[18px]">download</span> BRUTO
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                <span class="text-gray-500 font-bold uppercase text-sm">2. Tara (Vacío)</span>
+                                <div class="flex items-center gap-3">
+                                    <span id="tara-display" class="font-mono text-2xl font-bold text-gray-800 w-32 text-right">----- KG</span>
+                                    <button id="btn-tara" onclick="capturarTara()" disabled class="bg-gray-400 text-white px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-1 text-sm disabled:opacity-50">
+                                        <span class="material-icons text-[18px]">upload</span> TARA
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="flex justify-between items-center mt-2 pt-4 border-t-2 border-dashed border-gray-300">
+                                <span class="text-brand-900 font-black uppercase text-xl">Peso Neto</span>
+                                <span id="neto-display" class="font-mono text-4xl font-bold text-brand-500">0 KG</span>
+                            </div>
+                            
+                            <!-- Total Payout Calculation -->
+                            <div class="flex justify-between items-center bg-green-50 p-4 rounded-xl border border-green-200 mt-2">
+                                <span class="text-green-800 font-bold uppercase text-sm">Total a Pagar al Productor</span>
+                                <div class="flex items-baseline gap-1">
+                                    <span class="text-green-900 font-bold text-lg">L</span>
+                                    <span id="total-pago-display" class="font-mono text-3xl font-black text-green-700">0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button id="btn-guardar" onclick="guardarTransaccion()" disabled class="w-full bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-5 rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 text-xl mt-6">
+                            <span class="material-icons">cloud_upload</span> FINALIZAR Y GUARDAR
+                        </button>
+                    </div>
+                </div>
+            </main>
+
+            <!-- ========================================== -->
+            <!-- VIEW 2: CLIENTES (CLIENTS)                 -->
+            <!-- ========================================== -->
+            <main id="view-clientes" class="absolute inset-0 p-8 hidden flex-col overflow-hidden">
+                <div class="flex justify-between items-center mb-6 shrink-0">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Directorio de Clientes</h2>
+                        <p class="text-gray-500">Gestione los precios por tonelada y quintal.</p>
+                    </div>
+                    <button class="bg-brand-900 hover:bg-brand-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors">
+                        <span class="material-icons">person_add</span> Nuevo Cliente
+                    </button>
+                </div>
+                
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
+                    <div class="overflow-y-auto flex-1 p-0">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm">
+                                <tr class="text-gray-500 text-xs uppercase tracking-wider">
+                                    <th class="p-4 font-semibold">ID</th>
+                                    <th class="p-4 font-semibold">Nombre del Cliente</th>
+                                    <th class="p-4 font-semibold">Ubicación / Sector</th>
+                                    <th class="p-4 font-semibold text-right">Precio por Tonelada (HNL)</th>
+                                    <th class="p-4 font-semibold text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="clients-table-body" class="divide-y divide-gray-100">
+                                <!-- Injected via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+
+            <!-- ========================================== -->
+            <!-- VIEW 3: REPORTES (REPORTS)                 -->
+            <!-- ========================================== -->
+            <main id="view-reportes" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden">
+                
+                <div class="flex justify-between items-center shrink-0">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Reporte Diario</h2>
+                        <p class="text-gray-500">Resumen de transacciones de compra de fruta.</p>
+                    </div>
+                    <div class="bg-white border border-gray-300 rounded-lg px-4 py-2 font-bold text-gray-700 shadow-sm flex items-center gap-2">
+                        <span class="material-icons text-gray-400">calendar_today</span> Hoy
+                    </div>
+                </div>
+
+                <!-- Summary KPI Cards -->
+                <div class="flex gap-6 shrink-0">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+                        <div class="bg-blue-100 text-blue-600 p-4 rounded-full"><span class="material-icons text-3xl">local_shipping</span></div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-500 uppercase">Camiones Procesados</p>
+                            <h3 id="rep-camiones" class="text-3xl font-black text-gray-800 font-mono">0</h3>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+                        <div class="bg-brand-100 text-brand-600 p-4 rounded-full"><span class="material-icons text-3xl">monitor_weight</span></div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-500 uppercase">Total Toneladas Compradas</p>
+                            <h3 id="rep-toneladas" class="text-3xl font-black text-gray-800 font-mono">0.00</h3>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+                        <div class="bg-green-100 text-green-600 p-4 rounded-full"><span class="material-icons text-3xl">account_balance_wallet</span></div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-500 uppercase">Total Invertido (HNL)</p>
+                            <h3 id="rep-dinero" class="text-3xl font-black text-gray-800 font-mono">L 0.00</h3>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Transactions Table -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
+                    <div class="overflow-y-auto flex-1 p-0">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm">
+                                <tr class="text-gray-500 text-xs uppercase tracking-wider">
+                                    <th class="p-4 font-semibold">Hora</th>
+                                    <th class="p-4 font-semibold">Placa</th>
+                                    <th class="p-4 font-semibold">Cliente</th>
+                                    <th class="p-4 font-semibold text-right">Bruto (KG)</th>
+                                    <th class="p-4 font-semibold text-right">Tara (KG)</th>
+                                    <th class="p-4 font-semibold text-right text-brand-800">Neto (KG)</th>
+                                    <th class="p-4 font-semibold text-right text-green-700">Total Pago (L)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reports-table-body" class="divide-y divide-gray-100">
+                                <!-- Injected via JS -->
+                                <tr><td colspan="7" class="p-8 text-center text-gray-400">Sin transacciones registradas hoy.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </main>
+
+        </div>
+    </div>
+
+    <!-- APPLICATION LOGIC -->
+    <script>
+        // --- 1. MOCK DATABASE (In real app, this comes from Cloud/PostgreSQL) ---
+        const MOCK_CLIENTES = [
+            { id: 101, nombre: "Juan Perez", ubicacion: "Finca El Paraiso", precioTon: 2500 },
+            { id: 102, nombre: "Maria Lopez", ubicacion: "Sector 4 - Cooperativa", precioTon: 2600 },
+            { id: 103, nombre: "Agrícola Sur S.A.", ubicacion: "Valle de Sula", precioTon: 2550 },
+            { id: 104, nombre: "Pedro Fernandez", ubicacion: "Parcela 12", precioTon: 2400 }
+        ];
+
+        // --- 2. GLOBAL STATE ---
+        let currentLiveWeight = 0;
+        
+        let camionesEnPatio = []; // Queue for trucks waiting to unload
+        let transaccionesHoy = []; // Completed logs for reports
+        
+        // Active Form State
+        let activeTransaction = {
+            id: null,
+            clienteId: null,
+            placa: "",
+            flete: "Propio",
+            pesoBruto: null,
+            pesoTara: null
+        };
+
+        // --- 3. INITIALIZATION & UI SETUP ---
+        function initApp() {
+            startClock();
+            simulateScaleData();
+            renderClientesTab();
+            populateClienteDropdown();
+        }
+
+        function startClock() {
+            const update = () => {
+                const now = new Date();
+                document.getElementById('current-time').innerText = now.toLocaleTimeString('es-HN', { hour12: false });
+                document.getElementById('current-date').innerText = now.toLocaleDateString('es-HN');
+            };
+            setInterval(update, 1000);
+            update();
+        }
+
+        // Hardware Simulator (Pretend we are reading RS232 cable)
+        function simulateScaleData() {
+            const weightDisplay = document.getElementById('live-weight');
+            const statusDisplay = document.getElementById('scale-status');
+            
+            setInterval(() => {
+                const jitter = Math.floor(Math.random() * 40) - 20;
+                // Switch between a full truck weight and empty truck weight randomly for demo
+                const baseWeight = (new Date().getSeconds() % 20 < 10) ? 20500 : 8200; 
+                currentLiveWeight = baseWeight + jitter;
+                
+                weightDisplay.innerText = currentLiveWeight.toLocaleString('en-US').padStart(6, '0');
+                
+                if (Math.abs(jitter) < 8) {
+                    weightDisplay.classList.add('text-green-400');
+                    weightDisplay.classList.remove('text-green-500');
+                    statusDisplay.innerText = "PESO ESTABLE";
+                } else {
+                    weightDisplay.classList.add('text-green-500');
+                    weightDisplay.classList.remove('text-green-400');
+                    statusDisplay.innerText = "ESTABILIZANDO...";
+                }
+            }, 500);
+        }
+
+        // --- 4. NAVIGATION TAB LOGIC ---
+        function switchTab(tabName) {
+            // Update nav styles
+            ['pesaje', 'clientes', 'reportes'].forEach(t => {
+                const btn = document.getElementById(`nav-${t}`);
+                if (t === tabName) {
+                    btn.classList.replace('tab-inactive', 'tab-active');
+                    document.getElementById(`view-${t}`).classList.replace('hidden', 'flex');
+                    if (t === 'pesaje') document.getElementById('view-pesaje').classList.replace('hidden', 'flex'); // Pesaje is flex row, others col
+                } else {
+                    btn.classList.replace('tab-active', 'tab-inactive');
+                    document.getElementById(`view-${t}`).classList.add('hidden');
+                    document.getElementById(`view-${t}`).classList.remove('flex');
+                }
+            });
+            
+            const titles = {
+                'pesaje': 'Terminal de Pesaje',
+                'clientes': 'Gestión de Clientes',
+                'reportes': 'Reportes y Cierres'
+            };
+            document.getElementById('header-title').innerText = titles[tabName];
+        }
+
+        // --- 5. CLIENTES LOGIC ---
+        function renderClientesTab() {
+            const tbody = document.getElementById('clients-table-body');
+            tbody.innerHTML = '';
+            
+            MOCK_CLIENTES.forEach(c => {
+                // Calculation rule: 1 Quintal in Honduras palm industry usually refers to 1000 lbs = ~453.6 kg. 
+                // Or metric quintal = 100kg. Let's just calculate a display value (e.g., Tonelada / 22.04 = precio 100lbs)
+                // We will display just what the user requested.
+                const precioQq = (c.precioTon / 22.0462).toFixed(2); // Approximate conversion for UI display
+                
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="p-4 font-mono text-gray-500 text-sm">#${c.id}</td>
+                        <td class="p-4 font-bold text-gray-800">${c.nombre}</td>
+                        <td class="p-4 text-gray-600">${c.ubicacion}</td>
+                        <td class="p-4 text-right font-mono font-bold text-brand-800">L ${c.precioTon.toLocaleString()}</td>
+                        <td class="p-4 text-center">
+                            <button class="text-blue-600 hover:bg-blue-50 p-2 rounded-full transition-colors" title="Editar">
+                                <span class="material-icons text-xl">edit</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function populateClienteDropdown() {
+            const select = document.getElementById('cliente-select');
+            MOCK_CLIENTES.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.id;
+                option.text = `${c.nombre} - ${c.ubicacion}`;
+                select.appendChild(option);
+            });
+        }
+
+        function mostrarInfoCliente() {
+            const clienteId = document.getElementById('cliente-select').value;
+            const priceBox = document.getElementById('client-price-box');
+            
+            if (!clienteId) {
+                priceBox.classList.add('hidden');
+                return;
+            }
+            
+            const cliente = MOCK_CLIENTES.find(c => c.id == clienteId);
+            document.getElementById('precio-ton').innerText = cliente.precioTon.toLocaleString();
+            
+            // Math for Qq just for display purposes
+            const precioQq = (cliente.precioTon / 22.0462).toFixed(2); 
+            document.getElementById('precio-qq').innerText = precioQq;
+            
+            priceBox.classList.remove('hidden');
+            
+            // Auto update math if we are closing a transaction
+            if (activeTransaction.pesoBruto && activeTransaction.pesoTara) {
+                calcularNetoYTotal();
+            }
+        }
+
+        // --- 6. PESAJE (WEIGHING) WORKFLOW ---
+        
+        // Scenario A: Truck arrives (Full) -> Capture Gross and add to queue
+        function capturarBruto() {
+            const clienteId = document.getElementById('cliente-select').value;
+            const placa = document.getElementById('placa-input').value.toUpperCase();
+            const flete = document.getElementById('flete-select').value;
+            
+            if (!clienteId || !placa) {
+                alert("Atención: Debe seleccionar un cliente e ingresar la placa para capturar el peso bruto.");
+                return;
+            }
+
+            const truckData = {
+                id: Date.now().toString().slice(-6), // Simple unique ID
+                clienteId: parseInt(clienteId),
+                placa: placa,
+                flete: flete,
+                pesoBruto: currentLiveWeight,
+                horaEntrada: new Date().toLocaleTimeString('es-HN', { hour12: false, hour: '2-digit', minute:'2-digit' })
+            };
+
+            camionesEnPatio.push(truckData);
+            renderQueue();
+            limpiarFormulario();
+        }
+
+        function renderQueue() {
+            const tbody = document.getElementById('queue-list');
+            document.getElementById('queue-count').innerText = camionesEnPatio.length;
+            
+            if (camionesEnPatio.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-gray-400 text-sm">No hay camiones en patio.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            camionesEnPatio.forEach(t => {
+                const cliente = MOCK_CLIENTES.find(c => c.id === t.clienteId);
+                tbody.innerHTML += `
+                    <tr class="hover:bg-blue-50 transition-colors cursor-pointer group" onclick="cargarDeCola('${t.id}')">
+                        <td class="p-3 font-bold text-gray-800">${t.placa}</td>
+                        <td class="p-3 text-sm text-gray-600 truncate max-w-[120px]">${cliente.nombre}</td>
+                        <td class="p-3 text-right font-mono font-bold text-gray-500">${t.pesoBruto.toLocaleString()}</td>
+                        <td class="p-3 text-center">
+                            <button class="bg-blue-100 text-blue-700 px-3 py-1 rounded text-xs font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                CERRAR
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        // Scenario B: Truck returns (Empty) -> Select from queue, load form, capture Tara
+        function cargarDeCola(truckId) {
+            const truck = camionesEnPatio.find(t => t.id === truckId);
+            if(!truck) return;
+
+            // Load into active state
+            activeTransaction.id = truck.id;
+            activeTransaction.pesoBruto = truck.pesoBruto;
+            
+            // Update UI Form
+            document.getElementById('cliente-select').value = truck.clienteId;
+            mostrarInfoCliente(); // Triggers the price box display
+            
+            document.getElementById('placa-input').value = truck.placa;
+            document.getElementById('flete-select').value = truck.flete;
+            
+            // Lock Bruto inputs, unlock Tara
+            document.getElementById('bruto-display').innerText = truck.pesoBruto.toLocaleString() + " KG";
+            
+            const btnBruto = document.getElementById('btn-bruto');
+            btnBruto.disabled = true;
+            btnBruto.classList.replace('bg-gray-800', 'bg-gray-300');
+            btnBruto.classList.remove('hover:bg-black');
+            
+            const btnTara = document.getElementById('btn-tara');
+            btnTara.disabled = false;
+            btnTara.classList.replace('bg-gray-400', 'bg-gray-800');
+            btnTara.classList.add('hover:bg-black');
+            
+            // Disable changing Client/Placa to prevent fraud after initial weighing
+            document.getElementById('cliente-select').disabled = true;
+            document.getElementById('placa-input').disabled = true;
+            
+            // Clear net/tara displays from any previous operation
+            document.getElementById('tara-display').innerText = "----- KG";
+            document.getElementById('neto-display').innerText = "0 KG";
+            document.getElementById('total-pago-display').innerText = "0.00";
+            document.getElementById('btn-guardar').disabled = true;
+        }
+
+        function capturarTara() {
+            activeTransaction.pesoTara = currentLiveWeight;
+            document.getElementById('tara-display').innerText = activeTransaction.pesoTara.toLocaleString() + " KG";
+            calcularNetoYTotal();
+        }
+
+        function calcularNetoYTotal() {
+            if (activeTransaction.pesoBruto && activeTransaction.pesoTara) {
+                const neto = activeTransaction.pesoBruto - activeTransaction.pesoTara;
+                document.getElementById('neto-display').innerText = neto.toLocaleString('en-US') + " KG";
+                
+                if (neto > 0) {
+                    // Calculate Price
+                    const clienteId = document.getElementById('cliente-select').value;
+                    const cliente = MOCK_CLIENTES.find(c => c.id == clienteId);
+                    
+                    const toneladasNetas = neto / 1000;
+                    const totalPagar = toneladasNetas * cliente.precioTon;
+                    
+                    document.getElementById('total-pago-display').innerText = totalPagar.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    document.getElementById('btn-guardar').disabled = false;
+                } else {
+                    document.getElementById('btn-guardar').disabled = true;
+                    alert("Error: El Peso Tara (vehículo vacío) no puede superar el Peso Bruto.");
+                }
+            }
+        }
+
+        function guardarTransaccion() {
+            const clienteId = document.getElementById('cliente-select').value;
+            const cliente = MOCK_CLIENTES.find(c => c.id == clienteId);
+            const neto = activeTransaction.pesoBruto - activeTransaction.pesoTara;
+            const toneladasNetas = neto / 1000;
+            const totalPagar = toneladasNetas * cliente.precioTon;
+
+            const logEntry = {
+                hora: new Date().toLocaleTimeString('es-HN', { hour12: false }),
+                placa: document.getElementById('placa-input').value,
+                clienteNombre: cliente.nombre,
+                bruto: activeTransaction.pesoBruto,
+                tara: activeTransaction.pesoTara,
+                neto: neto,
+                total: totalPagar
+            };
+
+            // Add to reports
+            transaccionesHoy.unshift(logEntry);
+            
+            // Remove from queue
+            camionesEnPatio = camionesEnPatio.filter(t => t.id !== activeTransaction.id);
+            
+            // Update UI
+            renderQueue();
+            updateReportesTab();
+            limpiarFormulario();
+        }
+
+        function limpiarFormulario() {
+            // Reset state
+            activeTransaction = { id: null, clienteId: null, placa: "", flete: "Propio", pesoBruto: null, pesoTara: null };
+            
+            // Reset UI Fields
+            document.getElementById('cliente-select').value = "";
+            document.getElementById('cliente-select').disabled = false;
+            document.getElementById('client-price-box').classList.add('hidden');
+            
+            document.getElementById('placa-input').value = "";
+            document.getElementById('placa-input').disabled = false;
+            document.getElementById('flete-select').value = "Propio";
+            
+            document.getElementById('bruto-display').innerText = "----- KG";
+            document.getElementById('tara-display').innerText = "----- KG";
+            document.getElementById('neto-display').innerText = "0 KG";
+            document.getElementById('total-pago-display').innerText = "0.00";
+            
+            // Reset buttons
+            const btnBruto = document.getElementById('btn-bruto');
+            btnBruto.disabled = false;
+            btnBruto.classList.replace('bg-gray-300', 'bg-gray-800');
+            btnBruto.classList.add('hover:bg-black');
+            
+            const btnTara = document.getElementById('btn-tara');
+            btnTara.disabled = true;
+            btnTara.classList.replace('bg-gray-800', 'bg-gray-400');
+            btnTara.classList.remove('hover:bg-black');
+            
+            document.getElementById('btn-guardar').disabled = true;
+        }
+
+        // --- 7. REPORTES (REPORTS) LOGIC ---
+        function updateReportesTab() {
+            const tbody = document.getElementById('reports-table-body');
+            
+            let totalTons = 0;
+            let totalDinero = 0;
+            
+            if (transaccionesHoy.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-400">Sin transacciones registradas hoy.</td></tr>`;
+                document.getElementById('rep-camiones').innerText = "0";
+                document.getElementById('rep-toneladas').innerText = "0.00";
+                document.getElementById('rep-dinero').innerText = "L 0.00";
+                return;
+            }
+
+            tbody.innerHTML = '';
+            transaccionesHoy.forEach(t => {
+                totalTons += (t.neto / 1000);
+                totalDinero += t.total;
+                
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="p-4 font-mono text-gray-500 text-sm">${t.hora}</td>
+                        <td class="p-4 font-bold text-gray-800 uppercase">${t.placa}</td>
+                        <td class="p-4 text-gray-600">${t.clienteNombre}</td>
+                        <td class="p-4 text-right font-mono text-gray-500">${t.bruto.toLocaleString()}</td>
+                        <td class="p-4 text-right font-mono text-gray-500">${t.tara.toLocaleString()}</td>
+                        <td class="p-4 text-right font-mono font-bold text-brand-800">${t.neto.toLocaleString()}</td>
+                        <td class="p-4 text-right font-mono font-bold text-green-700">L ${t.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits:2})}</td>
+                    </tr>
+                `;
+            });
+
+            // Update KPI summary cards
+            document.getElementById('rep-camiones').innerText = transaccionesHoy.length;
+            document.getElementById('rep-toneladas').innerText = totalTons.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits:2});
+            document.getElementById('rep-dinero').innerText = "L " + totalDinero.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits:2});
+        }
+
+        // Boot up
+        window.onload = initApp;
+
+    </script>
+</body>
+</html>
