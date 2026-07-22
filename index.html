@@ -207,19 +207,36 @@
         class="hidden fixed top-5 right-5 px-6 py-4 rounded shadow-xl font-bold z-50 text-white flex items-center gap-2">
     </div>
 
-    <!-- CORAPSA RECEIPT MODAL -->
+    <!-- CORAPSA RECEIPT MODAL (UPDATED) -->
     <div id="corapsa-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
         <div class="bg-white rounded-2xl shadow-2xl w-[600px] overflow-hidden">
             <div class="bg-blue-900 px-6 py-4 flex justify-between items-center text-white">
-                <h3 class="font-bold text-lg">Registrar Recibo Externo</h3>
+                <h3 class="font-bold text-lg" id="corapsa-modal-title">Registrar Recibo Externo</h3>
                 <button onclick="cerrarCorapsaModal()" class="hover:text-red-400 transition-colors"><span
                         class="material-icons">close</span></button>
             </div>
             <div class="p-6 flex flex-col gap-4">
+                <input type="hidden" id="corapsa-edit-id">
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Fecha del Recibo *</label>
+                        <input type="date" id="corapsa-fecha"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Recibo Corapsa # *</label>
+                        <input type="text" id="corapsa-recibo-in"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-900"
+                            placeholder="Ej. 123456">
+                    </div>
+                </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1">Nombre del Cliente *</label>
-                    <input type="text" id="corapsa-cliente"
-                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold">
+                    <input type="text" id="corapsa-cliente" list="corapsa-clientes-list"
+                        oninput="handleCorapsaClientInput()"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold"
+                        placeholder="Escriba para buscar cliente o ingrese nuevo...">
+                    <datalist id="corapsa-clientes-list"></datalist>
                 </div>
                 <div class="flex gap-4">
                     <div class="flex-1">
@@ -237,14 +254,14 @@
                 <!-- ATTACHMENT SECTION -->
                 <div class="bg-gray-50 p-4 border border-gray-200 rounded-lg flex flex-col gap-3">
                     <div>
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Adjuntar Recibo de Cliente
-                            (Imagen/PDF)</label>
-                        <input type="file" id="corapsa-recibo-in"
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Adjuntar Archivo de Cliente
+                            (Opcional)</label>
+                        <input type="file" id="corapsa-file"
                             class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Recibo Nuestro (Comprobante de
-                            Pago)</label>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Recibo Nuestro (Comprobante
+                            Interno)</label>
                         <input type="text" id="corapsa-recibo-out"
                             class="w-full border rounded p-2 bg-gray-100 text-gray-500 outline-none font-mono text-sm"
                             value="Se generará automáticamente" disabled>
@@ -266,6 +283,28 @@
             </div>
         </div>
     </div>
+
+    <!-- VIEW RECEIPT MODAL -->
+    <div id="view-receipt-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+                <h3 class="font-bold text-lg">Visor de Archivo</h3>
+                <button onclick="cerrarVisorRecibo()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+            </div>
+            <div class="p-6 flex flex-col gap-4 text-center">
+                <div class="bg-gray-100 p-8 rounded-lg border-2 border-dashed border-gray-300">
+                    <span class="material-icons text-6xl text-gray-400">receipt</span>
+                    <p class="mt-4 text-gray-600 font-bold" id="visor-file-name">recibo.pdf</p>
+                    <p class="text-xs text-gray-400 mt-2">En la versión final, esto abrirá el visor del sistema
+                        operativo.</p>
+                </div>
+                <button onclick="cerrarVisorRecibo()"
+                    class="mt-4 bg-gray-800 text-white py-2 rounded font-bold hover:bg-black">Cerrar Visor</button>
+            </div>
+        </div>
+    </div>
+
 
     <!-- GLOBAL PRICE MODAL -->
     <div id="global-price-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
@@ -306,6 +345,103 @@
             </div>
         </div>
     </div>
+
+    <!-- GASTOS MODAL -->
+    <div id="gastos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+            <div class="bg-red-900 px-6 py-4 flex justify-between items-center text-white">
+                <h3 class="font-bold text-lg" id="gastos-modal-title">Nuevo Gasto</h3>
+                <button onclick="cerrarGastosModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+            </div>
+            <div class="p-6 flex flex-col gap-4">
+                <input type="hidden" id="gastos-edit-id">
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Fecha *</label>
+                        <input type="date" id="gastos-fecha"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none font-bold text-gray-700">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Monto (L) *</label>
+                        <input type="number" id="gastos-monto" step="0.01"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none font-bold text-red-900">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Concepto *</label>
+                    <input type="text" id="gastos-concepto"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none font-semibold"
+                        placeholder="Ej. Combustible, Reparación...">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Justificación</label>
+                    <textarea id="gastos-justificacion" rows="2"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm"
+                        placeholder="Detalles adicionales..."></textarea>
+                </div>
+                <div class="bg-gray-50 p-3 border border-gray-200 rounded-lg">
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Recibo / Factura Adjunta</label>
+                    <input type="file" id="gastos-file"
+                        class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100">
+                </div>
+                <div class="mt-4 flex justify-end gap-3">
+                    <button onclick="cerrarGastosModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+                    <button onclick="guardarGasto()"
+                        class="px-6 py-2 bg-red-700 text-white font-bold rounded shadow hover:bg-red-800">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PLANILLA MODAL -->
+    <div id="planilla-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+            <div class="bg-orange-900 px-6 py-4 flex justify-between items-center text-white">
+                <h3 class="font-bold text-lg" id="planilla-modal-title">Agregar Trabajador</h3>
+                <button onclick="cerrarPlanillaModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+            </div>
+            <div class="p-6 flex flex-col gap-4">
+                <input type="hidden" id="planilla-edit-id">
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Nombre *</label>
+                        <input type="text" id="planilla-nombre"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Apellido *</label>
+                        <input type="text" id="planilla-apellido"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono</label>
+                        <input type="text" id="planilla-telefono"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Sueldo Base Semanal (L) *</label>
+                        <input type="number" id="planilla-sueldo"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-orange-900">
+                    </div>
+                </div>
+                <div class="mt-4 flex justify-end gap-3">
+                    <button onclick="cerrarPlanillaModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+                    <button onclick="guardarTrabajador()"
+                        class="px-6 py-2 bg-orange-700 text-white font-bold rounded shadow hover:bg-orange-800">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN FILE INPUTS FOR INSTANT CORAPSA ATTACHMENTS -->
+    <input type="file" id="hidden-file-cliente" class="hidden" onchange="processQuickUpload(event, 'cliente')">
+    <input type="file" id="hidden-file-nuestro" class="hidden" onchange="processQuickUpload(event, 'nuestro')">
 
     <!-- SIDEBAR NAVIGATION -->
     <nav class="w-20 bg-brand-900 text-white flex flex-col items-center py-6 shadow-2xl z-20 shrink-0">
@@ -662,8 +798,8 @@
                             <input type="date" id="corapsa-filter-end" onchange="renderCorapsaTab()"
                                 class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-200">
                             <input type="text" id="corapsa-filter-client" oninput="renderCorapsaTab()"
-                                placeholder="Filtrar Cliente..."
-                                class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none">
+                                placeholder="Filtrar Cliente o Recibo #..."
+                                class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none w-64">
                         </div>
                     </div>
                     <button onclick="abrirCorapsaModal()"
@@ -675,32 +811,99 @@
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-200 flex-1 overflow-hidden flex flex-col">
                     <div class="overflow-y-auto flex-1 p-0">
                         <table class="w-full text-left text-sm">
-                            <thead class="bg-blue-100 sticky top-0 shadow-sm">
-                                <tr class="text-blue-900 text-xs uppercase tracking-wider">
-                                    <th class="p-4 font-semibold">Fecha / Recibos (Archivos)</th>
-                                    <th class="p-4 font-semibold">Cliente</th>
-                                    <th class="p-4 font-semibold text-right">Toneladas</th>
-                                    <th class="p-4 font-semibold text-right">Monto a Pagar</th>
-                                    <th class="p-4 font-semibold text-center">Estado</th>
-                                    <th class="p-4 font-semibold text-center">Acciones</th>
+                            <thead class="bg-blue-100 sticky top-0 shadow-sm z-10">
+                                <tr class="text-blue-900 text-[11px] uppercase tracking-wider">
+                                    <th class="p-3 font-semibold">Fecha / Recibo #</th>
+                                    <th class="p-3 font-semibold">Cliente</th>
+                                    <th class="p-3 font-semibold text-right">Precio/Ton</th>
+                                    <th class="p-3 font-semibold text-right">Toneladas</th>
+                                    <th class="p-3 font-semibold text-right">Monto a Pagar</th>
+                                    <th class="p-3 font-semibold text-center">Archivos Adjuntos</th>
+                                    <th class="p-3 font-semibold text-center">Estado</th>
+                                    <th class="p-3 font-semibold text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="corapsa-table-body" class="divide-y divide-gray-100">
                                 <tr>
-                                    <td colspan="6" class="p-8 text-center text-gray-400">Sin recibos registrados.</td>
+                                    <td colspan="8" class="p-8 text-center text-gray-400">Sin recibos registrados.</td>
                                 </tr>
                             </tbody>
                             <tfoot class="bg-blue-50 border-t-2 border-blue-200 sticky bottom-0">
                                 <tr>
-                                    <td colspan="2" class="p-4 font-bold text-right text-blue-900 uppercase">TOTALES:
+                                    <td colspan="3" class="p-4 font-bold text-right text-blue-900 uppercase">TOTALES:
                                     </td>
                                     <td class="p-4 font-black text-right text-blue-800 font-mono text-lg"
                                         id="corapsa-total-toneladas">0.00</td>
                                     <td class="p-4 font-black text-right text-green-700 font-mono text-lg">L <span
                                             id="corapsa-total-dinero">0.00</span></td>
-                                    <td colspan="2"></td>
+                                    <td colspan="3"></td>
                                 </tr>
                             </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </main>
+
+            <!-- VIEW 5: GASTOS -->
+            <main id="view-gastos" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden bg-red-50">
+                <div class="flex justify-between items-center shrink-0">
+                    <div>
+                        <h2 class="text-2xl font-bold text-red-900">Control de Gastos</h2>
+                        <p class="text-red-700">Registro de egresos operativos y facturas.</p>
+                    </div>
+                    <button onclick="abrirGastosModal()"
+                        class="bg-red-600 hover:bg-red-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+                        <span class="material-icons">add_shopping_cart</span> Nuevo Gasto
+                    </button>
+                </div>
+                <div class="bg-white rounded-2xl shadow-sm border border-red-200 flex-1 overflow-hidden flex flex-col">
+                    <div class="overflow-y-auto flex-1 p-0">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-red-100 sticky top-0 shadow-sm z-10">
+                                <tr class="text-red-900 text-xs uppercase tracking-wider">
+                                    <th class="p-4 font-semibold">Fecha</th>
+                                    <th class="p-4 font-semibold">Concepto</th>
+                                    <th class="p-4 font-semibold text-right">Monto (L)</th>
+                                    <th class="p-4 font-semibold">Justificación</th>
+                                    <th class="p-4 font-semibold text-center">Recibo</th>
+                                    <th class="p-4 font-semibold text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="gastos-table-body" class="divide-y divide-gray-100">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+
+            <!-- VIEW 6: PLANILLA -->
+            <main id="view-planilla" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden bg-orange-50">
+                <div class="flex justify-between items-center shrink-0">
+                    <div>
+                        <h2 class="text-2xl font-bold text-orange-900">Planilla de Trabajadores</h2>
+                        <p class="text-orange-700">Controle días laborados, bonos y calcule nómina dinámicamente.</p>
+                    </div>
+                    <button onclick="abrirPlanillaModal()"
+                        class="bg-orange-600 hover:bg-orange-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+                        <span class="material-icons">person_add</span> Agregar Trabajador
+                    </button>
+                </div>
+                <div
+                    class="bg-white rounded-2xl shadow-sm border border-orange-200 flex-1 overflow-hidden flex flex-col">
+                    <div class="overflow-y-auto flex-1 p-0">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-orange-100 sticky top-0 shadow-sm z-10">
+                                <tr class="text-orange-900 text-[11px] uppercase tracking-wider">
+                                    <th class="p-3 font-semibold">Trabajador</th>
+                                    <th class="p-3 font-semibold text-center w-24">Base<br>(Semanal)</th>
+                                    <th class="p-3 font-semibold text-center w-24">Días<br>Trabajados</th>
+                                    <th class="p-3 font-semibold text-center w-24">Overtime/<br>Extras (L)</th>
+                                    <th class="p-3 font-semibold text-right bg-orange-200/50">Total a Pagar</th>
+                                    <th class="p-3 font-semibold text-center">Gestión</th>
+                                </tr>
+                            </thead>
+                            <tbody id="planilla-table-body" class="divide-y divide-gray-100">
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -768,12 +971,41 @@
         let camionesEnPatio = [];
         let transaccionesData = [];
         let corapsaData = [];
+        let gastosData = [];
+        let planillaData = [];
+        let activeUploadId = null; // Used for instant attachments
         let activeTransaction = { id: null, clienteId: null, placa: "", conductor: "", flete: "Propio", pesoBruto: null, pesoTara: null, precioAplicado: 0 };
+
 
         function initApp() {
             startClock();
+            fetchClientes();
             renderClientesTab();
             populateClienteDropdown();
+
+            async function fetchClientes() {
+                try {
+                    // IMPORTANT: Replace the IP below with your DigitalOcean Droplet's IPv4 address
+                    const response = await fetch('http://159.89.84.60:3000/api/clientes');
+
+                    if (response.ok) {
+                        const clientesDelServidor = await response.json();
+
+                        // Replace the local mock array with the real database data
+                        MOCK_CLIENTES = clientesDelServidor;
+
+                        // Re-render the UI with the fresh data
+                        renderClientesTab();
+                        populateClienteDropdown();
+                        console.log("Datos de clientes sincronizados con el servidor.");
+                    } else {
+                        mostrarNotificacion("Error al obtener datos del servidor.", "error");
+                    }
+                } catch (error) {
+                    console.error("Sin conexión a la nube:", error);
+                    mostrarNotificacion("Trabajando en modo local (Sin conexión).", "error");
+                }
+            }
 
             // Set default date filters to local today
             const today = getLocalIsoDate();
@@ -865,25 +1097,34 @@
 
             if (pendingAction === 'manual_bruto') {
                 handleBrutoClick(parseInt(val));
+                cerrarActionModal();
             } else if (pendingAction === 'manual_tara') {
                 handleTaraClick(parseInt(val));
+                cerrarActionModal();
             } else if (pendingAction === 'delete_cola') {
                 camionesEnPatio = camionesEnPatio.filter(t => t.id !== pendingActionId);
                 renderQueue();
                 mostrarNotificacion("Vehículo removido de la fila.");
+                cerrarActionModal();
             } else if (pendingAction === 'delete_reporte') {
                 transaccionesData = transaccionesData.filter(t => t.id != pendingActionId);
                 updateReportesTab();
                 mostrarNotificacion("Transacción eliminada exitosamente.");
-            } else if (pendingAction === 'edit_reporte' || pendingAction === 'edit_corapsa') {
-                console.log(`[AUDITORIA EMAIL] Modificación autorizada. Razón: ${val}`);
-                mostrarNotificacion("Sistema de edición en desarrollo para estructura actual.", "success");
+                cerrarActionModal();
+            } else if (pendingAction === 'edit_reporte') {
+                console.log(`[AUDITORIA EMAIL] Modificación de reporte. Razón: ${val}`);
+                mostrarNotificacion("Edición de reportes en desarrollo.", "success");
+                cerrarActionModal();
+            } else if (pendingAction === 'edit_corapsa') {
+                console.log(`[AUDITORIA EMAIL] Edición Corapsa autorizada. Razón: ${val}`);
+                cerrarActionModal();
+                abrirCorapsaModal(pendingActionId); // Opens the modal with the loaded data
             } else if (pendingAction === 'delete_corapsa') {
                 corapsaData = corapsaData.filter(t => t.id != pendingActionId);
                 renderCorapsaTab();
                 mostrarNotificacion("Recibo Corapsa eliminado exitosamente.");
+                cerrarActionModal();
             }
-            cerrarActionModal();
         }
 
         // --- CLIENTES LOGIC ---
@@ -909,14 +1150,23 @@
 
         function populateClienteDropdown() {
             const select = document.getElementById('cliente-select');
+            const dataList = document.getElementById('corapsa-clientes-list');
+
             select.innerHTML = '<option value="" disabled selected>Seleccione un cliente...</option>';
             select.innerHTML += '<option value="casual" class="font-bold text-blue-600">👤 Cliente Casual / Rápido</option>';
+            if (dataList) dataList.innerHTML = '';
 
             MOCK_CLIENTES.forEach(c => {
+                // Populate regular dropdown
                 const option = document.createElement('option');
                 option.value = c.id;
                 option.text = `${c.nombre} ${c.apellido}`;
                 select.appendChild(option);
+
+                // Populate searchable corapsa datalist
+                if (dataList) {
+                    dataList.innerHTML += `<option value="${c.nombre} ${c.apellido}">`;
+                }
             });
         }
 
@@ -1354,16 +1604,44 @@
         }
 
         // --- CORAPSA LOGIC ---
-        function abrirCorapsaModal() {
-            document.getElementById('corapsa-cliente').value = '';
-            document.getElementById('corapsa-toneladas').value = '';
-            document.getElementById('corapsa-precio').value = '';
-            document.getElementById('corapsa-recibo-in').value = '';
-            document.getElementById('corapsa-total-display').innerText = '0.00';
+        function abrirCorapsaModal(id = null) {
             document.getElementById('corapsa-modal').classList.remove('hidden');
+
+            if (id) {
+                const trans = corapsaData.find(t => t.id == id);
+                document.getElementById('corapsa-modal-title').innerText = "Editar Recibo Externo";
+                document.getElementById('corapsa-edit-id').value = trans.id;
+                document.getElementById('corapsa-fecha').value = trans.fecha;
+                document.getElementById('corapsa-recibo-in').value = trans.reciboIn;
+                document.getElementById('corapsa-cliente').value = trans.cliente;
+                document.getElementById('corapsa-toneladas').value = trans.toneladas;
+                document.getElementById('corapsa-precio').value = trans.precio;
+                document.getElementById('corapsa-total-display').innerText = trans.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                document.getElementById('corapsa-file').value = ""; // Reset file input
+            } else {
+                document.getElementById('corapsa-modal-title').innerText = "Registrar Recibo Externo";
+                document.getElementById('corapsa-edit-id').value = "";
+                document.getElementById('corapsa-fecha').value = getLocalIsoDate(); // Default to today
+                document.getElementById('corapsa-recibo-in').value = '';
+                document.getElementById('corapsa-cliente').value = '';
+                document.getElementById('corapsa-toneladas').value = '';
+                document.getElementById('corapsa-precio').value = '';
+                document.getElementById('corapsa-total-display').innerText = '0.00';
+                document.getElementById('corapsa-file').value = "";
+            }
         }
 
         function cerrarCorapsaModal() { document.getElementById('corapsa-modal').classList.add('hidden'); }
+
+        function handleCorapsaClientInput() {
+            const inputVal = document.getElementById('corapsa-cliente').value;
+            // Check if the typed value matches any existing client in the database
+            const match = MOCK_CLIENTES.find(c => `${c.nombre} ${c.apellido}` === inputVal);
+            if (match) {
+                document.getElementById('corapsa-precio').value = match.precioFletePropio;
+                calcularTotalCorapsa();
+            }
+        }
 
         function calcularTotalCorapsa() {
             const tons = parseFloat(document.getElementById('corapsa-toneladas').value) || 0;
@@ -1374,36 +1652,53 @@
         }
 
         function guardarCorapsa() {
+            const id = document.getElementById('corapsa-edit-id').value;
+            const fecha = document.getElementById('corapsa-fecha').value;
+            const reciboIn = document.getElementById('corapsa-recibo-in').value;
             const cliente = document.getElementById('corapsa-cliente').value;
             const toneladas = parseFloat(document.getElementById('corapsa-toneladas').value);
             const precio = parseFloat(document.getElementById('corapsa-precio').value);
 
-            // Get local path/filename from the file input
-            const fileInput = document.getElementById('corapsa-recibo-in');
-            const reciboInName = fileInput.files.length > 0 ? fileInput.files[0].name : "Sin Archivo";
+            const fileInput = document.getElementById('corapsa-file');
+            const fileName = fileInput.files.length > 0 ? fileInput.files[0].name : null;
 
-            // Auto Generate system receipt number
-            const autoReciboOut = `CRX-${Date.now().toString().slice(-6)}`;
-
-            if (!cliente || isNaN(toneladas) || isNaN(precio)) {
-                return mostrarNotificacion("Cliente, Toneladas y Precio son obligatorios.", "error");
+            if (!cliente || isNaN(toneladas) || isNaN(precio) || !fecha || !reciboIn) {
+                return mostrarNotificacion("Todos los campos con * son obligatorios.", "error");
             }
 
-            corapsaData.unshift({
-                id: Date.now(),
-                fecha: getLocalIsoDate(),
-                cliente: cliente,
-                toneladas: toneladas,
-                precio: precio,
-                total: calcularTotalCorapsa(),
-                reciboIn: reciboInName,
-                reciboOut: autoReciboOut,
-                pagado: false
-            });
+            if (id) {
+                // EDIT EXISTING
+                const trans = corapsaData.find(t => t.id == id);
+                if (trans) {
+                    trans.fecha = fecha;
+                    trans.reciboIn = reciboIn;
+                    trans.cliente = cliente;
+                    trans.toneladas = toneladas;
+                    trans.precio = precio;
+                    trans.total = calcularTotalCorapsa();
+                    if (fileName) trans.fileName = fileName; // Only update if a new file was attached
+                }
+                mostrarNotificacion("Recibo actualizado correctamente.");
+            } else {
+                // CREATE NEW
+                const autoReciboOut = `CRX-${Date.now().toString().slice(-6)}`;
+                corapsaData.unshift({
+                    id: Date.now(),
+                    fecha: fecha,
+                    cliente: cliente,
+                    toneladas: toneladas,
+                    precio: precio,
+                    total: calcularTotalCorapsa(),
+                    reciboIn: reciboIn,
+                    reciboOut: autoReciboOut,
+                    fileName: fileName || "Sin Archivo",
+                    pagado: false
+                });
+                mostrarNotificacion("Recibo externo registrado.");
+            }
 
             renderCorapsaTab();
             cerrarCorapsaModal();
-            mostrarNotificacion("Recibo externo registrado.");
         }
 
         function togglePagoCorapsa(id) {
@@ -1416,7 +1711,16 @@
 
         function imprimirCorapsa(id) {
             mostrarNotificacion("Imprimiendo comprobante Corapsa...", "success");
-            // Future feature: Render isolated print screen for Corapsa here
+        }
+
+        function abrirVisorRecibo(fileName) {
+            if (fileName === "Sin Archivo") return mostrarNotificacion("No hay archivo adjunto.", "error");
+            document.getElementById('visor-file-name').innerText = fileName;
+            document.getElementById('view-receipt-modal').classList.remove('hidden');
+        }
+
+        function cerrarVisorRecibo() {
+            document.getElementById('view-receipt-modal').classList.add('hidden');
         }
 
         function renderCorapsaTab() {
@@ -1425,7 +1729,6 @@
             const endD = document.getElementById('corapsa-filter-end').value;
             const searchClient = document.getElementById('corapsa-filter-client').value.toLowerCase();
 
-            // FILTERING
             const filtered = corapsaData.filter(t => {
                 if (startD && t.fecha < startD) return false;
                 if (endD && t.fecha > endD) return false;
@@ -1456,8 +1759,8 @@
                     <tr class="hover:bg-blue-50">
                         <td class="p-4 text-sm font-mono text-gray-600">
                             <div class="font-bold text-gray-800">${displayDate}</div>
-                            <div class="text-[10px] bg-gray-100 inline-block px-1 rounded mt-1 truncate max-w-[120px]" title="${t.reciboIn}">📎 ${t.reciboIn}</div>
-                            <div class="text-[10px] bg-blue-100 text-blue-800 inline-block px-1 rounded mt-1">📄 ${t.reciboOut}</div>
+                            <div class="text-[10px] bg-gray-200 inline-block px-1 rounded mt-1 truncate max-w-[120px] cursor-pointer hover:bg-gray-300 transition-colors" title="${t.fileName}" onclick="abrirVisorRecibo('${t.fileName}')">📎 ${t.fileName}</div>
+                            <div class="text-[10px] bg-yellow-100 text-yellow-800 inline-block px-1 rounded mt-1">#️⃣ ID: ${t.reciboIn}</div>
                         </td>
                         <td class="p-4 font-bold text-gray-800">${t.cliente}</td>
                         <td class="p-4 text-right font-mono font-bold text-gray-600">${t.toneladas.toFixed(2)}</td>
@@ -1477,9 +1780,276 @@
                 `;
             });
 
-            // UPDATE TOTALS UI
             document.getElementById('corapsa-total-toneladas').innerText = sumTons.toFixed(2);
             document.getElementById('corapsa-total-dinero').innerText = sumTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // --- 1. UPDATED CORAPSA LOGIC FOR SEARCH & INSTANT UPLOADS ---
+
+        // This overrides your previous renderCorapsaTab function to include the search fix and new columns
+        function renderCorapsaTab() {
+            const tbody = document.getElementById('corapsa-table-body');
+            const startD = document.getElementById('corapsa-filter-start').value;
+            const endD = document.getElementById('corapsa-filter-end').value;
+            const searchVal = document.getElementById('corapsa-filter-client').value.toLowerCase();
+
+            const filtered = corapsaData.filter(t => {
+                if (startD && t.fecha < startD) return false;
+                if (endD && t.fecha > endD) return false;
+                // NEW: Search checks both client name and Corapsa Receipt ID
+                if (searchVal && !t.cliente.toLowerCase().includes(searchVal) && !(t.reciboIn || "").toLowerCase().includes(searchVal)) return false;
+                return true;
+            });
+
+            let sumTons = 0;
+            let sumTotal = 0;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>`;
+                document.getElementById('corapsa-total-toneladas').innerText = "0.00";
+                document.getElementById('corapsa-total-dinero').innerText = "0.00";
+                return;
+            }
+
+            tbody.innerHTML = '';
+            filtered.forEach(t => {
+                sumTons += t.toneladas;
+                sumTotal += t.total;
+
+                const displayDate = t.fecha.split('-').reverse().join('/');
+                const badgeClass = t.pagado ? "bg-green-100 text-green-700 border-green-200" : "bg-red-100 text-red-700 border-red-200";
+                const badgeText = t.pagado ? "PAGADO" : "NO PAGADO";
+
+                // Ensure file properties exist
+                const fileC = t.fileName && t.fileName !== "Sin Archivo" ? t.fileName : "Sin archivo";
+                const fileN = t.fileNuestro && t.fileNuestro !== "Sin Archivo" ? t.fileNuestro : "Sin archivo";
+                const iconC = fileC !== "Sin archivo" ? "text-blue-600" : "text-gray-300";
+                const iconN = fileN !== "Sin archivo" ? "text-brand-600" : "text-gray-300";
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-blue-50">
+                        <td class="p-3 text-sm font-mono text-gray-600">
+                            <div class="font-bold text-gray-800">${displayDate}</div>
+                            <div class="text-[10px] bg-yellow-100 text-yellow-800 inline-block px-1 rounded mt-1">#️⃣ ${t.reciboIn}</div>
+                        </td>
+                        <td class="p-3 font-bold text-gray-800">${t.cliente}</td>
+                        <td class="p-3 text-right text-xs text-gray-500">L ${t.precio.toLocaleString()}</td>
+                        <td class="p-3 text-right font-mono font-bold text-gray-600">${t.toneladas.toFixed(2)}</td>
+                        <td class="p-3 text-right font-mono font-bold text-blue-700 text-lg">L ${t.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="p-3 text-center">
+                            <div class="flex flex-col gap-1 items-center">
+                                <button onclick="triggerQuickUpload(${t.id}, 'cliente')" title="${fileC}" class="text-[10px] font-bold border rounded px-2 hover:bg-gray-100 flex items-center gap-1 w-24 truncate justify-center ${iconC}">
+                                    <span class="material-icons text-[14px]">attach_file</span> Cliente
+                                </button>
+                                <button onclick="triggerQuickUpload(${t.id}, 'nuestro')" title="${fileN}" class="text-[10px] font-bold border rounded px-2 hover:bg-gray-100 flex items-center gap-1 w-24 truncate justify-center ${iconN}">
+                                    <span class="material-icons text-[14px]">attach_file</span> Nuestro
+                                </button>
+                            </div>
+                        </td>
+                        <td class="p-3 text-center">
+                            <button onclick="togglePagoCorapsa(${t.id})" class="${badgeClass} px-3 py-1 rounded-full text-[10px] font-bold border transition-colors hover:shadow-md cursor-pointer">${badgeText}</button>
+                        </td>
+                        <td class="p-3 text-center flex justify-center gap-1 items-center h-full mt-2">
+                            <button onclick="abrirActionModal('edit_corapsa', ${t.id})" class="text-blue-500 hover:text-blue-800 transition-colors"><span class="material-icons text-[18px]">edit</span></button>
+                            <button onclick="abrirActionModal('delete_corapsa', ${t.id})" class="text-red-400 hover:text-red-700 transition-colors"><span class="material-icons text-[18px]">delete</span></button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('corapsa-total-toneladas').innerText = sumTons.toFixed(2);
+            document.getElementById('corapsa-total-dinero').innerText = sumTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function triggerQuickUpload(id, type) {
+            activeUploadId = id;
+            if (type === 'cliente') document.getElementById('hidden-file-cliente').click();
+            else document.getElementById('hidden-file-nuestro').click();
+        }
+
+        function processQuickUpload(event, type) {
+            if (!activeUploadId || event.target.files.length === 0) return;
+            const trans = corapsaData.find(t => t.id === activeUploadId);
+            if (trans) {
+                if (type === 'cliente') trans.fileName = event.target.files[0].name;
+                if (type === 'nuestro') trans.fileNuestro = event.target.files[0].name;
+                mostrarNotificacion(`Archivo ${type} adjuntado.`);
+                renderCorapsaTab();
+            }
+            event.target.value = ''; // Reset input
+        }
+
+
+        // --- 2. GASTOS LOGIC ---
+        function abrirGastosModal(id = null) {
+            document.getElementById('gastos-modal').classList.remove('hidden');
+            if (id) {
+                const g = gastosData.find(x => x.id === id);
+                document.getElementById('gastos-modal-title').innerText = "Editar Gasto";
+                document.getElementById('gastos-edit-id').value = g.id;
+                document.getElementById('gastos-fecha').value = g.fecha;
+                document.getElementById('gastos-monto').value = g.monto;
+                document.getElementById('gastos-concepto').value = g.concepto;
+                document.getElementById('gastos-justificacion').value = g.justificacion;
+            } else {
+                document.getElementById('gastos-modal-title').innerText = "Nuevo Gasto";
+                document.getElementById('gastos-edit-id').value = "";
+                document.getElementById('gastos-fecha').value = getLocalIsoDate();
+                document.getElementById('gastos-monto').value = "";
+                document.getElementById('gastos-concepto').value = "";
+                document.getElementById('gastos-justificacion').value = "";
+            }
+            document.getElementById('gastos-file').value = "";
+        }
+
+        function cerrarGastosModal() { document.getElementById('gastos-modal').classList.add('hidden'); }
+
+        function guardarGasto() {
+            const id = document.getElementById('gastos-edit-id').value;
+            const fecha = document.getElementById('gastos-fecha').value;
+            const monto = parseFloat(document.getElementById('gastos-monto').value);
+            const concepto = document.getElementById('gastos-concepto').value;
+            const justificacion = document.getElementById('gastos-justificacion').value;
+            const fileInput = document.getElementById('gastos-file');
+            const fileName = fileInput.files.length > 0 ? fileInput.files[0].name : "Sin Archivo";
+
+            if (!fecha || isNaN(monto) || !concepto) return mostrarNotificacion("Complete los campos obligatorios.", "error");
+
+            if (id) {
+                const g = gastosData.find(x => x.id == id);
+                g.fecha = fecha; g.monto = monto; g.concepto = concepto; g.justificacion = justificacion;
+                if (fileInput.files.length > 0) g.fileName = fileName;
+                mostrarNotificacion("Gasto actualizado.");
+            } else {
+                gastosData.unshift({ id: Date.now(), fecha, monto, concepto, justificacion, fileName });
+                mostrarNotificacion("Gasto registrado.");
+            }
+            renderGastos();
+            cerrarGastosModal();
+        }
+
+        function renderGastos() {
+            const tbody = document.getElementById('gastos-table-body');
+            if (gastosData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin gastos registrados.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = '';
+            gastosData.forEach(g => {
+                const displayDate = g.fecha.split('-').reverse().join('/');
+                tbody.innerHTML += `
+                    <tr class="hover:bg-red-50">
+                        <td class="p-4 font-mono text-gray-600">${displayDate}</td>
+                        <td class="p-4 font-bold text-gray-800">${g.concepto}</td>
+                        <td class="p-4 text-right font-mono font-bold text-red-700">L ${g.monto.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td class="p-4 text-xs text-gray-500">${g.justificacion || '-'}</td>
+                        <td class="p-4 text-center">
+                            <span class="text-[10px] bg-gray-200 px-2 py-1 rounded truncate max-w-[120px] inline-block" title="${g.fileName}">📎 ${g.fileName}</span>
+                        </td>
+                        <td class="p-4 text-center">
+                            <button onclick="abrirGastosModal(${g.id})" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
+                            <button onclick="gastosData = gastosData.filter(x=>x.id!=${g.id}); renderGastos();" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+
+        // --- 3. PLANILLA LOGIC ---
+        function abrirPlanillaModal(id = null) {
+            document.getElementById('planilla-modal').classList.remove('hidden');
+            if (id) {
+                const p = planillaData.find(x => x.id === id);
+                document.getElementById('planilla-modal-title').innerText = "Editar Trabajador";
+                document.getElementById('planilla-edit-id').value = p.id;
+                document.getElementById('planilla-nombre').value = p.nombre;
+                document.getElementById('planilla-apellido').value = p.apellido;
+                document.getElementById('planilla-telefono').value = p.telefono;
+                document.getElementById('planilla-sueldo').value = p.sueldoBase;
+            } else {
+                document.getElementById('planilla-modal-title').innerText = "Agregar Trabajador";
+                document.getElementById('planilla-edit-id').value = "";
+                document.getElementById('planilla-nombre').value = "";
+                document.getElementById('planilla-apellido').value = "";
+                document.getElementById('planilla-telefono').value = "";
+                document.getElementById('planilla-sueldo').value = "";
+            }
+        }
+
+        function cerrarPlanillaModal() { document.getElementById('planilla-modal').classList.add('hidden'); }
+
+        function guardarTrabajador() {
+            const id = document.getElementById('planilla-edit-id').value;
+            const nombre = document.getElementById('planilla-nombre').value;
+            const apellido = document.getElementById('planilla-apellido').value;
+            const telefono = document.getElementById('planilla-telefono').value;
+            const sueldoBase = parseFloat(document.getElementById('planilla-sueldo').value);
+
+            if (!nombre || !apellido || isNaN(sueldoBase)) return mostrarNotificacion("Complete los campos obligatorios.", "error");
+
+            if (id) {
+                const p = planillaData.find(x => x.id == id);
+                p.nombre = nombre; p.apellido = apellido; p.telefono = telefono; p.sueldoBase = sueldoBase;
+                mostrarNotificacion("Trabajador actualizado.");
+            } else {
+                // Defaults: 6 days worked, 0 extras
+                planillaData.push({ id: Date.now(), nombre, apellido, telefono, sueldoBase, diasTrabajados: 6, extras: 0 });
+                mostrarNotificacion("Trabajador registrado.");
+            }
+            renderPlanilla();
+            cerrarPlanillaModal();
+        }
+
+        function calcularFilaPlanilla(id) {
+            const p = planillaData.find(x => x.id == id);
+            if (!p) return;
+
+            // Get values dynamically from the table inputs
+            p.diasTrabajados = parseFloat(document.getElementById(`dias-${id}`).value) || 0;
+            p.extras = parseFloat(document.getElementById(`extras-${id}`).value) || 0;
+
+            // Calculate Math: (Base / 6 days standard week) * Days Worked + Extras
+            const dailyRate = p.sueldoBase / 6;
+            const total = (dailyRate * p.diasTrabajados) + p.extras;
+
+            document.getElementById(`total-${id}`).innerText = total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function renderPlanilla() {
+            const tbody = document.getElementById('planilla-table-body');
+            if (planillaData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin trabajadores registrados.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = '';
+            planillaData.forEach(p => {
+                const dailyRate = p.sueldoBase / 6;
+                const initialTotal = (dailyRate * p.diasTrabajados) + p.extras;
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-orange-50 border-b border-gray-100">
+                        <td class="p-3">
+                            <div class="font-bold text-gray-800">${p.nombre} ${p.apellido}</div>
+                            <div class="text-xs text-gray-500">${p.telefono || 'Sin teléfono'}</div>
+                        </td>
+                        <td class="p-3 text-center font-mono font-bold text-gray-600">L ${p.sueldoBase.toLocaleString()}</td>
+                        <td class="p-3 text-center">
+                            <input type="number" id="dias-${p.id}" value="${p.diasTrabajados}" step="0.5" min="0" max="7" oninput="calcularFilaPlanilla(${p.id})" class="w-16 border rounded p-1 text-center font-bold text-orange-900 focus:ring-2 outline-none">
+                        </td>
+                        <td class="p-3 text-center">
+                            <input type="number" id="extras-${p.id}" value="${p.extras}" step="10" oninput="calcularFilaPlanilla(${p.id})" class="w-20 border rounded p-1 text-right font-bold text-green-700 focus:ring-2 outline-none">
+                        </td>
+                        <td class="p-3 text-right bg-orange-50">
+                            <div class="font-mono font-black text-orange-700 text-lg">L <span id="total-${p.id}">${initialTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                        </td>
+                        <td class="p-3 text-center">
+                            <button onclick="abrirPlanillaModal(${p.id})" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
+                            <button onclick="planillaData = planillaData.filter(x=>x.id!=${p.id}); renderPlanilla();" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
+                        </td>
+                    </tr>
+                `;
+            });
         }
 
         window.onload = initApp;
