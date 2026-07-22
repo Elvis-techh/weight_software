@@ -1,47 +1,1619 @@
 <!DOCTYPE html>
+
 <html lang="es">
 
+
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Báscula Central - Terminal</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Share+Tech+Mono&display=swap"
         rel="stylesheet">
+
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css">
+
+
+
     <script>
+
         tailwind.config = {
+
             theme: {
+
                 extend: {
+
                     fontFamily: {
+
                         sans: ['Inter', 'sans-serif'],
+
                         mono: ['Share Tech Mono', 'monospace'],
+
                     },
+
                     colors: {
-                        brand: { 900: '#064e3b', 800: '#065f46', 700: '#047857', 500: '#10b981', 100: '#d1fae5' }
+
+                        brand: { 50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7', 500: '#10b981', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' }
+
                     }
+
                 }
+
             }
+
         }
+
     </script>
+
+    <link rel="stylesheet" href="css/styles.css">
 </head>
+
+
 
 <body class="h-screen flex font-sans text-gray-800 overflow-hidden select-none">
 
-    <!-- ALL YOUR HTML MODALS (Client, Casual, Action, Toast, Corapsa, View Receipt, Global Price, Gastos, Planilla) -->
-    <!-- (KEEP YOUR EXISTING HTML DOM CONTENT EXACTLY AS IT IS HERE. Do not change the internal markup tags) -->
+
+
+    <!-- STANDARD CLIENT MODAL -->
+
+    <div id="client-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[600px] overflow-hidden">
+
+            <div class="bg-brand-900 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg" id="modal-title">Nuevo Cliente</h3>
+
+                <button onclick="cerrarModalCliente()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <input type="hidden" id="modal-client-id">
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Nombre *</label>
+
+                        <input type="text" id="modal-nombre"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Apellido</label>
+
+                        <input type="text" id="modal-apellido"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
+
+                    </div>
+
+                </div>
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono (Opcional)</label>
+
+                        <input type="text" id="modal-telefono" oninput="formatPhone(event)" onfocus="initPhone(event)"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none placeholder-gray-400">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Ubicación (Opcional)</label>
+
+                        <input type="text" id="modal-ubicacion"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
+
+                    </div>
+
+                </div>
+
+                <div class="flex gap-4 p-4 bg-gray-50 border border-gray-200 rounded-lg mt-2">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Flete NUESTRO (HNL) *</label>
+
+                        <input type="text" id="modal-precio-propio" oninput="formatCurrencyInput(event)"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
+                            required>
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Flete CLIENTE (HNL) *</label>
+
+                        <input type="text" id="modal-precio-cliente" oninput="formatCurrencyInput(event)"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
+                            required>
+
+                    </div>
+
+                </div>
+
+                <div class="mt-4 flex justify-end gap-3">
+
+                    <button onclick="cerrarModalCliente()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button onclick="guardarCliente()"
+                        class="px-6 py-2 bg-brand-500 text-white font-bold rounded shadow hover:bg-brand-600">Guardar</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- CASUAL CLIENT MODAL (UPDATED) -->
+
+    <div id="casual-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+
+            <div class="bg-blue-800 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg">Datos de Cliente Casual</h3>
+
+                <button onclick="cerrarCasualModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Nombre Completo *</label>
+
+                    <input type="text" id="casual-nombre"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="Ej. Visitante / Casual">
+
+                </div>
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Precio Pactado *</label>
+
+                        <input type="text" id="casual-precio" oninput="formatCurrencyInput(event)"
+                            class="w-full border rounded p-2 font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Unidad de Medida</label>
+
+                        <select id="casual-unidad"
+                            class="w-full border rounded p-2 font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none">
+
+                            <option value="tonelada">Por Tonelada</option>
+
+                            <option value="quintal">Por Quintal (1,000 lbs)</option>
+
+                        </select>
+
+                    </div>
+
+                </div>
+
+                <div class="mt-4 flex justify-end gap-3">
+
+                    <button onclick="cerrarCasualModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button onclick="guardarCasual()"
+                        class="px-6 py-2 bg-blue-600 text-white font-bold rounded shadow hover:bg-blue-700">Confirmar</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- UNIVERSAL ACTION MODAL (Replaces prompt/confirm freezes) -->
+
+    <div id="action-modal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-xl shadow-2xl w-[400px] p-6 flex flex-col gap-4 border-t-4 border-brand-500">
+
+            <h3 class="font-bold text-lg text-gray-800" id="action-title">Acción Requerida</h3>
+
+            <div>
+
+                <label id="action-label" class="block text-sm font-bold text-gray-600 mb-2">Ingrese el valor:</label>
+
+                <input type="text" id="action-input"
+                    class="w-full border-2 border-gray-300 rounded p-3 focus:border-brand-500 outline-none font-bold text-gray-800">
+
+            </div>
+
+            <div class="mt-2 flex justify-end gap-3">
+
+                <button onclick="cerrarActionModal()"
+                    class="px-4 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                <button onclick="confirmarActionModal()"
+                    class="px-6 py-2 bg-brand-900 text-white font-bold rounded shadow hover:bg-black">Confirmar</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- TOAST NOTIFICATION (Replaces alert freezes) -->
+
+    <div id="toast"
+        class="hidden fixed top-5 right-5 px-6 py-4 rounded shadow-xl font-bold z-50 text-white flex items-center gap-2">
+
+    </div>
+
+
+
+    <!-- CORAPSA RECEIPT MODAL (UPDATED) -->
+
+    <div id="corapsa-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[600px] overflow-hidden">
+
+            <div class="bg-blue-900 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg" id="corapsa-modal-title">Registrar Recibo Externo</h3>
+
+                <button onclick="cerrarCorapsaModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <input type="hidden" id="corapsa-edit-id">
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Fecha del Recibo *</label>
+
+                        <input type="date" id="corapsa-fecha"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Recibo Corapsa # *</label>
+
+                        <input type="text" id="corapsa-recibo-in"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-900"
+                            placeholder="Ej. 123456">
+
+                    </div>
+
+                </div>
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Nombre del Cliente *</label>
+
+                    <input type="text" id="corapsa-cliente" list="corapsa-clientes-list"
+                        oninput="handleCorapsaClientInput()"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold"
+                        placeholder="Escriba para buscar cliente o ingrese nuevo...">
+
+                    <datalist id="corapsa-clientes-list"></datalist>
+
+                </div>
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Toneladas *</label>
+
+                        <input type="number" id="corapsa-toneladas" step="0.01" oninput="calcularTotalCorapsa()"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Precio Pactado (L) *</label>
+
+                        <input type="number" id="corapsa-precio" step="0.01" oninput="calcularTotalCorapsa()"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+
+                    </div>
+
+                </div>
+
+
+
+                <!-- ATTACHMENT SECTION -->
+
+                <div class="bg-gray-50 p-4 border border-gray-200 rounded-lg flex flex-col gap-3">
+
+                    <div>
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Adjuntar Archivo de Cliente
+
+                            (Opcional)</label>
+
+                        <input type="file" id="corapsa-file"
+                            class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+
+                    </div>
+
+                    <div>
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Recibo Nuestro (Comprobante
+
+                            Interno)</label>
+
+                        <input type="text" id="corapsa-recibo-out"
+                            class="w-full border rounded p-2 bg-gray-100 text-gray-500 outline-none font-mono text-sm"
+                            value="Se generará automáticamente" disabled>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="mt-2 bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center">
+
+                    <span class="font-bold text-blue-900 uppercase">Total a Pagar</span>
+
+                    <span class="font-mono text-2xl font-black text-blue-700">L <span
+                            id="corapsa-total-display">0.00</span></span>
+
+                </div>
+
+                <div class="mt-4 flex justify-end gap-3">
+
+                    <button onclick="cerrarCorapsaModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button onclick="guardarCorapsa()"
+                        class="px-6 py-2 bg-blue-700 text-white font-bold rounded shadow hover:bg-blue-800">Guardar
+
+                        Registro</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- VIEW RECEIPT MODAL -->
+
+    <div id="view-receipt-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg">Visor de Archivo</h3>
+
+                <button onclick="cerrarVisorRecibo()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4 text-center">
+
+                <div class="bg-gray-100 p-8 rounded-lg border-2 border-dashed border-gray-300">
+
+                    <span class="material-icons text-6xl text-gray-400">receipt</span>
+
+                    <p class="mt-4 text-gray-600 font-bold" id="visor-file-name">recibo.pdf</p>
+
+                    <p class="text-xs text-gray-400 mt-2">En la versión final, esto abrirá el visor del sistema
+
+                        operativo.</p>
+
+                </div>
+
+                <button onclick="cerrarVisorRecibo()"
+                    class="mt-4 bg-gray-800 text-white py-2 rounded font-bold hover:bg-black">Cerrar Visor</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+
+
+    <!-- GLOBAL PRICE MODAL -->
+
+    <div id="global-price-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[400px] overflow-hidden">
+
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg">Ajuste Global de Precios</h3>
+
+                <button onclick="cerrarAjusteGlobal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Acción</label>
+
+                    <select id="ajuste-accion"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold">
+
+                        <option value="aumentar">Aumentar Precio (+)</option>
+
+                        <option value="disminuir">Disminuir Precio (-)</option>
+
+                    </select>
+
+                </div>
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Monto (Lempiras por Tonelada)</label>
+
+                    <input type="number" id="ajuste-monto"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold text-lg text-brand-900"
+                        placeholder="Ej. 1000">
+
+                </div>
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Justificación (Obligatoria)</label>
+
+                    <input type="text" id="ajuste-razon"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none"
+                        placeholder="Motivo del mercado...">
+
+                </div>
+
+                <div class="mt-4 flex justify-end gap-3">
+
+                    <button onclick="cerrarAjusteGlobal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button onclick="aplicarAjusteGlobalForm()"
+                        class="px-6 py-2 bg-gray-800 text-white font-bold rounded shadow hover:bg-black">Aplicar a
+
+                        Todos</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- GASTOS MODAL -->
+
+    <div id="gastos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+
+            <div class="bg-red-900 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg" id="gastos-modal-title">Nuevo Gasto</h3>
+
+                <button onclick="cerrarGastosModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <input type="hidden" id="gastos-edit-id">
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Fecha *</label>
+
+                        <input type="date" id="gastos-fecha"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none font-bold text-gray-700">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Monto (L) *</label>
+
+                        <input type="number" id="gastos-monto" step="0.01"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none font-bold text-red-900">
+
+                    </div>
+
+                </div>
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Concepto *</label>
+
+                    <input type="text" id="gastos-concepto"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none font-semibold"
+                        placeholder="Ej. Combustible, Reparación...">
+
+                </div>
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Justificación</label>
+
+                    <textarea id="gastos-justificacion" rows="2"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm"
+                        placeholder="Detalles adicionales..."></textarea>
+
+                </div>
+
+                <div class="bg-gray-50 p-3 border border-gray-200 rounded-lg">
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Recibo / Factura Adjunta</label>
+
+                    <input type="file" id="gastos-file"
+                        class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100">
+
+                </div>
+
+                <div class="mt-4 flex justify-end gap-3">
+
+                    <button onclick="cerrarGastosModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button onclick="guardarGasto()"
+                        class="px-6 py-2 bg-red-700 text-white font-bold rounded shadow hover:bg-red-800">Guardar</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- PLANILLA MODAL -->
+
+    <div id="planilla-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+
+            <div class="bg-orange-900 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg" id="planilla-modal-title">Agregar Trabajador</h3>
+
+                <button onclick="cerrarPlanillaModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <input type="hidden" id="planilla-edit-id">
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Nombre *</label>
+
+                        <input type="text" id="planilla-nombre"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Apellido *</label>
+
+                        <input type="text" id="planilla-apellido"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
+
+                    </div>
+
+                </div>
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono</label>
+
+                        <input type="text" id="planilla-telefono"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Sueldo Base Semanal (L) *</label>
+
+                        <input type="number" id="planilla-sueldo"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-orange-900">
+
+                    </div>
+
+                </div>
+
+                <div class="mt-4 flex justify-end gap-3">
+
+                    <button onclick="cerrarPlanillaModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button onclick="guardarTrabajador()"
+                        class="px-6 py-2 bg-orange-700 text-white font-bold rounded shadow hover:bg-orange-800">Guardar</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- HIDDEN FILE INPUTS FOR INSTANT CORAPSA ATTACHMENTS -->
+
+    <input type="file" id="hidden-file-cliente" class="hidden" onchange="processQuickUpload(event, 'cliente')">
+
+    <input type="file" id="hidden-file-nuestro" class="hidden" onchange="processQuickUpload(event, 'nuestro')">
+
+
+
+    <!-- SIDEBAR NAVIGATION -->
+
+    <nav class="w-20 bg-brand-900 text-white flex flex-col items-center py-6 shadow-2xl z-20 shrink-0">
+
+        <div class="mb-10 text-brand-500">
+
+            <span class="material-icons text-4xl">monitor_weight</span>
+
+        </div>
+
+        <div class="flex flex-col w-full gap-2">
+
+            <button onclick="switchTab('pesaje')" id="nav-pesaje"
+                class="w-full py-4 flex flex-col items-center gap-1 tab-active transition-colors">
+
+                <span class="material-icons">local_shipping</span>
+
+                <span class="text-[10px] font-bold tracking-wider">PESAJE</span>
+
+            </button>
+
+            <button onclick="switchTab('clientes')" id="nav-clientes"
+                class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors">
+
+                <span class="material-icons">people</span>
+
+                <span class="text-[10px] font-bold tracking-wider">CLIENTES</span>
+
+            </button>
+
+            <button onclick="switchTab('reportes')" id="nav-reportes"
+                class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors">
+
+                <span class="material-icons">insert_chart</span>
+
+                <span class="text-[10px] font-bold tracking-wider">REPORTES</span>
+
+            </button>
+
+            <button onclick="switchTab('corapsa')" id="nav-corapsa"
+                class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors mt-4 border-t border-brand-800">
+
+                <span class="material-icons">receipt_long</span>
+
+                <span class="text-[10px] font-bold tracking-wider text-center">RECIBOS<br>EXTERNOS</span>
+
+            </button>
+
+            <button onclick="switchTab('gastos')" id="nav-gastos"
+                class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors mt-1">
+
+                <span class="material-icons">account_balance</span>
+
+                <span class="text-[10px] font-bold tracking-wider">GASTOS</span>
+
+            </button>
+
+            <button onclick="switchTab('planilla')" id="nav-planilla"
+                class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors mt-1">
+
+                <span class="material-icons">engineering</span>
+
+                <span class="text-[10px] font-bold tracking-wider">PLANILLA</span>
+
+            </button>
+
+        </div>
+
+    </nav>
+
+
+
+    <!-- MAIN CONTENT AREA -->
+
+    <div class="flex-1 flex flex-col h-screen overflow-hidden">
+
+        <!-- HEADER -->
+
+        <header
+            class="bg-white px-6 py-4 flex justify-between items-center shadow-sm shrink-0 border-b border-gray-200">
+
+            <div>
+
+                <h1 class="text-xl font-bold text-gray-800 tracking-tight" id="header-title">Terminal de Pesaje</h1>
+
+                <p class="text-xs text-gray-500">Operador: Turno Principal</p>
+
+            </div>
+
+            <div class="flex items-center gap-6">
+
+                <div class="flex flex-col items-end">
+
+                    <span id="current-time" class="font-mono text-lg font-bold text-brand-900">--:--:--</span>
+
+                    <span id="current-date" class="text-xs text-gray-500">--/--/----</span>
+
+                </div>
+
+                <div
+                    class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full border border-green-200">
+
+                    <div class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
+
+                    <span class="text-xs font-bold uppercase tracking-wide">Servidor Conectado</span>
+
+                </div>
+
+            </div>
+
+        </header>
+
+
+
+        <!-- VIEWS CONTAINER -->
+
+        <div class="flex-1 relative overflow-hidden bg-gray-100">
+
+
+
+            <!-- VIEW 1: PESAJE -->
+
+            <main id="view-pesaje" class="absolute inset-0 p-6 flex gap-6 overflow-hidden">
+
+                <div class="w-1/2 flex flex-col gap-6 h-full">
+
+                    <div
+                        class="bg-gray-900 rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center relative border-4 border-gray-800 shrink-0 h-64">
+
+                        <div class="absolute top-4 left-4 flex items-center gap-2 text-gray-400">
+
+                            <span class="material-icons text-sm">settings_input_component</span>
+
+                            <span class="text-xs font-bold tracking-widest uppercase">COM3: LECTURA EN VIVO</span>
+
+                        </div>
+
+                        <div class="mt-2 flex items-baseline gap-2 text-green-500 digital-glow font-mono">
+
+                            <span id="live-weight" class="text-8xl font-bold tracking-tighter">00000</span>
+
+                            <span class="text-3xl font-bold">KG</span>
+
+                        </div>
+
+                        <p class="text-gray-500 text-sm mt-2 font-mono" id="scale-status">Estabilizando...</p>
+
+                    </div>
+
+
+
+                    <div
+                        class="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col flex-1 overflow-hidden">
+
+                        <div class="bg-brand-50 px-5 py-3 border-b border-brand-100 flex justify-between items-center">
+
+                            <div class="flex items-center gap-2 text-brand-900">
+
+                                <span class="material-icons">rv_hookup</span>
+
+                                <h2 class="text-sm font-bold uppercase tracking-wide">Camiones en Patio (Cola)</h2>
+
+                            </div>
+
+                            <span id="queue-count"
+                                class="bg-brand-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+
+                        </div>
+
+                        <div class="flex-1 overflow-y-auto">
+
+                            <table class="w-full text-left text-sm">
+
+                                <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm z-10">
+
+                                    <tr class="text-gray-500 text-xs uppercase tracking-wider">
+
+                                        <th class="p-3 font-semibold">Identificación</th>
+
+                                        <th class="p-3 font-semibold">Cliente</th>
+
+                                        <th class="p-3 font-semibold text-right">Peso Inicial</th>
+
+                                        <th class="p-3 font-semibold text-center">Acción</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody id="queue-list" class="divide-y divide-gray-100">
+
+                                    <tr>
+
+                                        <td colspan="4" class="p-8 text-center text-gray-400 text-sm">No hay camiones en
+
+                                            patio.</td>
+
+                                    </tr>
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="w-1/2 flex flex-col gap-6 h-full overflow-y-auto pr-2 pb-2">
+
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col gap-4 shrink-0">
+
+                        <div class="flex justify-between items-center border-b pb-2">
+
+                            <h2 class="text-lg font-bold text-gray-800">Datos de la Transacción</h2>
+
+                            <button onclick="limpiarFormulario()"
+                                class="text-sm text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1">
+
+                                <span class="material-icons text-[16px]">refresh</span> Limpiar Formulario
+
+                            </button>
+
+                        </div>
+
+
+
+                        <div class="flex flex-col gap-2">
+
+                            <label class="block text-sm font-semibold text-gray-600">Cliente / Productor *</label>
+
+                            <select id="cliente-select" onchange="handleClienteSelect()"
+                                class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2 focus:ring-2 focus:ring-brand-500 outline-none transition-all font-semibold">
+
+                                <!-- Injected via JS -->
+
+                            </select>
+
+
+
+                            <div id="client-price-box"
+                                class="hidden bg-blue-50 border border-blue-100 rounded-lg p-3 flex justify-between items-center transition-all">
+
+                                <div class="flex items-center gap-2 text-blue-800">
+
+                                    <span class="material-icons text-[18px]">payments</span>
+
+                                    <span class="text-xs font-bold uppercase">Precio Aplicado:</span>
+
+                                </div>
+
+                                <div class="text-right text-blue-900 font-bold">L <span id="precio-ton">0</span> / Ton
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+
+                        <div class="flex gap-4">
+
+                            <div class="flex-1">
+
+                                <label class="block text-xs font-semibold text-gray-600 mb-1">Placa (Opcional)</label>
+
+                                <input type="text" id="placa-input" placeholder="HAA-1234"
+                                    class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2 focus:ring-2 focus:ring-brand-500 uppercase outline-none font-bold tracking-widest placeholder-gray-300">
+
+                            </div>
+
+                            <div class="flex-1">
+
+                                <label class="block text-xs font-semibold text-gray-600 mb-1">Conductor
+
+                                    (Opcional)</label>
+
+                                <input type="text" id="conductor-input" placeholder="Nombre del chofer"
+                                    class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold placeholder-gray-300">
+
+                            </div>
+
+                        </div>
+
+                        <div>
+
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Flete</label>
+
+                            <select id="flete-select" onchange="mostrarInfoCliente()"
+                                class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2 focus:ring-2 focus:ring-brand-500 outline-none font-semibold">
+
+                                <option value="Propio">🚛 Flete Nuestro</option>
+
+                                <option value="Cliente">🚜 Flete Cliente</option>
+
+                            </select>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div
+                        class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex-1 flex flex-col justify-between shrink-0">
+
+                        <div class="flex flex-col gap-4">
+
+                            <div
+                                class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+
+                                <div class="flex flex-col">
+
+                                    <span class="text-gray-500 font-bold uppercase text-sm">Peso Bruto (Lleno)</span>
+
+                                    <button onclick="manualWeight('bruto')"
+                                        class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit"><span
+                                            class="material-icons text-[12px]">keyboard</span> Ingreso Manual</button>
+
+                                </div>
+
+                                <div class="flex items-center gap-3">
+
+                                    <span id="bruto-display"
+                                        class="font-mono text-2xl font-bold text-gray-800 w-32 text-right">-----
+
+                                        KG</span>
+
+                                    <button id="btn-bruto" onclick="handleBrutoClick()"
+                                        class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
+
+                                        <span class="material-icons text-[18px]">download</span> BRUTO
+
+                                    </button>
+
+                                </div>
+
+                            </div>
+
+
+
+                            <div
+                                class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+
+                                <div class="flex flex-col">
+
+                                    <span class="text-gray-500 font-bold uppercase text-sm">Tara (Vacío)</span>
+
+                                    <button onclick="manualWeight('tara')"
+                                        class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit"><span
+                                            class="material-icons text-[12px]">keyboard</span> Ingreso Manual</button>
+
+                                </div>
+
+                                <div class="flex items-center gap-3">
+
+                                    <span id="tara-display"
+                                        class="font-mono text-2xl font-bold text-gray-800 w-32 text-right">-----
+
+                                        KG</span>
+
+                                    <button id="btn-tara" onclick="handleTaraClick()"
+                                        class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
+
+                                        <span class="material-icons text-[18px]">upload</span> TARA
+
+                                    </button>
+
+                                </div>
+
+                            </div>
+
+
+
+                            <div
+                                class="flex justify-between items-center mt-2 pt-4 border-t-2 border-dashed border-gray-300">
+
+                                <span class="text-brand-900 font-black uppercase text-xl">Peso Neto</span>
+
+                                <span id="neto-display" class="font-mono text-4xl font-bold text-brand-500">0 KG</span>
+
+                            </div>
+
+
+
+                            <div
+                                class="flex justify-between items-center bg-green-50 p-4 rounded-xl border border-green-200 mt-2">
+
+                                <span class="text-green-800 font-bold uppercase text-sm">Total a Pagar</span>
+
+                                <div class="flex items-baseline gap-1">
+
+                                    <span class="text-green-900 font-bold text-lg">L</span>
+
+                                    <span id="total-pago-display"
+                                        class="font-mono text-3xl font-black text-green-700">0.00</span>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+
+                        <button id="btn-guardar" onclick="guardarTransaccion()" disabled
+                            class="w-full bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 text-lg mt-4">
+
+                            <span class="material-icons">cloud_upload</span> FINALIZAR Y GUARDAR
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </main>
+
+
+
+            <!-- VIEW 2: CLIENTES -->
+
+            <main id="view-clientes" class="absolute inset-0 p-8 hidden flex-col overflow-hidden">
+
+                <div class="flex justify-between items-center mb-6 shrink-0">
+
+                    <div>
+
+                        <h2 class="text-2xl font-bold text-gray-800">Directorio de Clientes</h2>
+
+                        <p class="text-gray-500">Gestione los precios dinámicos por flete.</p>
+
+                    </div>
+
+                    <div class="flex gap-3">
+
+                        <button onclick="abrirAjusteGlobal()"
+                            class="bg-gray-800 hover:bg-black text-white px-4 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors">
+
+                            <span class="material-icons">price_change</span> Ajuste Global
+
+                        </button>
+
+                        <button onclick="abrirModalCliente()"
+                            class="bg-brand-900 hover:bg-brand-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors">
+
+                            <span class="material-icons">person_add</span> Nuevo Cliente
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
+
+                    <div class="overflow-y-auto flex-1 p-0">
+
+                        <table class="w-full text-left">
+
+                            <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm">
+
+                                <tr class="text-gray-500 text-xs uppercase tracking-wider">
+
+                                    <th class="p-4 font-semibold">ID</th>
+
+                                    <th class="p-4 font-semibold">Nombre del Cliente</th>
+
+                                    <th class="p-4 font-semibold">Teléfono</th>
+
+                                    <th class="p-4 font-semibold text-right">Flete Propio (L)</th>
+
+                                    <th class="p-4 font-semibold text-right">Flete Cliente (L)</th>
+
+                                    <th class="p-4 font-semibold text-center">Acciones</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="clients-table-body" class="divide-y divide-gray-100">
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </main>
+
+
+
+            <!-- VIEW 3: REPORTES -->
+
+            <main id="view-reportes" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden">
+
+                <div class="flex justify-between items-center shrink-0">
+
+                    <div>
+
+                        <h2 class="text-2xl font-bold text-gray-800">Reportes de Transacciones</h2>
+
+                        <div class="flex items-center gap-3 mt-1">
+
+                            <label class="text-sm font-semibold text-gray-600">Factor de Conversión:</label>
+
+                            <span class="text-xs bg-gray-200 px-2 py-1 rounded">1 Ton = </span>
+
+                            <input type="number" id="factor-conversion" value="2.2046" step="0.0001"
+                                onchange="updateReportesTab()"
+                                class="w-20 p-1 border rounded text-right font-bold outline-none focus:ring-1 focus:ring-brand-500">
+
+                            <span class="text-xs">Quintales</span>
+
+                        </div>
+
+                    </div>
+
+                    <!-- DATE RANGE FILTER -->
+
+                    <div class="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-2 shadow-sm">
+
+                        <span class="text-xs font-bold text-gray-500 uppercase ml-2">Desde:</span>
+
+                        <input type="date" id="filter-start" onchange="updateReportesTab()"
+                            class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+
+                        <span class="text-xs font-bold text-gray-500 uppercase ml-2">Hasta:</span>
+
+                        <input type="date" id="filter-end" onchange="updateReportesTab()"
+                            class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="flex gap-6 shrink-0">
+
+                    <div
+                        class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+
+                        <div class="bg-blue-100 text-blue-600 p-4 rounded-full"><span
+                                class="material-icons text-3xl">local_shipping</span></div>
+
+                        <div>
+
+                            <p class="text-sm font-bold text-gray-500 uppercase">Camiones</p>
+
+                            <h3 id="rep-camiones" class="text-3xl font-black text-gray-800 font-mono">0</h3>
+
+                        </div>
+
+                    </div>
+
+                    <div
+                        class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+
+                        <div class="bg-brand-100 text-brand-600 p-4 rounded-full"><span
+                                class="material-icons text-3xl">monitor_weight</span></div>
+
+                        <div>
+
+                            <p class="text-sm font-bold text-gray-500 uppercase">Total Toneladas</p>
+
+                            <h3 id="rep-toneladas" class="text-3xl font-black text-gray-800 font-mono">0.00</h3>
+
+                        </div>
+
+                    </div>
+
+                    <div
+                        class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+
+                        <div class="bg-green-100 text-green-600 p-4 rounded-full"><span
+                                class="material-icons text-3xl">account_balance_wallet</span></div>
+
+                        <div>
+
+                            <p class="text-sm font-bold text-gray-500 uppercase">Total Invertido (HNL)</p>
+
+                            <h3 id="rep-dinero" class="text-3xl font-black text-gray-800 font-mono">L 0.00</h3>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
+
+                    <div class="overflow-y-auto flex-1 p-0">
+
+                        <table class="w-full text-left text-sm">
+
+                            <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm">
+
+                                <tr class="text-gray-500 text-xs uppercase tracking-wider">
+
+                                    <th class="p-4 font-semibold">Fecha</th>
+
+                                    <th class="p-4 font-semibold">Identificación</th>
+
+                                    <th class="p-4 font-semibold">Cliente</th>
+
+                                    <th class="p-4 font-semibold text-right">Neto (KG)</th>
+
+                                    <th class="p-4 font-semibold text-right">Precio/Ton</th>
+
+                                    <th class="p-4 font-semibold text-right text-green-700">Total Pago (L)</th>
+
+                                    <th class="p-4 font-semibold text-center">Acciones</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="reports-table-body" class="divide-y divide-gray-100">
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </main>
+
+
+
+            <!-- VIEW 4: CORAPSA (RECIBOS EXTERNOS) -->
+
+            <main id="view-corapsa" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden bg-blue-50">
+
+                <div class="flex justify-between items-center shrink-0">
+
+                    <div>
+
+                        <h2 class="text-2xl font-bold text-blue-900">Recibos Externos (Corapsa)</h2>
+
+                        <div class="flex items-center gap-2 mt-2">
+
+                            <input type="date" id="corapsa-filter-start" onchange="renderCorapsaTab()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-200">
+
+                            <span class="text-xs font-bold text-blue-500">hasta</span>
+
+                            <input type="date" id="corapsa-filter-end" onchange="renderCorapsaTab()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-200">
+
+                            <input type="text" id="corapsa-filter-client" oninput="renderCorapsaTab()"
+                                placeholder="Filtrar Cliente o Recibo #..."
+                                class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none w-64">
+
+                        </div>
+
+                    </div>
+
+                    <button onclick="abrirCorapsaModal()"
+                        class="bg-blue-600 hover:bg-blue-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+
+                        <span class="material-icons">add_box</span> Registrar Recibo
+
+                    </button>
+
+                </div>
+
+
+
+                <div class="bg-white rounded-2xl shadow-sm border border-blue-200 flex-1 overflow-hidden flex flex-col">
+
+                    <div class="overflow-y-auto flex-1 p-0">
+
+                        <table class="w-full text-left text-sm">
+
+                            <thead class="bg-blue-100 sticky top-0 shadow-sm z-10">
+
+                                <tr class="text-blue-900 text-[11px] uppercase tracking-wider">
+
+                                    <th class="p-3 font-semibold">Fecha / Recibo #</th>
+
+                                    <th class="p-3 font-semibold">Cliente</th>
+
+                                    <th class="p-3 font-semibold text-right">Precio/Ton</th>
+
+                                    <th class="p-3 font-semibold text-right">Toneladas</th>
+
+                                    <th class="p-3 font-semibold text-right">Monto a Pagar</th>
+
+                                    <th class="p-3 font-semibold text-center">Archivos Adjuntos</th>
+
+                                    <th class="p-3 font-semibold text-center">Estado</th>
+
+                                    <th class="p-3 font-semibold text-center">Acciones</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="corapsa-table-body" class="divide-y divide-gray-100">
+
+                                <tr>
+
+                                    <td colspan="8" class="p-8 text-center text-gray-400">Sin recibos registrados.</td>
+
+                                </tr>
+
+                            </tbody>
+
+                            <tfoot class="bg-blue-50 border-t-2 border-blue-200 sticky bottom-0">
+
+                                <tr>
+
+                                    <td colspan="3" class="p-4 font-bold text-right text-blue-900 uppercase">TOTALES:
+
+                                    </td>
+
+                                    <td class="p-4 font-black text-right text-blue-800 font-mono text-lg"
+                                        id="corapsa-total-toneladas">0.00</td>
+
+                                    <td class="p-4 font-black text-right text-green-700 font-mono text-lg">L <span
+                                            id="corapsa-total-dinero">0.00</span></td>
+
+                                    <td colspan="3"></td>
+
+                                </tr>
+
+                            </tfoot>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </main>
+
+
+
+            <!-- VIEW 5: GASTOS -->
+
+            <main id="view-gastos" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden bg-red-50">
+
+                <div class="flex justify-between items-center shrink-0">
+
+                    <div>
+
+                        <h2 class="text-2xl font-bold text-red-900">Control de Gastos</h2>
+
+                        <p class="text-red-700">Registro de egresos operativos y facturas.</p>
+
+                    </div>
+
+                    <button onclick="abrirGastosModal()"
+                        class="bg-red-600 hover:bg-red-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+
+                        <span class="material-icons">add_shopping_cart</span> Nuevo Gasto
+
+                    </button>
+
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-red-200 flex-1 overflow-hidden flex flex-col">
+
+                    <div class="overflow-y-auto flex-1 p-0">
+
+                        <table class="w-full text-left text-sm">
+
+                            <thead class="bg-red-100 sticky top-0 shadow-sm z-10">
+
+                                <tr class="text-red-900 text-xs uppercase tracking-wider">
+
+                                    <th class="p-4 font-semibold">Fecha</th>
+
+                                    <th class="p-4 font-semibold">Concepto</th>
+
+                                    <th class="p-4 font-semibold text-right">Monto (L)</th>
+
+                                    <th class="p-4 font-semibold">Justificación</th>
+
+                                    <th class="p-4 font-semibold text-center">Recibo</th>
+
+                                    <th class="p-4 font-semibold text-center">Acciones</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="gastos-table-body" class="divide-y divide-gray-100">
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </main>
+
+
+
+            <!-- VIEW 6: PLANILLA -->
+
+            <main id="view-planilla" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden bg-orange-50">
+
+                <div class="flex justify-between items-center shrink-0">
+
+                    <div>
+
+                        <h2 class="text-2xl font-bold text-orange-900">Planilla de Trabajadores</h2>
+
+                        <p class="text-orange-700">Controle días laborados, bonos y calcule nómina dinámicamente.</p>
+
+                    </div>
+
+                    <button onclick="abrirPlanillaModal()"
+                        class="bg-orange-600 hover:bg-orange-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+
+                        <span class="material-icons">person_add</span> Agregar Trabajador
+
+                    </button>
+
+                </div>
+
+                <div
+                    class="bg-white rounded-2xl shadow-sm border border-orange-200 flex-1 overflow-hidden flex flex-col">
+
+                    <div class="overflow-y-auto flex-1 p-0">
+
+                        <table class="w-full text-left text-sm">
+
+                            <thead class="bg-orange-100 sticky top-0 shadow-sm z-10">
+
+                                <tr class="text-orange-900 text-[11px] uppercase tracking-wider">
+
+                                    <th class="p-3 font-semibold">Trabajador</th>
+
+                                    <th class="p-3 font-semibold text-center w-24">Base<br>(Semanal)</th>
+
+                                    <th class="p-3 font-semibold text-center w-24">Días<br>Trabajados</th>
+
+                                    <th class="p-3 font-semibold text-center w-24">Overtime/<br>Extras (L)</th>
+
+                                    <th class="p-3 font-semibold text-right bg-orange-200/50">Total a Pagar</th>
+
+                                    <th class="p-3 font-semibold text-center">Gestión</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="planilla-table-body" class="divide-y divide-gray-100">
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </main>
+
+
+
+        </div>
+
+    </div>
+
+
+
+    <!-- INVISIBLE PRINT SECTION -->
+
+    <div id="print-section" class="hidden p-8 bg-white text-black font-sans">
+
+        <h2 class="text-2xl font-bold border-b-2 pb-2 mb-4">RECIBO DE BÁSCULA</h2>
+
+        <div id="print-content" class="text-lg flex flex-col gap-2"></div>
+
+    </div>
 
     <!-- EXTERNAL JS MODULES -->
-    <script src="js/globals.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/clientes.js"></script>
-    <script src="js/pesaje.js"></script>
-    <script src="js/reportes.js"></script>
-    <script src="js/corapsa.js"></script>
-    <script src="js/gastos.js"></script>
-    <script src="js/planilla.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/globals.js" defer></script>
+    <script src="js/ui.js" defer></script>
+    <script src="js/clientes.js" defer></script>
+    <script src="js/pesaje.js" defer></script>
+    <script src="js/reportes.js" defer></script>
+    <script src="js/corapsa.js" defer></script>
+    <script src="js/gastos.js" defer></script>
+    <script src="js/planilla.js" defer></script>
+    <script src="js/app.js" defer></script>
 
 </body>
 
