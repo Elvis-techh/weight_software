@@ -121,6 +121,16 @@
 
                     </div>
 
+                    <div class="col-span-2 sm:col-span-1">
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Unidad de Medida *</label>
+                        <select id="cliente-unidad"
+                            class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                            required>
+                            <option value="tonelada">Tonelada (L / Ton)</option>
+                            <option value="quintal">Quintal (L / Qq)</option>
+                        </select>
+                    </div>
+
                 </div>
 
                 <div class="flex gap-4 p-4 bg-gray-50 border border-gray-200 rounded-lg mt-2">
@@ -868,20 +878,13 @@
 
                     <div
                         class="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col flex-1 overflow-hidden">
-
                         <div class="bg-brand-50 px-5 py-3 border-b border-brand-100 flex justify-between items-center">
-
                             <div class="flex items-center gap-2 text-brand-900">
-
                                 <span class="material-icons">rv_hookup</span>
-
                                 <h2 class="text-sm font-bold uppercase tracking-wide">Camiones en Patio (Cola)</h2>
-
                             </div>
-
                             <span id="queue-count"
                                 class="bg-brand-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">0</span>
-
                         </div>
 
                         <div class="flex-1 overflow-y-auto">
@@ -889,21 +892,14 @@
                             <table class="w-full text-left text-sm">
 
                                 <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm z-10">
-
                                     <tr class="text-gray-500 text-xs uppercase tracking-wider">
-
-                                        <th class="p-3 font-semibold">Identificación</th>
-
+                                        <th class="p-3 font-semibold">Placa</th>
+                                        <th class="p-3 font-semibold">Conductor</th>
                                         <th class="p-3 font-semibold">Cliente</th>
-
                                         <th class="p-3 font-semibold text-right">Peso Inicial</th>
-
                                         <th class="p-3 font-semibold text-center">Acción</th>
-
                                     </tr>
-
                                 </thead>
-
                                 <tbody id="queue-list" class="divide-y divide-gray-100">
 
                                     <tr>
@@ -956,28 +952,17 @@
 
                             </select>
 
-
-
                             <div id="client-price-box"
                                 class="hidden bg-blue-50 border border-blue-100 rounded-lg p-3 flex justify-between items-center transition-all">
-
                                 <div class="flex items-center gap-2 text-blue-800">
-
                                     <span class="material-icons text-[18px]">payments</span>
-
                                     <span class="text-xs font-bold uppercase">Precio Aplicado:</span>
-
                                 </div>
-
-                                <div class="text-right text-blue-900 font-bold">L <span id="precio-ton">0</span> / Ton
-
+                                <div class="text-right text-blue-900 font-bold">
+                                    L <span id="precio-ton">0</span> / <span id="precio-unidad">Ton</span>
                                 </div>
-
                             </div>
-
                         </div>
-
-
 
                         <div class="flex gap-4">
 
@@ -1194,6 +1179,8 @@
                                     <th class="p-4 font-semibold text-right">Flete Propio (L)</th>
 
                                     <th class="p-4 font-semibold text-right">Flete Cliente (L)</th>
+
+                                    <th class="p-3 font-semibold text-center">Unidad</th>
 
                                     <th class="p-4 font-semibold text-center">Acciones</th>
 

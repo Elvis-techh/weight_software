@@ -4,21 +4,24 @@ function renderClientesTab() {
 
     tbody.innerHTML = '';
     MOCK_CLIENTES.forEach(c => {
+        // Inside your render/draw function:
         tbody.innerHTML += `
-            <tr class="hover:bg-gray-50">
-                <td class="p-4 font-mono text-gray-500 text-sm">#${c.id}</td>
-                <td class="p-4 font-bold text-gray-800">${c.nombre} ${c.apellido || ''}</td>
-                <td class="p-4 text-gray-600">${c.telefono || '-'}</td>
-                <td class="p-4 text-right font-mono font-bold text-blue-800">L ${Number(c.precioFletePropio || 0).toLocaleString('en-US')}</td>
-                <td class="p-4 text-right font-mono font-bold text-brand-800">L ${Number(c.precioFleteCliente || 0).toLocaleString('en-US')}</td>
-                <td class="p-4 text-center">
-                    <div class="flex justify-center items-center gap-1">
-                        <button onclick="abrirModalCliente(${c.id})" title="Editar cliente" class="text-blue-600 hover:bg-blue-50 p-2 rounded-full">
-                            <span class="material-icons text-xl">edit</span>
-                        </button>
-                        <button onclick="solicitarEliminarCliente(${c.id})" title="Eliminar cliente" class="text-red-500 hover:bg-red-50 p-2 rounded-full">
-                            <span class="material-icons text-xl">delete</span>
-                        </button>
+            <tr class="hover:bg-blue-50 border-b border-gray-100 last:border-0 transition-colors">
+                <td class="p-3 text-sm text-gray-500 font-mono">#${c.id}</td>
+                <td class="p-3 text-sm font-bold text-gray-800">${c.nombre} ${c.apellido || ''}</td>
+                <td class="p-3 text-sm text-gray-600 hidden md:table-cell">${c.telefono || '-'}</td>
+                <td class="p-3 text-sm text-gray-600 hidden lg:table-cell">${c.ubicacion || '-'}</td>
+                <td class="p-3 text-sm font-mono font-bold text-blue-700">L ${Number(c.precioFletePropio).toLocaleString('en-US')} / L ${Number(c.precioFleteCliente).toLocaleString('en-US')}</td>
+        
+                <!-- NEW COLUMN: UNIDAD -->
+                <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase">
+                    ${c.unidad === 'quintal' ? 'QQ' : 'TON'}
+                </td>
+        
+                <td class="p-3 text-center">
+                    <div class="flex justify-center gap-2">
+                        <button onclick="editarCliente('${c.id}')" class="text-blue-500 hover:text-blue-700 transition-colors"><span class="material-icons text-[18px]">edit</span></button>
+                        <button onclick="eliminarCliente('${c.id}')" class="text-red-500 hover:text-red-700 transition-colors"><span class="material-icons text-[18px]">delete</span></button>
                     </div>
                 </td>
             </tr>
@@ -68,7 +71,7 @@ function cerrarCasualModal() {
 }
 
 function guardarCasual() {
-    const nom = document.getElementById('casual-nombre').value || "Visitante";
+    const nom = document.getElementById('casual-nombre').value.trim() || "Casual";
     const precioRaw = document.getElementById('casual-precio').value;
     const unidad = document.getElementById('casual-unidad').value;
 
@@ -78,11 +81,19 @@ function guardarCasual() {
     if (!Number.isFinite(precioFinal) || precioFinal < 0) {
         return mostrarNotificacion("Ingrese un precio válido.", "error");
     }
-    if (unidad === 'quintal') precioFinal *= 2;
 
+    // Save exactly what they typed, plus the unit
     MOCK_CASUAL.nombre = nom;
     MOCK_CASUAL.precioFletePropio = precioFinal;
     MOCK_CASUAL.precioFleteCliente = precioFinal;
+    MOCK_CASUAL.unidad = unidad;
+
+    // Update the dropdown to show the custom name!
+    const select = document.getElementById('cliente-select');
+    const casualOption = Array.from(select.options).find(opt => opt.value === 'casual');
+    if (casualOption) {
+        casualOption.text = `👤 Casual: ${nom}`;
+    }
 
     document.getElementById('casual-modal').classList.add('hidden');
     mostrarInfoCliente();
@@ -118,6 +129,17 @@ function guardarCliente() {
     const nombre = document.getElementById('modal-nombre').value.trim();
     const nuevoPPropio = parseFormattedNumber(document.getElementById('modal-precio-propio').value);
     const nuevoPCliente = parseFormattedNumber(document.getElementById('modal-precio-cliente').value);
+    const unidadSeleccionada = document.getElementById('cliente-unidad').value;
+
+    const clienteData = {
+        nombre: document.getElementById('cliente-nombre').value.trim(),
+        apellido: document.getElementById('cliente-apellido').value.trim(),
+        telefono: document.getElementById('cliente-telefono').value.trim(),
+        ubicacion: document.getElementById('cliente-ubicacion').value.trim(),
+        precioFletePropio: parseFloat(document.getElementById('cliente-precio-propio').value),
+        precioFleteCliente: parseFloat(document.getElementById('cliente-precio-cliente').value),
+        unidad: unidadSeleccionada // Add it to the data payload!
+    };
 
     if (!nombre || !Number.isFinite(nuevoPPropio) || !Number.isFinite(nuevoPCliente)) {
         return mostrarNotificacion("Complete los campos obligatorios con valores válidos.", "error");

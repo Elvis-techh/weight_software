@@ -37,7 +37,14 @@ function mostrarInfoCliente() {
     }
 
     const precioActual = fleteTipo === 'Propio' ? cliente.precioFletePropio : cliente.precioFleteCliente;
+
     document.getElementById('precio-ton').innerText = Number(precioActual || 0).toLocaleString('en-US');
+
+    const unidadSpan = document.getElementById('precio-unidad');
+    if (unidadSpan) {
+        unidadSpan.innerText = (clienteId === 'casual' && cliente.unidad === 'quintal') ? 'Quintal' : 'Ton';
+    }
+
     priceBox.classList.remove('hidden');
 
     if (activeTransaction.pesoBruto && activeTransaction.pesoTara) calcularNetoYTotal();
@@ -143,7 +150,8 @@ function renderQueue() {
 
     document.getElementById('queue-count').innerText = camionesEnPatio.length;
     if (camionesEnPatio.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-gray-400 text-sm">No hay camiones en patio.</td></tr>';
+        // Notice we changed colspan to 5 here to match the new columns!
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400 text-sm">No hay camiones en patio.</td></tr>';
         return;
     }
 
@@ -152,17 +160,19 @@ function renderQueue() {
         const clientRecord = t.clienteId === 'casual'
             ? t.casualSnapshot
             : MOCK_CLIENTES.find(c => c.id == t.clienteId);
+
         const nombreCliente = t.clienteId === 'casual'
             ? (t.casualSnapshot?.nombre || 'Casual')
             : (clientRecord ? `${clientRecord.nombre} ${clientRecord.apellido || ''}`.trim() : 'Cliente no disponible');
-        const identificacion = t.placa !== 'S/P' ? t.placa : t.conductor;
+
         const pesoMostrar = t.pesoBruto != null
             ? `Bruto: ${t.pesoBruto.toLocaleString('en-US')}`
             : `Tara: ${t.pesoTara.toLocaleString('en-US')}`;
 
         tbody.innerHTML += `
             <tr class="hover:bg-blue-50 cursor-pointer group" onclick="cargarDeCola('${t.id}')">
-                <td class="p-3 font-bold text-gray-800">${identificacion}</td>
+                <td class="p-3 font-bold text-gray-800">${t.placa === 'S/P' ? '-' : t.placa}</td>
+                <td class="p-3 font-bold text-gray-800">${t.conductor === 'Desconocido' ? '-' : t.conductor}</td>
                 <td class="p-3 text-sm text-gray-600">${nombreCliente}</td>
                 <td class="p-3 text-right font-mono font-bold text-gray-500">${pesoMostrar}</td>
                 <td class="p-3 text-center">
@@ -248,9 +258,19 @@ function calcularNetoYTotal() {
     const precioAplicado = activeTransaction.flete === 'Propio'
         ? Number(cliente.precioFletePropio)
         : Number(cliente.precioFleteCliente);
+
     activeTransaction.precioAplicado = precioAplicado;
 
-    const totalPagar = (neto / 1000) * precioAplicado;
+    // Calculate correctly based on the unit
+    let totalPagar = 0;
+    if (activeTransaction.clienteId === 'casual' && cliente.unidad === 'quintal') {
+        const factorQq = parseFloat(document.getElementById('factor-conversion')?.value) || 2.2046;
+        const totalQuintales = (neto / 1000) * factorQq;
+        totalPagar = totalQuintales * precioAplicado;
+    } else {
+        totalPagar = (neto / 1000) * precioAplicado;
+    }
+
     document.getElementById('total-pago-display').innerText = totalPagar.toLocaleString('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
@@ -273,6 +293,17 @@ async function guardarTransaccion() {
         : `${cliente.nombre} ${cliente.apellido || ''}`.trim();
 
     try {
+        // --- NEW CONVERSION LOGIC ---
+        let precioParaServidor = activeTransaction.precioAplicado;
+        const clienteObj = activeTransaction.clienteId === 'casual' ? activeTransaction.casualSnapshot : null;
+
+        // If it was quintales, multiply by the conversion factor so the server receives a "Per Ton" price
+        if (clienteObj && clienteObj.unidad === 'quintal') {
+            const factorQq = parseFloat(document.getElementById('factor-conversion').value) || 2.2046;
+            precioParaServidor = activeTransaction.precioAplicado * factorQq;
+        }
+        // ----------------------------
+
         const result = await apiRequest(
             `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
             {
@@ -281,7 +312,7 @@ async function guardarTransaccion() {
                     fecha: getLocalIsoDate(),
                     hora: new Date().toLocaleTimeString('es-HN', { hour12: false }),
                     clienteNombre,
-                    precioAplicado: activeTransaction.precioAplicado
+                    precioAplicado: precioParaServidor // Send the standardized price!
                 }
             }
         );
@@ -306,6 +337,10 @@ function limpiarFormulario() {
     document.getElementById('placa-input').disabled = false;
     document.getElementById('conductor-input').disabled = false;
     document.getElementById('flete-select').disabled = false;
+
+    // Reset casual name back to default
+    const casualOpt = Array.from(document.getElementById('cliente-select').options).find(o => o.value === 'casual');
+    if (casualOpt) casualOpt.text = '👤 Cliente Casual / Rápido';
 
     document.getElementById('cliente-select').value = '';
     document.getElementById('client-price-box').classList.add('hidden');

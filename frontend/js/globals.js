@@ -2,7 +2,7 @@
 const API_URL = 'http://localhost:3000';
 
 let MOCK_CLIENTES = [];
-let MOCK_CASUAL = { id: 'casual', nombre: "", apellido: "", precioFletePropio: 0, precioFleteCliente: 0 };
+let MOCK_CASUAL = { id: 'casual', nombre: "", apellido: "", precioFletePropio: 0, precioFleteCliente: 0, unidad: 'tonelada' };
 
 let currentLiveWeight = 0;
 let camionesEnPatio = [];
