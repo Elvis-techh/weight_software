@@ -38,10 +38,21 @@ async function initializeDB() {
             precio_aplicado REAL NOT NULL,
             total REAL NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS clientes (
+            id INTEGER PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            apellido TEXT,
+            telefono TEXT,
+            ubicacion TEXT,
+            precio_flete_propio REAL NOT NULL,
+            precio_flete_cliente REAL NOT NULL,
+            unidad TEXT NOT NULL DEFAULT 'tonelada'
+        );
     `);
 
     console.log("Tablas verificadas/creadas exitosamente.");
-    
+
     return db;
 }
 

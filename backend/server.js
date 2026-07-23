@@ -15,11 +15,52 @@ initializeDB().then(database => {
     console.error("Error al inicializar SQLite:", err);
 });
 
-// --- MOCK ROUTE TO PREVENT APP.JS 404 CRASH ---
-app.get('/api/clientes', (req, res) => {
-    res.json([
-        { id: 1, nombre: "Cliente", apellido: "Local", precioFletePropio: 100, precioFleteCliente: 150 }
-    ]);
+// 1. GET: Fetch all clients from SQLite
+app.get('/api/clientes', async (req, res) => {
+    try {
+        const rows = await db.all('SELECT * FROM clientes');
+        const clientes = rows.map(r => ({
+            id: r.id,
+            nombre: r.nombre,
+            apellido: r.apellido,
+            telefono: r.telefono,
+            ubicacion: r.ubicacion,
+            precioFletePropio: r.precio_flete_propio,
+            precioFleteCliente: r.precio_flete_cliente,
+            unidad: r.unidad // Send the unit back to the frontend
+        }));
+        res.json(clientes);
+    } catch (error) {
+        res.status(500).json({ error: { message: error.message } });
+    }
+});
+
+// 2. POST: Insert a new client into SQLite
+app.post('/api/clientes', async (req, res) => {
+    try {
+        const c = req.body;
+        const id = c.id || Date.now();
+
+        await db.run(`
+            INSERT INTO clientes (id, nombre, apellido, telefono, ubicacion, precio_flete_propio, precio_flete_cliente, unidad)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            id,
+            c.nombre,
+            c.apellido || '',
+            c.telefono || '',
+            c.ubicacion || '',
+            c.precioFletePropio,
+            c.precioFleteCliente,
+            c.unidad || 'tonelada'
+        ]);
+
+        const nuevoCliente = { ...c, id };
+        res.status(201).json({ cliente: nuevoCliente });
+    } catch (error) {
+        console.error("Error al guardar cliente:", error);
+        res.status(500).json({ error: { message: "Error al guardar el cliente en la base de datos." } });
+    }
 });
 // ----------------------------------------------
 
@@ -66,7 +107,7 @@ app.post('/api/camiones-patio', async (req, res) => {
 
         const newTruck = { ...truck, id };
         // Removed ok: true so apiRequest returns this exact object
-        res.status(201).json({ camion: newTruck }); 
+        res.status(201).json({ camion: newTruck });
     } catch (error) {
         console.error("Error al insertar en patio:", error);
         res.status(500).json({ error: { message: "Error al guardar en la base de datos." } });
@@ -152,7 +193,7 @@ app.post('/api/camiones-patio/:id/finalizar', async (req, res) => {
             total
         };
 
-        res.json({ transaccion }); 
+        res.json({ transaccion });
     } catch (error) {
         console.error("Error al finalizar transacción:", error);
         res.status(500).json({ error: { message: error.message } });
