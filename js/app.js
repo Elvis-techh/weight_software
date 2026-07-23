@@ -1,50 +1,78 @@
-function initApp() {
-    startClock();
-    fetchClientes();
-    renderClientesTab();
-    populateClienteDropdown();
-
-    async function fetchClientes() {
-        try {
-            const response = await fetch(`${API_URL}/api/clientes`);
-            if (response.ok) {
-                const clientesDelServidor = await response.json();
-                MOCK_CLIENTES = clientesDelServidor;
-                renderClientesTab();
-                populateClienteDropdown();
-                console.log("Datos de clientes sincronizados con el servidor.");
-            } else {
-                mostrarNotificacion("Error al obtener datos del servidor.", "error");
-            }
-        } catch (error) {
-            console.error("Sin conexión a la nube:", error);
-            mostrarNotificacion("Trabajando en modo local (Sin conexión).", "error");
-        }
-    }
-
-    const today = getLocalIsoDate();
-    document.getElementById('filter-start').value = today;
-    document.getElementById('filter-end').value = today;
-
-    // Preload Electron API Bridge Listeners
-    if (window.electronAPI) {
-        window.electronAPI.onScaleData((data) => {
-            currentLiveWeight = data.weight;
-            const weightDisplay = document.getElementById('live-weight');
-            const statusDisplay = document.getElementById('scale-status');
-
-            weightDisplay.innerText = currentLiveWeight.toLocaleString('en-US').padStart(6, '0');
-            if (data.stable) {
-                weightDisplay.classList.add('text-green-400');
-                weightDisplay.classList.remove('text-green-500');
-                statusDisplay.innerText = "PESO ESTABLE";
-            } else {
-                weightDisplay.classList.add('text-green-500');
-                weightDisplay.classList.remove('text-green-400');
-                statusDisplay.innerText = "ESTABILIZANDO...";
-            }
-        });
+async function fetchClientes() {
+    try {
+        const clientesDelServidor = await apiRequest('/api/clientes');
+        MOCK_CLIENTES = Array.isArray(clientesDelServidor) ? clientesDelServidor : [];
+        renderClientesTab();
+        populateClienteDropdown();
+        console.log('Datos de clientes sincronizados con el servidor.');
+    } catch (error) {
+        console.error('No se pudieron cargar los clientes:', error);
+        mostrarNotificacion(error.message, 'error');
     }
 }
 
-window.onload = initApp;
+async function fetchCamionesEnPatio() {
+    try {
+        const registros = await apiRequest('/api/camiones-patio');
+        camionesEnPatio = Array.isArray(registros)
+            ? registros.map(normalizarCamionPatio)
+            : [];
+        renderQueue();
+        console.log('Camiones en patio sincronizados con el servidor.');
+    } catch (error) {
+        console.error('No se pudo cargar la cola del patio:', error);
+        mostrarNotificacion('No se pudo recuperar la cola guardada.', 'error');
+    }
+}
+
+function setupScaleListener() {
+    if (!window.electronAPI) return;
+
+    window.electronAPI.onScaleData((data) => {
+        currentLiveWeight = data.weight;
+        const weightDisplay = document.getElementById('live-weight');
+        const statusDisplay = document.getElementById('scale-status');
+
+        if (!weightDisplay || !statusDisplay) return;
+
+        weightDisplay.innerText = currentLiveWeight.toLocaleString('en-US').padStart(6, '0');
+        if (data.stable) {
+            weightDisplay.classList.add('text-green-400');
+            weightDisplay.classList.remove('text-green-500');
+            statusDisplay.innerText = 'PESO ESTABLE';
+        } else {
+            weightDisplay.classList.add('text-green-500');
+            weightDisplay.classList.remove('text-green-400');
+            statusDisplay.innerText = 'ESTABILIZANDO...';
+        }
+    });
+}
+
+async function initApp() {
+    startClock();
+    setupScaleListener();
+
+    const today = getLocalIsoDate();
+    ['filter-start', 'filter-end', 'corapsa-filter-start', 'corapsa-filter-end'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) input.value = today;
+    });
+
+    renderClientesTab();
+    populateClienteDropdown();
+    updateReportesTab();
+    renderCorapsaTab();
+    renderGastos();
+    renderPlanilla();
+    renderQueue();
+
+    await Promise.allSettled([
+        fetchClientes(),
+        fetchCamionesEnPatio()
+    ]);
+
+    // Render again after both datasets have settled so queue rows can resolve client names.
+    renderQueue();
+}
+
+window.addEventListener('DOMContentLoaded', initApp);

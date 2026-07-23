@@ -1,7 +1,8 @@
 function abrirPlanillaModal(id = null) {
     document.getElementById('planilla-modal').classList.remove('hidden');
     if (id) {
-        const p = planillaData.find(x => x.id === id);
+        const p = planillaData.find(x => x.id == id);
+        if (!p) return mostrarNotificacion("Trabajador no encontrado.", "error");
         document.getElementById('planilla-modal-title').innerText = "Editar Trabajador";
         document.getElementById('planilla-edit-id').value = p.id;
         document.getElementById('planilla-nombre').value = p.nombre;
@@ -36,18 +37,20 @@ async function guardarTrabajador() {
         const endpoint = id ? `${API_URL}/api/planilla/${id}` : `${API_URL}/api/planilla`;
 
         const response = await fetch(endpoint, {
-            method: method,
+            method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
 
         if (response.ok) {
+            let serverRecord = null;
+            try { serverRecord = await response.json(); } catch (_) { /* optional response */ }
             if (id) {
                 const p = planillaData.find(x => x.id == id);
-                p.nombre = nombre; p.apellido = apellido; p.telefono = telefono; p.sueldoBase = sueldoBase;
+                if (p) Object.assign(p, payload, serverRecord || {});
                 mostrarNotificacion("Trabajador actualizado en el servidor.");
             } else {
-                planillaData.push({ id: Date.now(), ...payload, diasTrabajados: 6, extras: 0 });
+                planillaData.push({ id: serverRecord?.id ?? Date.now(), ...payload, diasTrabajados: 6, extras: 0, ...(serverRecord || {}) });
                 mostrarNotificacion("Trabajador registrado en el servidor.");
             }
             renderPlanilla();
@@ -75,6 +78,7 @@ function calcularFilaPlanilla(id) {
 
 function renderPlanilla() {
     const tbody = document.getElementById('planilla-table-body');
+    if (!tbody) return;
     if (planillaData.length === 0) {
         tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin trabajadores registrados.</td></tr>`;
         return;
