@@ -5,8 +5,26 @@ function normalizarGasto(record = {}) {
         monto: toFiniteNumber(record.monto),
         concepto: String(record.concepto || ''),
         justificacion: String(record.justificacion || ''),
-        fileName: String(record.fileName ?? record.file_name ?? 'Sin Archivo')
+        fileName: String(record.fileName ?? record.file_name ?? 'Sin Archivo'),
+        fileMimeType: String(record.fileMimeType ?? record.file_mime_type ?? ''),
+        hasFile: record.hasFile === true,
+        updatedAt: String(record.updatedAt ?? record.updated_at ?? '')
     };
+}
+
+function getGastoAttachmentUrl(gasto) {
+    const version = encodeURIComponent(gasto.updatedAt || Date.now());
+    return buildApiUrl(`/api/gastos/${encodeURIComponent(gasto.id)}/archivo?v=${version}`);
+}
+
+function updateGastoModalAttachmentState(gasto) {
+    const text = document.getElementById('gastos-current-file');
+    const button = document.getElementById('gastos-current-file-preview');
+    if (!text || !button) return;
+
+    text.textContent = gasto?.hasFile ? gasto.fileName : 'Sin archivo guardado';
+    button.classList.toggle('hidden', !gasto?.hasFile);
+    button.onclick = gasto?.hasFile ? () => abrirVisorGasto(gasto.id) : null;
 }
 
 function abrirGastosModal(id = null) {
@@ -20,6 +38,7 @@ function abrirGastosModal(id = null) {
     document.getElementById('gastos-concepto').value = gasto?.concepto || '';
     document.getElementById('gastos-justificacion').value = gasto?.justificacion || '';
     document.getElementById('gastos-file').value = '';
+    updateGastoModalAttachmentState(gasto);
     document.getElementById('gastos-modal').classList.remove('hidden');
 }
 
@@ -29,24 +48,25 @@ function cerrarGastosModal() {
 
 async function guardarGasto() {
     const id = document.getElementById('gastos-edit-id').value;
-    const existing = id ? gastosData.find(item => sameRecordId(item.id, id)) : null;
     const selectedFile = document.getElementById('gastos-file').files[0] || null;
 
     const payload = {
         fecha: document.getElementById('gastos-fecha').value,
         monto: parseFormattedNumber(document.getElementById('gastos-monto').value),
         concepto: document.getElementById('gastos-concepto').value.trim(),
-        justificacion: document.getElementById('gastos-justificacion').value.trim(),
-        fileName: selectedFile?.name || existing?.fileName || 'Sin Archivo'
+        justificacion: document.getElementById('gastos-justificacion').value.trim()
     };
 
     if (!payload.fecha || !payload.concepto) return mostrarNotificacion('Complete los campos obligatorios.', 'error');
     if (!Number.isFinite(payload.monto) || payload.monto <= 0) return mostrarNotificacion('El monto debe ser mayor que cero.', 'error');
 
     try {
+        const archivo = await buildAttachmentPayload(selectedFile);
+        if (archivo) payload.archivo = archivo;
+
         const result = id
-            ? await apiRequest(`/api/gastos/${encodeURIComponent(id)}`, { method: 'PUT', body: payload })
-            : await apiRequest('/api/gastos', { method: 'POST', body: payload });
+            ? await apiRequest(`/api/gastos/${encodeURIComponent(id)}`, { method: 'PUT', body: payload, timeoutMs: 30000 })
+            : await apiRequest('/api/gastos', { method: 'POST', body: payload, timeoutMs: 30000 });
         const saved = normalizarGasto(result?.gasto || result);
         const index = gastosData.findIndex(item => sameRecordId(item.id, saved.id));
         if (index >= 0) gastosData[index] = saved;
@@ -54,11 +74,58 @@ async function guardarGasto() {
 
         renderGastos();
         cerrarGastosModal();
-        mostrarNotificacion(id ? 'Gasto actualizado.' : 'Gasto registrado.');
+        mostrarNotificacion(id ? 'Gasto y archivo actualizados.' : 'Gasto registrado.');
     } catch (error) {
         console.error('Error al guardar gasto:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar el gasto.', 'error');
     }
+}
+
+function abrirVisorGasto(id) {
+    const gasto = gastosData.find(item => sameRecordId(item.id, id));
+    if (!gasto) return mostrarNotificacion('Gasto no encontrado.', 'error');
+    if (!gasto.hasFile) return mostrarNotificacion('No hay un archivo disponible para visualizar.', 'error');
+
+    openAttachmentViewer({
+        module: 'gasto',
+        id: gasto.id,
+        type: 'gasto',
+        fileName: gasto.fileName,
+        mimeType: gasto.fileMimeType,
+        url: getGastoAttachmentUrl(gasto)
+    });
+}
+
+function renderGastoAttachmentThumbnail(gasto) {
+    if (!gasto.hasFile) {
+        const legacyName = gasto.fileName && gasto.fileName !== 'Sin Archivo' ? gasto.fileName : '';
+        return `
+            <button type="button" onclick="abrirGastosModal('${escapeHtml(gasto.id)}')"
+                title="${legacyName ? `El contenido de ${escapeHtml(legacyName)} no está guardado. Edite el gasto para volver a adjuntarlo.` : 'Editar gasto para adjuntar recibo'}"
+                class="w-24 h-16 rounded-lg border border-dashed border-red-200 bg-red-50 text-red-600 flex flex-col items-center justify-center hover:shadow transition-shadow">
+                <span class="material-icons text-[22px]">${legacyName ? 'cloud_upload' : 'add_photo_alternate'}</span>
+                <span class="text-[9px] font-bold uppercase mt-1">${legacyName ? 'Re-subir' : 'Adjuntar'}</span>
+            </button>`;
+    }
+
+    const url = getGastoAttachmentUrl(gasto);
+    if (isImageAttachmentType(gasto.fileMimeType)) {
+        return `
+            <button type="button" onclick="abrirVisorGasto('${escapeHtml(gasto.id)}')"
+                title="Abrir ${escapeHtml(gasto.fileName)}"
+                class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
+                <img src="${escapeHtml(url)}" alt="${escapeHtml(gasto.fileName)}" class="w-full h-full object-cover">
+                <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">RECIBO</span>
+            </button>`;
+    }
+
+    return `
+        <button type="button" onclick="abrirVisorGasto('${escapeHtml(gasto.id)}')"
+            title="Abrir ${escapeHtml(gasto.fileName)}"
+            class="w-24 h-16 rounded-lg border border-red-200 bg-red-50 text-red-700 flex flex-col items-center justify-center hover:shadow-md transition-shadow">
+            <span class="material-icons text-[25px]">picture_as_pdf</span>
+            <span class="text-[9px] font-bold uppercase mt-1">PDF</span>
+        </button>`;
 }
 
 function renderGastos() {
@@ -76,9 +143,11 @@ function renderGastos() {
             <td class="p-4 font-bold text-gray-800">${escapeHtml(gasto.concepto)}</td>
             <td class="p-4 text-right font-mono font-bold text-red-700">L ${formatMoney(gasto.monto)}</td>
             <td class="p-4 text-xs text-gray-500">${escapeHtml(gasto.justificacion || '-')}</td>
-            <td class="p-4 text-center"><span class="text-[10px] bg-gray-200 px-2 py-1 rounded truncate max-w-[120px] inline-block" title="${escapeHtml(gasto.fileName)}">📎 ${escapeHtml(gasto.fileName)}</span></td>
             <td class="p-4 text-center">
-                <button type="button" onclick="abrirGastosModal('${escapeHtml(gasto.id)}')" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
+                <div class="flex justify-center">${renderGastoAttachmentThumbnail(gasto)}</div>
+            </td>
+            <td class="p-4 text-center">
+                <button type="button" onclick="abrirGastosModal('${escapeHtml(gasto.id)}')" title="Editar y reemplazar archivo" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
                 <button type="button" onclick="abrirActionModal('delete_gasto', '${escapeHtml(gasto.id)}')" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
             </td>
         </tr>

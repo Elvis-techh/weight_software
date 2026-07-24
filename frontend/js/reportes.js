@@ -38,10 +38,14 @@ function updateReportesTab() {
     document.getElementById('rep-camiones').textContent = String(filteredData.length);
     document.getElementById('rep-toneladas').textContent = (totalLbs / APP_CONFIG.lbsPerMetricTon)
         .toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('rep-libras').textContent = `${totalLbs.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    })} LBS`;
     document.getElementById('rep-dinero').textContent = `L ${formatMoney(totalDinero)}`;
 
     if (filteredData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400">Sin transacciones para los filtros seleccionados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-gray-400">Sin transacciones para los filtros seleccionados.</td></tr>';
         return;
     }
 
@@ -52,6 +56,7 @@ function updateReportesTab() {
                 ? transaction.conductor
                 : 'S/P';
         const unitLabel = transaction.unidad === 'quintal' ? 'QQ' : 'TON';
+        const metricTons = transaction.neto / APP_CONFIG.lbsPerMetricTon;
 
         return `
             <tr class="hover:bg-gray-50 border-b border-gray-100">
@@ -59,6 +64,7 @@ function updateReportesTab() {
                 <td class="p-4 font-bold text-gray-800 uppercase">${escapeHtml(identification)}</td>
                 <td class="p-4 text-gray-600 text-sm">${escapeHtml(transaction.clienteNombre)}</td>
                 <td class="p-4 text-right font-mono font-bold text-gray-800">${transaction.neto.toLocaleString('en-US')} LBS</td>
+                <td class="p-4 text-right font-mono font-bold text-brand-700">${metricTons.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TON</td>
                 <td class="p-4 text-right font-mono text-gray-500 text-xs">L ${formatMoney(transaction.precioAplicado)} / ${unitLabel}</td>
                 <td class="p-4 text-right font-mono font-bold text-green-700">L ${formatMoney(transaction.total)}</td>
                 <td class="p-4 flex justify-center gap-2">

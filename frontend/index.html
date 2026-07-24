@@ -61,8 +61,8 @@
 
 
     <!-- STANDARD CLIENT MODAL -->
-    <div id="client-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
-        <div class="bg-white rounded-2xl shadow-2xl w-[600px] overflow-hidden">
+    <div id="client-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-[700px] max-w-full max-h-[92vh] overflow-y-auto">
 
             <div class="bg-brand-900 px-6 py-4 flex justify-between items-center text-white">
                 <h3 class="font-bold text-lg" id="modal-title">Nuevo Cliente</h3>
@@ -106,7 +106,7 @@
                         <label class="block text-xs font-bold text-gray-700 mb-1">Unidad de Medida *</label>
 
                         <!-- 2. Changed ID from cliente-unidad to modal-unidad to match JavaScript -->
-                        <select id="modal-unidad"
+                        <select id="modal-unidad" onchange="handleClientUnitChange()"
                             class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"
                             required>
                             <option value="tonelada">Tonelada (L / Ton)</option>
@@ -116,16 +116,48 @@
                     </div>
                 </div>
 
+                <div id="modal-precios-tonelada-container"
+                    class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg mt-2">
+                    <div class="flex items-start gap-2 mb-3">
+                        <span class="material-icons text-blue-600 text-[18px]">calculate</span>
+                        <div>
+                            <p class="text-xs font-black text-blue-900 uppercase tracking-wide">Precio en Tonelada</p>
+                            <p class="text-[11px] text-blue-700 mt-1">El precio por quintal se calcula automáticamente:
+                                precio por tonelada ÷ 22.04, redondeado a la décima más cercana.</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-blue-900 mb-1">Flete NUESTRO (HNL / Ton)
+                                *</label>
+                            <input type="text" id="modal-precio-ton-propio"
+                                oninput="formatCurrencyInput(event); recalculateQuintalPrices()"
+                                class="w-full border border-blue-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-950"
+                                placeholder="Ej. 2,500">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-blue-900 mb-1">Flete CLIENTE (HNL / Ton)
+                                *</label>
+                            <input type="text" id="modal-precio-ton-cliente"
+                                oninput="formatCurrencyInput(event); recalculateQuintalPrices()"
+                                class="w-full border border-blue-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-950"
+                                placeholder="Ej. 2,300">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="flex gap-4 p-4 bg-gray-50 border border-gray-200 rounded-lg mt-2">
                     <div class="flex-1">
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Flete NUESTRO (HNL) *</label>
-                        <input type="text" id="modal-precio-propio" oninput="formatCurrencyInput(event)"
+                        <label id="modal-precio-propio-label" class="block text-xs font-bold text-gray-600 mb-1">Flete
+                            NUESTRO (HNL / Ton) *</label>
+                        <input type="text" id="modal-precio-propio" oninput="formatDecimalThousandsInput(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
                             required>
                     </div>
                     <div class="flex-1">
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Flete CLIENTE (HNL) *</label>
-                        <input type="text" id="modal-precio-cliente" oninput="formatCurrencyInput(event)"
+                        <label id="modal-precio-cliente-label" class="block text-xs font-bold text-gray-600 mb-1">Flete
+                            CLIENTE (HNL / Ton) *</label>
+                        <input type="text" id="modal-precio-cliente" oninput="formatDecimalThousandsInput(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
                             required>
                     </div>
@@ -269,9 +301,9 @@
 
     <!-- CORAPSA RECEIPT MODAL (UPDATED) -->
 
-    <div id="corapsa-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+    <div id="corapsa-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
 
-        <div class="bg-white rounded-2xl shadow-2xl w-[600px] overflow-hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-[700px] max-w-full max-h-[94vh] overflow-hidden flex flex-col">
 
             <div class="bg-blue-900 px-6 py-4 flex justify-between items-center text-white">
 
@@ -282,7 +314,7 @@
 
             </div>
 
-            <div class="p-6 flex flex-col gap-4">
+            <div class="p-6 flex flex-col gap-4 overflow-y-auto">
 
                 <input type="hidden" id="corapsa-edit-id">
 
@@ -350,33 +382,52 @@
 
                 <!-- ATTACHMENT SECTION -->
 
-                <div class="bg-gray-50 p-4 border border-gray-200 rounded-lg flex flex-col gap-3">
+                <div class="bg-gray-50 p-4 border border-gray-200 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                    <div>
-
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Adjuntar Archivo de Cliente
-
-                            (Opcional)</label>
-
+                    <div class="border border-blue-200 bg-white rounded-lg p-3">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <div>
+                                <label class="block text-xs font-bold text-blue-800">Archivo del Cliente</label>
+                                <p id="corapsa-current-cliente"
+                                    class="text-[11px] text-gray-500 truncate max-w-[220px]">Sin archivo guardado</p>
+                            </div>
+                            <button type="button" id="corapsa-current-cliente-preview"
+                                class="hidden text-xs font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1">
+                                <span class="material-icons text-[16px]">visibility</span> Ver actual
+                            </button>
+                        </div>
                         <input type="file" id="corapsa-file" accept="application/pdf,image/*"
-                            class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-
+                            class="w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <p class="mt-2 text-[10px] text-gray-400">Al editar, seleccionar un archivo nuevo reemplaza el
+                            anterior.</p>
                     </div>
 
-                    <div>
+                    <div class="border border-emerald-200 bg-white rounded-lg p-3">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <div>
+                                <label class="block text-xs font-bold text-emerald-800">Archivo Nuestro</label>
+                                <p id="corapsa-current-nuestro"
+                                    class="text-[11px] text-gray-500 truncate max-w-[220px]">Sin archivo guardado</p>
+                            </div>
+                            <button type="button" id="corapsa-current-nuestro-preview"
+                                class="hidden text-xs font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1">
+                                <span class="material-icons text-[16px]">visibility</span> Ver actual
+                            </button>
+                        </div>
+                        <input type="file" id="corapsa-file-nuestro" accept="application/pdf,image/*"
+                            class="w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
+                        <p class="mt-2 text-[10px] text-gray-400">Imágenes o PDF, máximo 10 MB.</p>
+                    </div>
 
+                    <div class="md:col-span-2">
                         <label class="block text-xs font-bold text-gray-600 mb-1">Recibo Nuestro (Comprobante
-
                             Interno)</label>
-
                         <input type="text" id="corapsa-recibo-out"
                             class="w-full border rounded p-2 bg-gray-100 text-gray-500 outline-none font-mono text-sm"
                             value="Se generará automáticamente" disabled>
-
                     </div>
 
                 </div>
-
 
 
                 <div class="mt-2 bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center">
@@ -432,16 +483,16 @@
             </div>
 
             <div class="px-6 py-4 border-t bg-white flex justify-between items-center gap-3 shrink-0">
-                <p class="text-xs text-gray-500">PDF e imágenes seleccionados en esta sesión pueden visualizarse aquí.
+                <p id="viewer-hint" class="text-xs text-gray-500">Haga clic sobre la imagen para verla en tamaño real.
                 </p>
                 <div class="flex gap-3">
-                    <button onclick="solicitarEliminarArchivoActual()"
+                    <button type="button" id="viewer-delete-button" onclick="solicitarEliminarArchivoActual()"
                         class="px-4 py-2 bg-red-100 text-red-700 font-bold rounded-lg hover:bg-red-600 hover:text-white flex items-center gap-2">
                         <span class="material-icons text-[18px]">delete</span> Eliminar archivo
                     </button>
-                    <button onclick="solicitarReemplazarArchivoActual()"
+                    <button type="button" id="viewer-replace-button" onclick="solicitarReemplazarArchivoActual()"
                         class="px-4 py-2 bg-blue-100 text-blue-700 font-bold rounded-lg hover:bg-blue-600 hover:text-white flex items-center gap-2">
-                        <span class="material-icons text-[18px]">change_circle</span> Reemplazar
+                        <span class="material-icons text-[18px]">change_circle</span> <span data-label>Reemplazar</span>
                     </button>
                 </div>
             </div>
@@ -488,6 +539,10 @@
                     <input type="text" id="ajuste-monto" oninput="formatCurrencyInput(event)"
                         class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold text-lg text-brand-900"
                         placeholder="Ej. 1000">
+                    <p class="mt-2 text-[11px] leading-relaxed text-gray-500">
+                        El ajuste siempre se aplica al precio por tonelada. Los clientes pagados en quintales se
+                        recalculan automáticamente con ÷ 22.04 y redondeo a una décima.
+                    </p>
 
 
                 </div>
@@ -524,9 +579,9 @@
 
     <!-- GASTOS MODAL -->
 
-    <div id="gastos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+    <div id="gastos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
 
-        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] max-w-full max-h-[94vh] overflow-hidden flex flex-col">
 
             <div class="bg-red-900 px-6 py-4 flex justify-between items-center text-white">
 
@@ -537,7 +592,7 @@
 
             </div>
 
-            <div class="p-6 flex flex-col gap-4">
+            <div class="p-6 flex flex-col gap-4 overflow-y-auto">
 
                 <input type="hidden" id="gastos-edit-id">
 
@@ -586,12 +641,21 @@
                 </div>
 
                 <div class="bg-gray-50 p-3 border border-gray-200 rounded-lg">
-
-                    <label class="block text-xs font-bold text-gray-600 mb-1">Recibo / Factura Adjunta</label>
-
-                    <input type="file" id="gastos-file"
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-600">Recibo / Factura Adjunta</label>
+                            <p id="gastos-current-file" class="text-[11px] text-gray-500 truncate max-w-[280px]">Sin
+                                archivo guardado</p>
+                        </div>
+                        <button type="button" id="gastos-current-file-preview"
+                            class="hidden text-xs font-bold text-red-700 hover:text-red-900 flex items-center gap-1">
+                            <span class="material-icons text-[16px]">visibility</span> Ver actual
+                        </button>
+                    </div>
+                    <input type="file" id="gastos-file" accept="application/pdf,image/*"
                         class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100">
-
+                    <p class="mt-2 text-[10px] text-gray-400">Al editar, seleccionar otro archivo reemplaza el recibo
+                        actual. Máximo 10 MB.</p>
                 </div>
 
                 <div class="mt-4 flex justify-end gap-3">
@@ -1229,19 +1293,6 @@
 
                         <h2 class="text-2xl font-bold text-gray-800">Reportes de Transacciones</h2>
 
-                        <div class="flex items-center gap-3 mt-1">
-
-                            <label class="text-sm font-semibold text-gray-600">Factor de Conversión:</label>
-
-                            <span class="text-xs bg-gray-200 px-2 py-1 rounded">1 Ton = </span>
-
-                            <input type="number" id="factor-conversion" value="2.2046" step="0.0001"
-                                onchange="updateReportesTab()"
-                                class="w-20 p-1 border rounded text-right font-bold outline-none focus:ring-1 focus:ring-brand-500">
-
-                            <span class="text-xs">Quintales</span>
-
-                        </div>
 
                     </div>
 
@@ -1274,51 +1325,63 @@
 
 
 
-                <div class="flex gap-6 shrink-0">
+                <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 shrink-0">
 
-                    <div
-                        class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3">
 
-                        <div class="bg-blue-100 text-blue-600 p-4 rounded-full"><span
+                        <div class="bg-blue-100 text-blue-600 p-3 rounded-full"><span
                                 class="material-icons text-3xl">local_shipping</span></div>
 
                         <div>
 
                             <p class="text-sm font-bold text-gray-500 uppercase">Camiones</p>
 
-                            <h3 id="rep-camiones" class="text-3xl font-black text-gray-800 font-mono">0</h3>
+                            <h3 id="rep-camiones" class="text-2xl font-black text-gray-800 font-mono">0</h3>
 
                         </div>
 
                     </div>
 
-                    <div
-                        class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3">
 
-                        <div class="bg-brand-100 text-brand-600 p-4 rounded-full"><span
+                        <div class="bg-brand-100 text-brand-600 p-3 rounded-full"><span
                                 class="material-icons text-3xl">monitor_weight</span></div>
 
                         <div>
 
                             <p class="text-sm font-bold text-gray-500 uppercase">Total Toneladas</p>
 
-                            <h3 id="rep-toneladas" class="text-3xl font-black text-gray-800 font-mono">0.00</h3>
+                            <h3 id="rep-toneladas" class="text-2xl font-black text-gray-800 font-mono">0.00</h3>
 
                         </div>
 
                     </div>
 
-                    <div
-                        class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-1 flex items-center gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3">
 
-                        <div class="bg-green-100 text-green-600 p-4 rounded-full"><span
+                        <div class="bg-amber-100 text-amber-600 p-3 rounded-full"><span
+                                class="material-icons text-3xl">scale</span></div>
+
+                        <div>
+
+                            <p class="text-sm font-bold text-gray-500 uppercase">Total Libras</p>
+
+                            <h3 id="rep-libras" class="text-2xl font-black text-gray-800 font-mono">0 LBS</h3>
+
+                        </div>
+
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3">
+
+                        <div class="bg-green-100 text-green-600 p-3 rounded-full"><span
                                 class="material-icons text-3xl">account_balance_wallet</span></div>
 
                         <div>
 
                             <p class="text-sm font-bold text-gray-500 uppercase">Total Invertido (HNL)</p>
 
-                            <h3 id="rep-dinero" class="text-3xl font-black text-gray-800 font-mono">L 0.00</h3>
+                            <h3 id="rep-dinero" class="text-2xl font-black text-gray-800 font-mono">L 0.00</h3>
 
                         </div>
 
@@ -1345,6 +1408,8 @@
                                     <th class="p-4 font-semibold">Cliente</th>
 
                                     <th class="p-4 font-semibold text-right">Neto (LBS)</th>
+
+                                    <th class="p-4 font-semibold text-right">Tons</th>
 
                                     <th class="p-4 font-semibold text-right">Precio/Unidad</th>
 

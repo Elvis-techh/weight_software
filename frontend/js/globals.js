@@ -3,7 +3,9 @@ const API_URL = 'http://localhost:3000';
 const APP_CONFIG = Object.freeze({
     lbsPerMetricTon: 2204.62262185,
     lbsPerQuintal: 100,
-    scaleReadingMaxAgeMs: 3000
+    quintalesPerTon: 22.04,
+    scaleReadingMaxAgeMs: 3000,
+    maxAttachmentBytes: 10 * 1024 * 1024
 });
 
 let MOCK_CLIENTES = [];
@@ -22,7 +24,7 @@ let planillaData = [];
 let activeUploadId = null;
 let activeUploadType = null;
 let activeUploadJustification = null;
-let activeReceiptViewer = { id: null, type: null };
+let activeReceiptViewer = { module: null, id: null, type: null };
 let activeCorapsaEditJustification = '';
 
 let activeTransaction = createEmptyTransaction();
@@ -199,3 +201,49 @@ function calculatePayment(netWeightLbs, price, unit) {
 
     return (net / divisor) * appliedPrice;
 }
+
+function isPreviewableAttachmentType(mimeType) {
+    const mime = String(mimeType || '').toLowerCase();
+    return mime === 'application/pdf' || mime.startsWith('image/');
+}
+
+function isImageAttachmentType(mimeType) {
+    return String(mimeType || '').toLowerCase().startsWith('image/');
+}
+
+function validateAttachmentFile(file) {
+    if (!(file instanceof File)) throw new Error('Seleccione un archivo válido.');
+    if (!isPreviewableAttachmentType(file.type)) {
+        throw new Error('Solo se permiten imágenes y archivos PDF.');
+    }
+    if (file.size <= 0) throw new Error('El archivo seleccionado está vacío.');
+    if (file.size > APP_CONFIG.maxAttachmentBytes) {
+        throw new Error('El archivo supera el límite de 10 MB.');
+    }
+}
+
+function readFileAsDataUrl(file) {
+    validateAttachmentFile(file);
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo seleccionado.'));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function buildAttachmentPayload(file) {
+    if (!file) return null;
+    const dataUrl = await readFileAsDataUrl(file);
+    return {
+        fileName: file.name,
+        mimeType: file.type,
+        dataUrl
+    };
+}
+
+function buildApiUrl(path) {
+    return `${API_URL}${path}`;
+}
+

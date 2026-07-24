@@ -1,14 +1,78 @@
+const QUINTALES_PER_TON = Number(APP_CONFIG.quintalesPerTon || 22.04);
+
+function roundToNearestTenth(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return NaN;
+    return Math.round((number + Number.EPSILON) * 10) / 10;
+}
+
+function roundToCurrency(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return NaN;
+    return Math.round((number + Number.EPSILON) * 100) / 100;
+}
+
+function pricePerQuintalFromTon(priceInTon) {
+    const price = Number(priceInTon);
+    if (!Number.isFinite(price)) return NaN;
+    return roundToNearestTenth(price / QUINTALES_PER_TON);
+}
+
+function recoverTonPrice(unitPrice, unit) {
+    const price = toFiniteNumber(unitPrice);
+    return unit === 'quintal'
+        ? roundToCurrency(price * QUINTALES_PER_TON)
+        : price;
+}
+
 function normalizarCliente(record = {}) {
+    const unidad = record.unidad === 'quintal' ? 'quintal' : 'tonelada';
+    const precioFletePropio = toFiniteNumber(record.precioFletePropio ?? record.precio_flete_propio);
+    const precioFleteCliente = toFiniteNumber(record.precioFleteCliente ?? record.precio_flete_cliente);
+
+    const tonPropioRaw = parseFormattedNumber(
+        record.precioToneladaPropio ?? record.precio_tonelada_propio
+    );
+    const tonClienteRaw = parseFormattedNumber(
+        record.precioToneladaCliente ?? record.precio_tonelada_cliente
+    );
+
     return {
         id: record.id,
         nombre: String(record.nombre || '').trim(),
         apellido: String(record.apellido || '').trim(),
         telefono: String(record.telefono || '').trim(),
         ubicacion: String(record.ubicacion || '').trim(),
-        precioFletePropio: toFiniteNumber(record.precioFletePropio ?? record.precio_flete_propio),
-        precioFleteCliente: toFiniteNumber(record.precioFleteCliente ?? record.precio_flete_cliente),
-        unidad: record.unidad === 'quintal' ? 'quintal' : 'tonelada'
+        precioFletePropio,
+        precioFleteCliente,
+        precioToneladaPropio: Number.isFinite(tonPropioRaw)
+            ? tonPropioRaw
+            : recoverTonPrice(precioFletePropio, unidad),
+        precioToneladaCliente: Number.isFinite(tonClienteRaw)
+            ? tonClienteRaw
+            : recoverTonPrice(precioFleteCliente, unidad),
+        unidad
     };
+}
+
+function formatClientUnitPrice(value, unit) {
+    return toFiniteNumber(value).toLocaleString('en-US', {
+        minimumFractionDigits: unit === 'quintal' ? 1 : 2,
+        maximumFractionDigits: unit === 'quintal' ? 1 : 2
+    });
+}
+
+function renderClientPrice(price, tonPrice, unit, textClass) {
+    const baseTon = unit === 'quintal'
+        ? `<div class="mt-1 text-[10px] font-sans font-semibold text-gray-400">Base Ton: L ${formatMoney(tonPrice)}</div>`
+        : '';
+
+    return `
+        <td class="p-3 text-sm font-mono font-bold ${textClass}">
+            L ${formatClientUnitPrice(price, unit)}
+            ${baseTon}
+        </td>
+    `;
 }
 
 function renderClientesTab() {
@@ -61,8 +125,8 @@ function renderClientesTab() {
             <td class="p-3 text-sm font-bold text-gray-800">${escapeHtml(`${cliente.nombre} ${cliente.apellido}`.trim())}</td>
             <td class="p-3 text-sm text-gray-600">${escapeHtml(cliente.telefono || '-')}</td>
             <td class="p-3 text-sm text-gray-600">${escapeHtml(cliente.ubicacion || '-')}</td>
-            <td class="p-3 text-sm font-mono font-bold text-blue-700">L ${formatMoney(cliente.precioFletePropio)}</td>
-            <td class="p-3 text-sm font-mono font-bold text-teal-700">L ${formatMoney(cliente.precioFleteCliente)}</td>
+            ${renderClientPrice(cliente.precioFletePropio, cliente.precioToneladaPropio, cliente.unidad, 'text-blue-700')}
+            ${renderClientPrice(cliente.precioFleteCliente, cliente.precioToneladaCliente, cliente.unidad, 'text-teal-700')}
             <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase">${cliente.unidad === 'quintal' ? 'QQ' : 'TON'}</td>
             <td class="p-3 text-center">
                 <div class="flex justify-center gap-2">
@@ -169,9 +233,89 @@ function guardarCasual() {
     mostrarNotificacion('Cliente casual configurado.');
 }
 
+function setDerivedPriceInputState(input, isDerived) {
+    input.readOnly = isDerived;
+    input.classList.toggle('bg-gray-100', isDerived);
+    input.classList.toggle('text-gray-600', isDerived);
+    input.classList.toggle('cursor-not-allowed', isDerived);
+}
+
+function recalculateQuintalPrices() {
+    const unidad = document.getElementById('modal-unidad')?.value;
+    if (unidad !== 'quintal') return;
+
+    const pairs = [
+        ['modal-precio-ton-propio', 'modal-precio-propio'],
+        ['modal-precio-ton-cliente', 'modal-precio-cliente']
+    ];
+
+    pairs.forEach(([tonInputId, quintalInputId]) => {
+        const priceInTon = parseFormattedNumber(document.getElementById(tonInputId)?.value);
+        const target = document.getElementById(quintalInputId);
+        if (!target) return;
+
+        const calculated = pricePerQuintalFromTon(priceInTon);
+        target.value = Number.isFinite(calculated)
+            ? formatNumberForInput(calculated, 1)
+            : '';
+    });
+}
+
+function applyClientUnitFieldState() {
+    const unitSelect = document.getElementById('modal-unidad');
+    const tonContainer = document.getElementById('modal-precios-tonelada-container');
+    const ownPriceInput = document.getElementById('modal-precio-propio');
+    const clientPriceInput = document.getElementById('modal-precio-cliente');
+    const ownTonInput = document.getElementById('modal-precio-ton-propio');
+    const clientTonInput = document.getElementById('modal-precio-ton-cliente');
+    const ownLabel = document.getElementById('modal-precio-propio-label');
+    const clientLabel = document.getElementById('modal-precio-cliente-label');
+
+    if (!unitSelect || !tonContainer || !ownPriceInput || !clientPriceInput || !ownTonInput || !clientTonInput) return;
+
+    const isQuintal = unitSelect.value === 'quintal';
+    tonContainer.classList.toggle('hidden', !isQuintal);
+    ownTonInput.required = isQuintal;
+    clientTonInput.required = isQuintal;
+    setDerivedPriceInputState(ownPriceInput, isQuintal);
+    setDerivedPriceInputState(clientPriceInput, isQuintal);
+
+    if (ownLabel) ownLabel.textContent = isQuintal ? 'Flete NUESTRO calculado (HNL / QQ) *' : 'Flete NUESTRO (HNL / Ton) *';
+    if (clientLabel) clientLabel.textContent = isQuintal ? 'Flete CLIENTE calculado (HNL / QQ) *' : 'Flete CLIENTE (HNL / Ton) *';
+
+    if (isQuintal) recalculateQuintalPrices();
+}
+
+function handleClientUnitChange() {
+    const unitSelect = document.getElementById('modal-unidad');
+    if (!unitSelect) return;
+
+    const previousUnit = unitSelect.dataset.previousUnit || 'tonelada';
+    const nextUnit = unitSelect.value;
+    const ownVisible = document.getElementById('modal-precio-propio');
+    const clientVisible = document.getElementById('modal-precio-cliente');
+    const ownTon = document.getElementById('modal-precio-ton-propio');
+    const clientTon = document.getElementById('modal-precio-ton-cliente');
+
+    if (previousUnit !== nextUnit && nextUnit === 'quintal') {
+        if (!ownTon.value.trim()) ownTon.value = ownVisible.value;
+        if (!clientTon.value.trim()) clientTon.value = clientVisible.value;
+    } else if (previousUnit !== nextUnit && nextUnit === 'tonelada') {
+        if (ownTon.value.trim()) ownVisible.value = ownTon.value;
+        if (clientTon.value.trim()) clientVisible.value = clientTon.value;
+    }
+
+    unitSelect.dataset.previousUnit = nextUnit;
+    applyClientUnitFieldState();
+}
+
 function abrirModalCliente(id = null) {
     const modal = document.getElementById('client-modal');
+    const form = document.getElementById('client-form');
     const justificationContainer = document.getElementById('modal-justificacion-container');
+    const unitSelect = document.getElementById('modal-unidad');
+
+    form.reset();
 
     if (id !== null) {
         const cliente = MOCK_CLIENTES.find(item => sameRecordId(item.id, id));
@@ -183,21 +327,25 @@ function abrirModalCliente(id = null) {
         document.getElementById('modal-apellido').value = cliente.apellido;
         document.getElementById('modal-telefono').value = cliente.telefono;
         document.getElementById('modal-ubicacion').value = cliente.ubicacion;
-        document.getElementById('modal-unidad').value = cliente.unidad;
-        document.getElementById('modal-precio-propio').value = formatNumberForInput(cliente.precioFletePropio, 2);
-        document.getElementById('modal-precio-cliente').value = formatNumberForInput(cliente.precioFleteCliente, 2);
+        unitSelect.value = cliente.unidad;
+        unitSelect.dataset.previousUnit = cliente.unidad;
+        document.getElementById('modal-precio-propio').value = formatNumberForInput(cliente.precioFletePropio, cliente.unidad === 'quintal' ? 1 : 2);
+        document.getElementById('modal-precio-cliente').value = formatNumberForInput(cliente.precioFleteCliente, cliente.unidad === 'quintal' ? 1 : 2);
+        document.getElementById('modal-precio-ton-propio').value = formatNumberForInput(cliente.precioToneladaPropio, 2);
+        document.getElementById('modal-precio-ton-cliente').value = formatNumberForInput(cliente.precioToneladaCliente, 2);
         document.getElementById('modal-justificacion').value = '';
         justificationContainer.classList.remove('hidden');
         justificationContainer.classList.add('flex');
     } else {
-        document.getElementById('client-form').reset();
         document.getElementById('modal-title').textContent = 'Nuevo Cliente';
         document.getElementById('modal-client-id').value = '';
-        document.getElementById('modal-unidad').value = 'tonelada';
+        unitSelect.value = 'tonelada';
+        unitSelect.dataset.previousUnit = 'tonelada';
         justificationContainer.classList.add('hidden');
         justificationContainer.classList.remove('flex');
     }
 
+    applyClientUnitFieldState();
     modal.classList.remove('hidden');
     setTimeout(() => document.getElementById('modal-nombre')?.focus(), 0);
 }
@@ -205,6 +353,8 @@ function abrirModalCliente(id = null) {
 function cerrarModalCliente() {
     document.getElementById('client-modal').classList.add('hidden');
     document.getElementById('client-form')?.reset();
+    const unitSelect = document.getElementById('modal-unidad');
+    if (unitSelect) unitSelect.dataset.previousUnit = 'tonelada';
 }
 
 function getRequiredElement(id) {
@@ -216,31 +366,51 @@ function getRequiredElement(id) {
 async function guardarCliente(event) {
     event?.preventDefault?.();
 
-    const form = getRequiredElement('client-form');
     const saveButton = event?.submitter || document.getElementById('btn-guardar-cliente');
     const clientId = getRequiredElement('modal-client-id').value;
     const justificacion = getRequiredElement('modal-justificacion').value.trim();
+    const unidad = getRequiredElement('modal-unidad').value;
+
+    let precioFletePropio = parseFormattedNumber(getRequiredElement('modal-precio-propio').value);
+    let precioFleteCliente = parseFormattedNumber(getRequiredElement('modal-precio-cliente').value);
+    let precioToneladaPropio = precioFletePropio;
+    let precioToneladaCliente = precioFleteCliente;
+
+    if (unidad === 'quintal') {
+        precioToneladaPropio = parseFormattedNumber(getRequiredElement('modal-precio-ton-propio').value);
+        precioToneladaCliente = parseFormattedNumber(getRequiredElement('modal-precio-ton-cliente').value);
+        precioFletePropio = pricePerQuintalFromTon(precioToneladaPropio);
+        precioFleteCliente = pricePerQuintalFromTon(precioToneladaCliente);
+    }
 
     const clienteData = {
         nombre: getRequiredElement('modal-nombre').value.trim().replace(/\s+/g, ' '),
         apellido: getRequiredElement('modal-apellido').value.trim().replace(/\s+/g, ' '),
         telefono: getRequiredElement('modal-telefono').value.trim(),
         ubicacion: getRequiredElement('modal-ubicacion').value.trim(),
-        precioFletePropio: parseFormattedNumber(getRequiredElement('modal-precio-propio').value),
-        precioFleteCliente: parseFormattedNumber(getRequiredElement('modal-precio-cliente').value),
-        unidad: getRequiredElement('modal-unidad').value,
+        precioFletePropio,
+        precioFleteCliente,
+        precioToneladaPropio,
+        precioToneladaCliente,
+        unidad,
         justificacion
     };
 
     if (!clienteData.nombre) return mostrarNotificacion('El nombre es obligatorio.', 'error');
+    if (!['tonelada', 'quintal'].includes(clienteData.unidad)) {
+        return mostrarNotificacion('La unidad seleccionada no es válida.', 'error');
+    }
+    if (!Number.isFinite(clienteData.precioToneladaPropio) || clienteData.precioToneladaPropio < 0) {
+        return mostrarNotificacion('Precio en tonelada de flete nuestro inválido.', 'error');
+    }
+    if (!Number.isFinite(clienteData.precioToneladaCliente) || clienteData.precioToneladaCliente < 0) {
+        return mostrarNotificacion('Precio en tonelada de flete cliente inválido.', 'error');
+    }
     if (!Number.isFinite(clienteData.precioFletePropio) || clienteData.precioFletePropio < 0) {
         return mostrarNotificacion('Precio de flete nuestro inválido.', 'error');
     }
     if (!Number.isFinite(clienteData.precioFleteCliente) || clienteData.precioFleteCliente < 0) {
         return mostrarNotificacion('Precio de flete del cliente inválido.', 'error');
-    }
-    if (!['tonelada', 'quintal'].includes(clienteData.unidad)) {
-        return mostrarNotificacion('La unidad seleccionada no es válida.', 'error');
     }
     if (clientId && !justificacion) {
         return mostrarNotificacion('Debe ingresar una justificación para editar el cliente.', 'error');
@@ -312,28 +482,49 @@ async function aplicarAjusteGlobalForm() {
     }
     if (!razon) return mostrarNotificacion('Debe ingresar una justificación.', 'error');
 
-    const monto = accion === 'disminuir' ? -montoBase : montoBase;
+    const montoTonelada = accion === 'disminuir' ? -montoBase : montoBase;
+    const invalidClient = MOCK_CLIENTES.find(cliente =>
+        cliente.precioToneladaPropio + montoTonelada < 0 ||
+        cliente.precioToneladaCliente + montoTonelada < 0
+    );
+
+    if (invalidClient) {
+        return mostrarNotificacion(
+            `El ajuste dejaría un precio negativo para ${invalidClient.nombre}.`,
+            'error'
+        );
+    }
 
     try {
         const result = await apiRequest('/api/clientes/ajuste-global', {
             method: 'POST',
-            body: { monto, razon }
+            body: { montoTonelada, monto: montoTonelada, razon }
         });
 
         if (Array.isArray(result?.clientes)) {
             MOCK_CLIENTES = result.clientes.map(normalizarCliente);
         } else {
-            MOCK_CLIENTES = MOCK_CLIENTES.map(cliente => ({
-                ...cliente,
-                precioFletePropio: cliente.precioFletePropio + monto,
-                precioFleteCliente: cliente.precioFleteCliente + monto
-            }));
+            MOCK_CLIENTES = MOCK_CLIENTES.map(cliente => {
+                const precioToneladaPropio = roundToCurrency(cliente.precioToneladaPropio + montoTonelada);
+                const precioToneladaCliente = roundToCurrency(cliente.precioToneladaCliente + montoTonelada);
+                return {
+                    ...cliente,
+                    precioToneladaPropio,
+                    precioToneladaCliente,
+                    precioFletePropio: cliente.unidad === 'quintal'
+                        ? pricePerQuintalFromTon(precioToneladaPropio)
+                        : precioToneladaPropio,
+                    precioFleteCliente: cliente.unidad === 'quintal'
+                        ? pricePerQuintalFromTon(precioToneladaCliente)
+                        : precioToneladaCliente
+                };
+            });
         }
 
         renderClientesTab();
         populateClienteDropdown();
         cerrarAjusteGlobal();
-        mostrarNotificacion('Precios actualizados exitosamente.');
+        mostrarNotificacion('Precios actualizados y clientes en quintales recalculados.');
     } catch (error) {
         console.error('Error al aplicar ajuste global:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar el ajuste.', 'error');
