@@ -61,119 +61,96 @@
 
 
     <!-- STANDARD CLIENT MODAL -->
-
     <div id="client-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
-
         <div class="bg-white rounded-2xl shadow-2xl w-[600px] overflow-hidden">
 
             <div class="bg-brand-900 px-6 py-4 flex justify-between items-center text-white">
-
                 <h3 class="font-bold text-lg" id="modal-title">Nuevo Cliente</h3>
-
-                <button onclick="cerrarModalCliente()" class="hover:text-red-400 transition-colors"><span
-                        class="material-icons">close</span></button>
-
+                <button type="button" onclick="cerrarModalCliente()" class="hover:text-red-400 transition-colors">
+                    <span class="material-icons">close</span>
+                </button>
             </div>
 
-            <div class="p-6 flex flex-col gap-4">
+            <!-- 1. Changed this from a <div> to a <form id="client-form"> -->
+            <form id="client-form" class="p-6 flex flex-col gap-4">
 
                 <input type="hidden" id="modal-client-id">
 
                 <div class="flex gap-4">
-
                     <div class="flex-1">
-
                         <label class="block text-xs font-bold text-gray-600 mb-1">Nombre *</label>
-
                         <input type="text" id="modal-nombre"
+                            onblur="this.value = this.value.trim().replace(/\s+/g, ' ')"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
-
                     </div>
-
                     <div class="flex-1">
-
                         <label class="block text-xs font-bold text-gray-600 mb-1">Apellido</label>
-
                         <input type="text" id="modal-apellido"
+                            onblur="this.value = this.value.trim().replace(/\s+/g, ' ')"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
-
                     </div>
-
                 </div>
 
                 <div class="flex gap-4">
-
                     <div class="flex-1">
-
                         <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono (Opcional)</label>
-
                         <input type="text" id="modal-telefono" oninput="formatPhone(event)" onfocus="initPhone(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none placeholder-gray-400">
-
                     </div>
-
                     <div class="flex-1">
-
                         <label class="block text-xs font-bold text-gray-600 mb-1">Ubicación (Opcional)</label>
-
                         <input type="text" id="modal-ubicacion"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
-
                     </div>
-
                     <div class="col-span-2 sm:col-span-1">
                         <label class="block text-xs font-bold text-gray-700 mb-1">Unidad de Medida *</label>
-                        <select id="cliente-unidad"
+
+                        <!-- 2. Changed ID from cliente-unidad to modal-unidad to match JavaScript -->
+                        <select id="modal-unidad"
                             class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"
                             required>
                             <option value="tonelada">Tonelada (L / Ton)</option>
                             <option value="quintal">Quintal (L / Qq)</option>
                         </select>
-                    </div>
 
+                    </div>
                 </div>
 
                 <div class="flex gap-4 p-4 bg-gray-50 border border-gray-200 rounded-lg mt-2">
-
                     <div class="flex-1">
-
                         <label class="block text-xs font-bold text-gray-600 mb-1">Flete NUESTRO (HNL) *</label>
-
                         <input type="text" id="modal-precio-propio" oninput="formatCurrencyInput(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
                             required>
-
                     </div>
-
                     <div class="flex-1">
-
                         <label class="block text-xs font-bold text-gray-600 mb-1">Flete CLIENTE (HNL) *</label>
-
                         <input type="text" id="modal-precio-cliente" oninput="formatCurrencyInput(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
                             required>
-
                     </div>
+                </div>
 
+                <!-- NEW: Justification box (Hidden by default, shown only when editing) -->
+                <div id="modal-justificacion-container"
+                    class="hidden flex-col gap-1 mt-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <label class="text-xs font-bold text-yellow-800">Justificación del Cambio *</label>
+                    <input type="text" id="modal-justificacion"
+                        class="w-full border border-yellow-300 rounded p-2 focus:ring-2 focus:ring-yellow-500 outline-none"
+                        placeholder="Escriba la razón de la modificación...">
                 </div>
 
                 <div class="mt-4 flex justify-end gap-3">
-
-                    <button onclick="cerrarModalCliente()"
+                    <!-- 3. Added type="button" so this doesn't accidentally trigger a save -->
+                    <button type="button" onclick="cerrarModalCliente()"
                         class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
-
-                    <button onclick="guardarCliente()"
+                    <button onclick="guardarCliente(event)"
                         class="px-6 py-2 bg-brand-500 text-white font-bold rounded shadow hover:bg-brand-600">Guardar</button>
-
                 </div>
 
-            </div>
-
+            </form> <!-- 4. Closed the form tag -->
         </div>
-
     </div>
-
-
 
     <!-- CASUAL CLIENT MODAL (UPDATED) -->
 
@@ -508,9 +485,10 @@
 
                     <label class="block text-xs font-bold text-gray-600 mb-1">Monto (Lempiras por Tonelada)</label>
 
-                    <input type="number" id="ajuste-monto"
+                    <input type="text" id="ajuste-monto" oninput="formatCurrencyInput(event)"
                         class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold text-lg text-brand-900"
                         placeholder="Ej. 1000">
+
 
                 </div>
 
@@ -1166,26 +1144,17 @@
 
                         <table class="w-full text-left">
 
-                            <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm">
-
-                                <tr class="text-gray-500 text-xs uppercase tracking-wider">
-
-                                    <th class="p-4 font-semibold">ID</th>
-
-                                    <th class="p-4 font-semibold">Nombre del Cliente</th>
-
-                                    <th class="p-4 font-semibold">Teléfono</th>
-
-                                    <th class="p-4 font-semibold text-right">Flete Propio (L)</th>
-
-                                    <th class="p-4 font-semibold text-right">Flete Cliente (L)</th>
-
+                            <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm z-10">
+                                <tr class="text-gray-500 text-xs uppercase tracking-wider text-left">
+                                    <th class="p-3 font-semibold">ID</th>
+                                    <th class="p-3 font-semibold">Nombre del Cliente</th>
+                                    <th class="p-3 font-semibold">Teléfono</th>
+                                    <th class="p-3 font-semibold">Ubicación</th>
+                                    <th class="p-3 font-semibold">Flete Propio (L)</th>
+                                    <th class="p-3 font-semibold">Flete Cliente (L)</th>
                                     <th class="p-3 font-semibold text-center">Unidad</th>
-
-                                    <th class="p-4 font-semibold text-center">Acciones</th>
-
+                                    <th class="p-3 font-semibold text-center">Acciones</th>
                                 </tr>
-
                             </thead>
 
                             <tbody id="clients-table-body" class="divide-y divide-gray-100">

@@ -60,11 +60,11 @@ async function initApp() {
 
     renderClientesTab();
     populateClienteDropdown();
-    updateReportesTab();
     renderCorapsaTab();
     renderGastos();
     renderPlanilla();
     renderQueue();
+    await fetchTransacciones();
 
     await Promise.allSettled([
         fetchClientes(),

@@ -62,6 +62,62 @@ app.post('/api/clientes', async (req, res) => {
         res.status(500).json({ error: { message: "Error al guardar el cliente en la base de datos." } });
     }
 });
+
+// 3. POST: Ajuste Global for all clients
+app.post('/api/clientes/ajuste-global', async (req, res) => {
+    try {
+        const { monto } = req.body;
+
+        if (typeof monto !== 'number') {
+            return res.status(400).json({ error: { message: "Monto inválido para el ajuste global." } });
+        }
+
+        // Update both price columns for ALL clients in the database simultaneously
+        await db.run(`
+            UPDATE clientes 
+            SET precio_flete_propio = precio_flete_propio + ?, 
+                precio_flete_cliente = precio_flete_cliente + ?
+        `, [monto, monto]);
+
+        res.json({ message: "Ajuste global aplicado correctamente a todos los clientes." });
+    } catch (error) {
+        console.error("Error en ajuste global:", error);
+        res.status(500).json({ error: { message: "Error al actualizar la base de datos." } });
+    }
+});
+
+// 4. PUT: Update an existing client
+app.put('/api/clientes/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const c = req.body;
+
+        await db.run(`
+            UPDATE clientes 
+            SET nombre = ?, apellido = ?, telefono = ?, ubicacion = ?, precio_flete_propio = ?, precio_flete_cliente = ?, unidad = ?
+            WHERE id = ?
+        `, [c.nombre, c.apellido || '', c.telefono || '', c.ubicacion || '', c.precioFletePropio, c.precioFleteCliente, c.unidad, id]);
+
+        // Send back the updated client
+        res.json({ message: "Cliente actualizado", cliente: { ...c, id: Number(id) } });
+    } catch (error) {
+        console.error("Error al actualizar cliente:", error);
+        res.status(500).json({ error: { message: "Error al actualizar la base de datos." } });
+    }
+});
+
+// 5. DELETE: Remove a client
+app.delete('/api/clientes/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await db.run('DELETE FROM clientes WHERE id = ?', [id]);
+        res.json({ message: "Cliente eliminado correctamente." });
+    } catch (error) {
+        console.error("Error al eliminar cliente:", error);
+        res.status(500).json({ error: { message: "Error al eliminar de la base de datos." } });
+    }
+});
+
 // ----------------------------------------------
 
 // 1. GET: Fetch all active trucks from SQLite
@@ -208,6 +264,20 @@ app.delete('/api/camiones-patio/:id', async (req, res) => {
         res.json({ message: "Vehículo eliminado exitosamente." });
     } catch (error) {
         res.status(500).json({ error: { message: error.message } });
+    }
+});
+
+// --- RUTAS DE REPORTES ---
+
+// GET: Fetch all completed transactions for the Reportes tab
+app.get('/api/transacciones', async (req, res) => {
+    try {
+        // Fetch everything, ordering by newest first
+        const rows = await db.all('SELECT * FROM transacciones ORDER BY id DESC');
+        res.json(rows);
+    } catch (error) {
+        console.error("Error al obtener transacciones:", error);
+        res.status(500).json({ error: { message: "Error al leer la base de datos." } });
     }
 });
 
