@@ -844,7 +844,7 @@
 
                             <span id="live-weight" class="text-8xl font-bold tracking-tighter">00000</span>
 
-                            <span class="text-3xl font-bold">KG</span>
+                            <span class="text-3xl font-bold">LBS</span>
 
                         </div>
 
@@ -1006,9 +1006,9 @@
                                 <div class="flex items-center gap-3">
 
                                     <span id="bruto-display"
-                                        class="font-mono text-2xl font-bold text-gray-800 w-32 text-right">-----
+                                        class="font-mono text-2xl font-bold text-gray-800 w-48 whitespace-nowrap text-right">-----
 
-                                        KG</span>
+                                        LBS</span>
 
                                     <button id="btn-bruto" onclick="handleBrutoClick()"
                                         class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
@@ -1039,9 +1039,9 @@
                                 <div class="flex items-center gap-3">
 
                                     <span id="tara-display"
-                                        class="font-mono text-2xl font-bold text-gray-800 w-32 text-right">-----
+                                        class="font-mono text-2xl font-bold text-gray-800 w-48 whitespace-nowrapF text-right">-----
 
-                                        KG</span>
+                                        LBS</span>
 
                                     <button id="btn-tara" onclick="handleTaraClick()"
                                         class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
@@ -1061,7 +1061,7 @@
 
                                 <span class="text-brand-900 font-black uppercase text-xl">Peso Neto</span>
 
-                                <span id="neto-display" class="font-mono text-4xl font-bold text-brand-500">0 KG</span>
+                                <span id="neto-display" class="font-mono text-4xl font-bold text-brand-500">0 LBS</span>
 
                             </div>
 
@@ -1106,37 +1106,71 @@
 
             <main id="view-clientes" class="absolute inset-0 p-8 hidden flex-col overflow-hidden">
 
-                <div class="flex justify-between items-center mb-6 shrink-0">
-
+                <!-- ENCABEZADO DE CLIENTES CON BOTONES DINÁMICOS -->
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <div>
-
                         <h2 class="text-2xl font-bold text-gray-800">Directorio de Clientes</h2>
-
-                        <p class="text-gray-500">Gestione los precios dinámicos por flete.</p>
-
+                        <p class="text-sm text-gray-500">Gestione los precios dinámicos por flete.</p>
                     </div>
 
-                    <div class="flex gap-3">
+                    <!-- Controles y Botones -->
+                    <div class="flex items-center gap-2">
 
+                        <!-- 1. Botón y Barra de Búsqueda Expandible -->
+                        <div class="relative flex items-center">
+                            <input type="text" id="buscar-cliente" oninput="renderClientesTab()"
+                                placeholder="Buscar cliente..."
+                                class="absolute right-full mr-2 w-0 opacity-0 px-0 py-2 border-0 bg-white rounded-lg transition-all duration-300 ease-in-out focus:ring-2 focus:ring-brand-500 text-sm overflow-hidden whitespace-nowrap shadow-sm z-10">
+                            <button onclick="toggleSearchBar()"
+                                class="p-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:text-brand-600 transition-colors flex items-center shadow-sm relative z-20"
+                                title="Buscar">
+                                <span class="material-icons text-[20px]">search</span>
+                            </button>
+                        </div>
+
+                        <!-- 2. Botón y Menú Flotante de Ordenar -->
+                        <div class="relative">
+                            <button onclick="toggleSortMenu()"
+                                class="p-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:text-brand-600 transition-colors flex items-center shadow-sm"
+                                title="Ordenar">
+                                <span class="material-icons text-[20px]">sort</span>
+                            </button>
+
+                            <!-- Dropdown flotante (Oculto por defecto) -->
+                            <div id="sort-menu"
+                                class="absolute right-0 mt-2 bg-white border border-gray-100 shadow-xl rounded-lg p-3 w-64 transform scale-95 opacity-0 pointer-events-none transition-all duration-200 z-50 origin-top-right">
+                                <label
+                                    class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Ordenar
+                                    por:</label>
+                                <select id="ordenar-cliente" onchange="renderClientesTab()"
+                                    class="w-full border border-gray-200 bg-gray-50 rounded py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none cursor-pointer">
+                                    <option value="recientes">Más Recientes</option>
+                                    <option value="a-z">Nombre (A - Z)</option>
+                                    <option value="z-a">Nombre (Z - A)</option>
+                                    <option value="propio-asc">Flete Propio (Menor a Mayor)</option>
+                                    <option value="propio-desc">Flete Propio (Mayor a Menor)</option>
+                                    <option value="cliente-asc">Flete Cliente (Menor a Mayor)</option>
+                                    <option value="cliente-desc">Flete Cliente (Mayor a Menor)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Línea divisoria vertical -->
+                        <div class="h-8 w-px bg-gray-300 mx-1"></div>
+
+                        <!-- Botones Originales -->
                         <button onclick="abrirAjusteGlobal()"
-                            class="bg-gray-800 hover:bg-black text-white px-4 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors">
-
-                            <span class="material-icons">price_change</span> Ajuste Global
-
+                            class="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white font-bold rounded-lg shadow hover:bg-slate-700 transition-colors text-sm">
+                            <span class="material-icons text-[18px]">price_change</span> <span
+                                class="hidden sm:inline">Ajuste Global</span>
                         </button>
-
                         <button onclick="abrirModalCliente()"
-                            class="bg-brand-900 hover:bg-brand-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors">
-
-                            <span class="material-icons">person_add</span> Nuevo Cliente
-
+                            class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm">
+                            <span class="material-icons text-[18px]">person_add</span> <span
+                                class="hidden sm:inline">Nuevo Cliente</span>
                         </button>
-
                     </div>
-
                 </div>
-
-
 
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
 
@@ -1296,7 +1330,7 @@
 
                                     <th class="p-4 font-semibold">Cliente</th>
 
-                                    <th class="p-4 font-semibold text-right">Neto (KG)</th>
+                                    <th class="p-4 font-semibold text-right">Neto (LBS)</th>
 
                                     <th class="p-4 font-semibold text-right">Precio/Ton</th>
 

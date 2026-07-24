@@ -215,7 +215,18 @@ app.post('/api/camiones-patio/:id/finalizar', async (req, res) => {
         }
 
         const neto = Math.abs(truck.peso_bruto - truck.peso_tara);
-        const total = (neto / 1000) * finalData.precioAplicado;
+
+        // --- THE MATH FIX ---
+        const unidad = finalData.unidad || 'tonelada';
+        let total = 0;
+
+        if (unidad === 'quintal') {
+            total = (neto / 100) * finalData.precioAplicado;
+        } else {
+            total = (neto / 2204.62) * finalData.precioAplicado;
+        }
+        // --------------------
+
         const transaccionId = Date.now();
 
         await db.run(`

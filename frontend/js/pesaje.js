@@ -28,40 +28,218 @@ function mostrarInfoCliente() {
     const fleteTipo = document.getElementById('flete-select').value;
     const priceBox = document.getElementById('client-price-box');
 
-    if (!clienteId) { priceBox.classList.add('hidden'); return; }
+    if (!clienteId) {
+        priceBox.classList.add('hidden');
+        return;
+    }
 
+    // Identify if it is a casual client or a registered one
     const cliente = clienteId === 'casual' ? MOCK_CASUAL : MOCK_CLIENTES.find(c => c.id == clienteId);
+
     if (!cliente) {
         priceBox.classList.add('hidden');
         return;
     }
 
+    // Determine which price to show based on Flete Propio / Flete Cliente
     const precioActual = fleteTipo === 'Propio' ? cliente.precioFletePropio : cliente.precioFleteCliente;
 
+    // Display the price
     document.getElementById('precio-ton').innerText = Number(precioActual || 0).toLocaleString('en-US');
 
+    // Display the correct unit for ALL clients (registered and casual)
     const unidadSpan = document.getElementById('precio-unidad');
     if (unidadSpan) {
-        unidadSpan.innerText = (clienteId === 'casual' && cliente.unidad === 'quintal') ? 'Quintal' : 'Ton';
+        unidadSpan.innerText = (cliente.unidad === 'quintal') ? 'Quintal' : 'Ton';
     }
+
+    // IMPORTANT: Save this globally so calcularNetoYTotal() knows which math to do!
+    window.currentClienteUnidad = cliente.unidad || 'tonelada';
 
     priceBox.classList.remove('hidden');
 
-    if (activeTransaction.pesoBruto && activeTransaction.pesoTara) calcularNetoYTotal();
+    // If a truck already has weights, recalculate the total immediately
+    if (activeTransaction.pesoBruto && activeTransaction.pesoTara) {
+        calcularNetoYTotal();
+    }
 }
-
 function manualWeight(tipo) { abrirActionModal(`manual_${tipo}`); }
 
-async function handleBrutoClick(pesoOverride = null) {
-    const peso = typeof pesoOverride === 'number' ? pesoOverride : currentLiveWeight;
-    if (!activeTransaction.id) return crearNuevaTransaccion('bruto', peso);
-    return guardarSegundoPeso('bruto', peso);
+async function handleBrutoClick(manualWeight = null) {
+    // 1. Prevent HTML event objects from messing up the math
+    if (typeof manualWeight === 'object') manualWeight = null;
+
+    // 2. Grab manual input, OR grab live weight. If both fail, default to 0.
+    const weight = (manualWeight !== null && manualWeight !== undefined)
+        ? Number(manualWeight)
+        : Number(window.currentLiveWeight || 0);
+
+    if (!weight || weight <= 0 || isNaN(weight)) {
+        return mostrarNotificacion("El peso es 0. Si está probando sin báscula, use 'Ingreso Manual'.", "error");
+    }
+
+    // --- THE FIX: If no truck is selected, create a new one! ---
+    if (!activeTransaction || !activeTransaction.id) {
+        return await crearNuevaTransaccion('bruto', weight);
+    }
+    // -----------------------------------------------------------
+
+    try {
+        await apiRequest(`/api/camiones-patio/${activeTransaction.id}`, {
+            method: 'PATCH',
+            body: { pesoBruto: weight }
+        });
+
+        activeTransaction.pesoBruto = weight;
+        const index = camionesEnPatio.findIndex(t => t.id === activeTransaction.id);
+        if (index !== -1) camionesEnPatio[index].pesoBruto = weight;
+
+        // INLINE FIX
+        document.getElementById('bruto-display').innerText = `${weight.toLocaleString('en-US')}\u00A0LBS`;
+
+        // DYNAMIC LABEL FIX
+        const sourceElement = document.getElementById('bruto-source');
+        if (sourceElement) {
+            if (manualWeight !== null) {
+                sourceElement.innerHTML = `<span class="material-icons text-[12px] align-middle">keyboard</span> Ingreso Manual`;
+                sourceElement.classList.remove('text-green-600');
+                sourceElement.classList.add('text-gray-400');
+            } else {
+                sourceElement.innerHTML = `<span class="material-icons text-[12px] align-middle">usb</span> COM3: LECTURA EN VIVO`;
+                sourceElement.classList.remove('text-gray-400');
+                sourceElement.classList.add('text-green-600');
+            }
+        }
+
+        if (activeTransaction.pesoBruto > 0 && activeTransaction.pesoTara > 0) {
+            calcularNetoYTotal();
+        }
+
+        renderQueue();
+        mostrarNotificacion("Peso Bruto guardado exitosamente.");
+        return true;
+    } catch (error) {
+        console.error("Error al registrar peso:", error);
+        mostrarNotificacion("Error al registrar el peso.", "error");
+        return false;
+    }
 }
 
-async function handleTaraClick(pesoOverride = null) {
-    const peso = typeof pesoOverride === 'number' ? pesoOverride : currentLiveWeight;
-    if (!activeTransaction.id) return crearNuevaTransaccion('tara', peso);
-    return guardarSegundoPeso('tara', peso);
+async function handleTaraClick(manualWeight = null) {
+    // 1. Prevent HTML event objects from messing up the math
+    if (typeof manualWeight === 'object') manualWeight = null;
+
+    // 2. Grab manual input, OR grab live weight. If both fail, default to 0.
+    const weight = (manualWeight !== null && manualWeight !== undefined)
+        ? Number(manualWeight)
+        : Number(window.currentLiveWeight || 0);
+
+    if (!weight || weight <= 0 || isNaN(weight)) {
+        return mostrarNotificacion("El peso es 0. Si está probando sin báscula, use 'Ingreso Manual'.", "error");
+    }
+
+    // --- THE FIX: If no truck is selected, create a new one! ---
+    if (!activeTransaction || !activeTransaction.id) {
+        return await crearNuevaTransaccion('tara', weight);
+    }
+    // -----------------------------------------------------------
+
+    try {
+        await apiRequest(`/api/camiones-patio/${activeTransaction.id}`, {
+            method: 'PATCH',
+            body: { pesoTara: weight }
+        });
+
+        activeTransaction.pesoTara = weight;
+        const index = camionesEnPatio.findIndex(t => t.id === activeTransaction.id);
+        if (index !== -1) camionesEnPatio[index].pesoTara = weight;
+
+        // INLINE FIX
+        document.getElementById('tara-display').innerText = `${weight.toLocaleString('en-US')}\u00A0LBS`;
+
+        // DYNAMIC LABEL FIX
+        const sourceElement = document.getElementById('tara-source');
+        if (sourceElement) {
+            if (manualWeight !== null) {
+                sourceElement.innerHTML = `<span class="material-icons text-[12px] align-middle">keyboard</span> Ingreso Manual`;
+                sourceElement.classList.remove('text-green-600');
+                sourceElement.classList.add('text-gray-400');
+            } else {
+                sourceElement.innerHTML = `<span class="material-icons text-[12px] align-middle">usb</span> COM3: LECTURA EN VIVO`;
+                sourceElement.classList.remove('text-gray-400');
+                sourceElement.classList.add('text-green-600');
+            }
+        }
+
+        if (activeTransaction.pesoBruto > 0 && activeTransaction.pesoTara > 0) {
+            calcularNetoYTotal();
+        }
+
+        renderQueue();
+        mostrarNotificacion("Peso Tara guardado exitosamente.");
+        return true;
+    } catch (error) {
+        console.error("Error al registrar peso:", error);
+        mostrarNotificacion("Error al registrar el peso.", "error");
+        return false;
+    }
+}
+
+async function handleTaraClick(manualWeight = null) {
+    // 1. Prevent HTML event objects from messing up the math
+    if (typeof manualWeight === 'object') manualWeight = null;
+
+    // 2. Grab manual input, OR grab live weight. If both fail, default to 0.
+    const weight = (manualWeight !== null && manualWeight !== undefined)
+        ? Number(manualWeight)
+        : Number(window.currentLiveWeight || 0);
+
+    if (!weight || weight <= 0 || isNaN(weight)) {
+        return mostrarNotificacion("El peso es 0. Si está probando sin báscula, use 'Ingreso Manual'.", "error");
+    }
+    if (!activeTransaction || !activeTransaction.id) {
+        return mostrarNotificacion("Seleccione un vehículo de la fila primero.", "error");
+    }
+
+    try {
+        await apiRequest(`/api/camiones-patio/${activeTransaction.id}`, {
+            method: 'PATCH',
+            body: { pesoTara: weight }
+        });
+
+        activeTransaction.pesoTara = weight;
+        const index = camionesEnPatio.findIndex(t => t.id === activeTransaction.id);
+        if (index !== -1) camionesEnPatio[index].pesoTara = weight;
+
+        // INLINE FIX: \u00A0 keeps the number and LBS glued together
+        document.getElementById('tara-display').innerText = `${weight.toLocaleString('en-US')}\u00A0LBS`;
+
+        // DYNAMIC LABEL FIX
+        const sourceElement = document.getElementById('tara-source');
+        if (sourceElement) {
+            if (manualWeight !== null) {
+                sourceElement.innerHTML = `<span class="material-icons text-[12px] align-middle">keyboard</span> Ingreso Manual`;
+                sourceElement.classList.remove('text-green-600');
+                sourceElement.classList.add('text-gray-400');
+            } else {
+                sourceElement.innerHTML = `<span class="material-icons text-[12px] align-middle">usb</span> COM3: LECTURA EN VIVO`;
+                sourceElement.classList.remove('text-gray-400');
+                sourceElement.classList.add('text-green-600');
+            }
+        }
+
+        if (activeTransaction.pesoBruto > 0 && activeTransaction.pesoTara > 0) {
+            calcularNetoYTotal();
+        }
+
+        renderQueue();
+        mostrarNotificacion("Peso Tara guardado exitosamente.");
+        return true;
+    } catch (error) {
+        console.error("Error al registrar peso:", error);
+        mostrarNotificacion("Error al registrar el peso.", "error");
+        return false;
+    }
 }
 
 async function crearNuevaTransaccion(tipoPeso, pesoValue) {
@@ -92,55 +270,6 @@ async function crearNuevaTransaccion(tipoPeso, pesoValue) {
     } catch (error) {
         console.error("Error al guardar en patio:", error);
         mostrarNotificacion(error.message || "Fallo de conexión. El camión no se guardó.", "error");
-    }
-}
-
-async function guardarSegundoPeso(tipoPeso, pesoValue) {
-    if (weightRequestInProgress) return false;
-    if (!activeTransaction.id) return false;
-
-    if (!Number.isFinite(pesoValue) || pesoValue <= 0) {
-        mostrarNotificacion('El peso debe ser mayor que cero.', 'error');
-        return false;
-    }
-
-    const field = tipoPeso === 'bruto' ? 'pesoBruto' : 'pesoTara';
-    if (activeTransaction[field] != null) {
-        mostrarNotificacion('Ese peso ya fue registrado.', 'error');
-        return false;
-    }
-
-    weightRequestInProgress = true;
-    try {
-        const updatedRecord = normalizarCamionPatio(await apiRequest(
-            `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}`,
-            {
-                method: 'PATCH',
-                body: { [field]: pesoValue }
-            }
-        ));
-
-        activeTransaction = { ...activeTransaction, ...updatedRecord };
-        const queueIndex = camionesEnPatio.findIndex(t => sameRecordId(t.id, updatedRecord.id));
-        if (queueIndex >= 0) camionesEnPatio[queueIndex] = updatedRecord;
-
-        document.getElementById('bruto-display').innerText = activeTransaction.pesoBruto != null
-            ? `${activeTransaction.pesoBruto.toLocaleString('en-US')} KG`
-            : '----- KG';
-        document.getElementById('tara-display').innerText = activeTransaction.pesoTara != null
-            ? `${activeTransaction.pesoTara.toLocaleString('en-US')} KG`
-            : '----- KG';
-
-        calcularNetoYTotal();
-        renderQueue();
-        mostrarNotificacion('Segundo peso guardado en el servidor.');
-        return true;
-    } catch (error) {
-        console.error('No se pudo guardar el segundo peso:', error);
-        mostrarNotificacion(error.message, 'error');
-        return false;
-    } finally {
-        weightRequestInProgress = false;
     }
 }
 
@@ -224,11 +353,11 @@ function cargarDeCola(truckId) {
     const btnTara = document.getElementById('btn-tara');
 
     document.getElementById('bruto-display').innerText = truck.pesoBruto != null
-        ? `${truck.pesoBruto.toLocaleString('en-US')} KG`
-        : '----- KG';
+        ? `${truck.pesoBruto.toLocaleString('en-US')} LBS`
+        : '----- LBS';
     document.getElementById('tara-display').innerText = truck.pesoTara != null
-        ? `${truck.pesoTara.toLocaleString('en-US')} KG`
-        : '----- KG';
+        ? `${truck.pesoTara.toLocaleString('en-US')} LBS`
+        : '----- LBS';
 
     btnBruto.disabled = truck.pesoBruto != null;
     btnTara.disabled = truck.pesoTara != null;
@@ -237,7 +366,7 @@ function cargarDeCola(truckId) {
     btnTara.classList.toggle('bg-gray-300', btnTara.disabled);
     btnTara.classList.toggle('bg-gray-800', !btnTara.disabled);
 
-    document.getElementById('neto-display').innerText = '0 KG';
+    document.getElementById('neto-display').innerText = '0 LBS';
     document.getElementById('total-pago-display').innerText = '0.00';
     document.getElementById('btn-guardar').disabled = true;
 
@@ -245,37 +374,48 @@ function cargarDeCola(truckId) {
 }
 
 function calcularNetoYTotal() {
-    if (activeTransaction.pesoBruto == null || activeTransaction.pesoTara == null) return;
+    // 1. Get weights using the CORRECT HTML IDs
+    const brutoText = document.getElementById('bruto-display').innerText;
+    const taraText = document.getElementById('tara-display').innerText;
 
-    const neto = Math.abs(activeTransaction.pesoBruto - activeTransaction.pesoTara);
-    document.getElementById('neto-display').innerText = `${neto.toLocaleString('en-US')} KG`;
+    // Extract only the numbers
+    const pesoBruto = parseFloat(brutoText.replace(/[^\d.-]/g, '')) || 0;
+    const pesoTara = parseFloat(taraText.replace(/[^\d.-]/g, '')) || 0;
 
-    const cliente = activeTransaction.clienteId === 'casual'
-        ? (activeTransaction.casualSnapshot || MOCK_CASUAL)
-        : MOCK_CLIENTES.find(c => c.id == activeTransaction.clienteId);
-    if (!cliente) return mostrarNotificacion('El cliente de esta transacción ya no existe.', 'error');
+    // 2. Calculate Net Weight and ENABLE BUTTON
+    let neto = 0;
+    const btnGuardar = document.getElementById('btn-guardar');
 
-    const precioAplicado = activeTransaction.flete === 'Propio'
-        ? Number(cliente.precioFletePropio)
-        : Number(cliente.precioFleteCliente);
+    if (pesoBruto > 0 && pesoTara > 0) {
+        // The absolute value math allows you to weigh empty first or loaded first!
+        neto = Math.abs(pesoBruto - pesoTara);
 
-    activeTransaction.precioAplicado = precioAplicado;
-
-    // Calculate correctly based on the unit
-    let totalPagar = 0;
-    if (activeTransaction.clienteId === 'casual' && cliente.unidad === 'quintal') {
-        const factorQq = parseFloat(document.getElementById('factor-conversion')?.value) || 2.2046;
-        const totalQuintales = (neto / 1000) * factorQq;
-        totalPagar = totalQuintales * precioAplicado;
+        // UNLOCK THE FINALIZAR BUTTON!
+        btnGuardar.disabled = false;
     } else {
-        totalPagar = (neto / 1000) * precioAplicado;
+        // KEEP IT LOCKED IF A WEIGHT IS MISSING
+        btnGuardar.disabled = true;
     }
 
-    document.getElementById('total-pago-display').innerText = totalPagar.toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    });
-    document.getElementById('btn-guardar').disabled = false;
+    // Update the UI
+    document.getElementById('neto-display').innerText = neto.toLocaleString('en-US') + ' LBS';
+
+    // 3. Get Price
+    const precioRaw = document.getElementById('precio-ton').innerText.replace(/,/g, '');
+    const precioAplicado = parseFloat(precioRaw) || 0;
+
+    // 4. Dynamic Math based on Quintal vs Tonelada
+    const unidad = window.currentClienteUnidad || 'tonelada';
+    let total = 0;
+
+    if (unidad === 'quintal') {
+        total = (neto / 100) * precioAplicado;
+    } else {
+        total = (neto / 2204.62) * precioAplicado;
+    }
+
+    // 5. Update UI 
+    document.getElementById('total-pago-display').innerText = total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function guardarTransaccion() {
@@ -286,6 +426,7 @@ async function guardarTransaccion() {
     const cliente = activeTransaction.clienteId === 'casual'
         ? activeTransaction.casualSnapshot
         : MOCK_CLIENTES.find(c => c.id == activeTransaction.clienteId);
+
     if (!cliente) return mostrarNotificacion('No se encontró el cliente de la transacción.', 'error');
 
     const clienteNombre = activeTransaction.clienteId === 'casual'
@@ -293,16 +434,9 @@ async function guardarTransaccion() {
         : `${cliente.nombre} ${cliente.apellido || ''}`.trim();
 
     try {
-        // --- NEW CONVERSION LOGIC ---
-        let precioParaServidor = activeTransaction.precioAplicado;
-        const clienteObj = activeTransaction.clienteId === 'casual' ? activeTransaction.casualSnapshot : null;
-
-        // If it was quintales, multiply by the conversion factor so the server receives a "Per Ton" price
-        if (clienteObj && clienteObj.unidad === 'quintal') {
-            const factorQq = parseFloat(document.getElementById('factor-conversion').value) || 2.2046;
-            precioParaServidor = activeTransaction.precioAplicado * factorQq;
-        }
-        // ----------------------------
+        // --- THE FIX: Grab the exact price directly from the UI ---
+        const precioRaw = document.getElementById('precio-ton').innerText.replace(/,/g, '');
+        const precioParaServidor = parseFloat(precioRaw) || 0;
 
         const result = await apiRequest(
             `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
@@ -312,18 +446,22 @@ async function guardarTransaccion() {
                     fecha: getLocalIsoDate(),
                     hora: new Date().toLocaleTimeString('es-HN', { hour12: false }),
                     clienteNombre,
-                    precioAplicado: precioParaServidor // Send the standardized price!
+                    precioAplicado: precioParaServidor, // Ensures it is never null!
+                    unidad: window.currentClienteUnidad || 'tonelada'
                 }
             }
         );
 
         const savedTransaction = result.transaccion;
         transaccionesData.unshift(savedTransaction);
+
+        // Remove from the queue
         camionesEnPatio = camionesEnPatio.filter(t => !sameRecordId(t.id, activeTransaction.id));
+
         renderQueue();
         updateReportesTab();
         limpiarFormulario();
-        mostrarNotificacion('Transacción finalizada y guardada en la nube.');
+        mostrarNotificacion('Transacción finalizada y guardada exitosamente.');
     } catch (error) {
         console.error('No se pudo finalizar la transacción:', error);
         mostrarNotificacion(error.message, 'error');
@@ -348,9 +486,9 @@ function limpiarFormulario() {
     document.getElementById('conductor-input').value = '';
     document.getElementById('flete-select').value = 'Propio';
 
-    document.getElementById('bruto-display').innerText = '----- KG';
-    document.getElementById('tara-display').innerText = '----- KG';
-    document.getElementById('neto-display').innerText = '0 KG';
+    document.getElementById('bruto-display').innerText = '----- LBS';
+    document.getElementById('tara-display').innerText = '----- LBS';
+    document.getElementById('neto-display').innerText = '0 LBS';
     document.getElementById('total-pago-display').innerText = '0.00';
 
     document.getElementById('btn-bruto').disabled = false;

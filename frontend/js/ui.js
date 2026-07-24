@@ -56,7 +56,7 @@ function abrirActionModal(action, id = null) {
 
     if (action === 'manual_bruto' || action === 'manual_tara') {
         document.getElementById('action-title').innerText = "Ingreso Manual de Peso";
-        document.getElementById('action-label').innerText = "Ingrese el peso (KG):";
+        document.getElementById('action-label').innerText = "Ingrese el peso (LBS):";
         input.setAttribute('inputmode', 'numeric');
         input.placeholder = 'Ej. 20,500';
         input.oninput = formatIntegerThousandsInput;
@@ -139,11 +139,26 @@ async function confirmarActionModal() {
             cerrarActionModal();
             return;
         }
-        MOCK_CLIENTES = MOCK_CLIENTES.filter(c => c.id != pendingActionId);
-        console.log(`[AUDITORIA] Cliente eliminado: ${cliente.nombre} ${cliente.apellido || ''}. Razón: ${val}`);
-        renderClientesTab();
-        mostrarNotificacion("Cliente eliminado exitosamente.");
-        cerrarActionModal();
+
+        // --- NEW DB DELETE LOGIC HERE ---
+        try {
+            await apiRequest(`/api/clientes/${pendingActionId}`, {
+                method: 'DELETE',
+                body: { razon: val }
+            });
+
+            // Remove it from the local UI array only after DB confirms
+            MOCK_CLIENTES = MOCK_CLIENTES.filter(c => c.id != pendingActionId);
+            console.log(`[AUDITORIA EMAIL] Cliente eliminado: ${cliente.nombre} ${cliente.apellido || ''}. Razón: ${val}`);
+            renderClientesTab();
+            mostrarNotificacion("Cliente eliminado exitosamente de la base de datos.");
+            cerrarActionModal();
+        } catch (error) {
+            console.error("Error al eliminar el cliente:", error);
+            mostrarNotificacion("Error al eliminar el cliente del servidor.", "error");
+        }
+        // --------------------------------
+
     } else if (pendingAction === 'edit_reporte') {
         console.log(`[AUDITORIA EMAIL] Modificación de reporte. Razón: ${val}`);
         mostrarNotificacion("Edición de reportes en desarrollo.", "success");

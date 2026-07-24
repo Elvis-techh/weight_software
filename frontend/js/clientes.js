@@ -2,33 +2,62 @@ function renderClientesTab() {
     const tbody = document.getElementById('clients-table-body');
     if (!tbody) return;
 
-    tbody.innerHTML = '';
-    MOCK_CLIENTES.forEach(c => {
-        tbody.innerHTML += `
-            <tr class="hover:bg-blue-50 border-b border-gray-100 last:border-0 transition-colors">
-                <td class="p-3 text-sm text-gray-500 font-mono">#${c.id}</td>
-                <td class="p-3 text-sm font-bold text-gray-800">${c.nombre} ${c.apellido || ''}</td>
-                <td class="p-3 text-sm text-gray-600">${c.telefono || '-'}</td>
-                <td class="p-3 text-sm text-gray-600">${c.ubicacion || '-'}</td>
-                
-                <!-- Separated Prices -->
-                <td class="p-3 text-sm font-mono font-bold text-blue-700">L ${Number(c.precioFletePropio).toLocaleString('en-US')}</td>
-                <td class="p-3 text-sm font-mono font-bold text-teal-700">L ${Number(c.precioFleteCliente).toLocaleString('en-US')}</td>
-                
-                <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase">
-                    ${c.unidad === 'quintal' ? 'QQ' : 'TON'}
-                </td>
-        
-                <td class="p-3 text-center">
-                    <div class="flex justify-center gap-2">
-                        <!-- Corrected Button Function Names! -->
-                        <button onclick="abrirModalCliente('${c.id}')" class="text-blue-500 hover:text-blue-700 transition-colors"><span class="material-icons text-[18px]">edit</span></button>
-                        <button onclick="solicitarEliminarCliente('${c.id}')" class="text-red-500 hover:text-red-700 transition-colors"><span class="material-icons text-[18px]">delete</span></button>
-                    </div>
-                </td>
-            </tr>
-        `;
+    // 1. Grab search and sort values
+    const searchTerm = (document.getElementById('buscar-cliente')?.value || '').trim().toLowerCase();
+    const sortValue = document.getElementById('ordenar-cliente')?.value || 'recientes';
+
+    // 2. Filter the clients based on the search bar
+    let clientesFiltrados = MOCK_CLIENTES.filter(c => {
+        const nombreCompleto = `${c.nombre} ${c.apellido || ''}`.toLowerCase();
+        return nombreCompleto.includes(searchTerm);
     });
+
+    // 3. Sort the filtered clients
+    clientesFiltrados.sort((a, b) => {
+        if (sortValue === 'a-z') return a.nombre.localeCompare(b.nombre);
+        if (sortValue === 'z-a') return b.nombre.localeCompare(a.nombre);
+        if (sortValue === 'propio-asc') return a.precioFletePropio - b.precioFletePropio;
+        if (sortValue === 'propio-desc') return b.precioFletePropio - a.precioFletePropio;
+        if (sortValue === 'cliente-asc') return a.precioFleteCliente - b.precioFleteCliente;
+        if (sortValue === 'cliente-desc') return b.precioFleteCliente - a.precioFleteCliente;
+
+        // Default: 'recientes' (highest ID first)
+        return b.id - a.id;
+    });
+
+    // 4. Render the table using the filtered & sorted array
+    tbody.innerHTML = '';
+
+    if (clientesFiltrados.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-gray-500">No se encontraron clientes.</td></tr>`;
+    } else {
+        clientesFiltrados.forEach(c => {
+            tbody.innerHTML += `
+                <tr class="hover:bg-blue-50 border-b border-gray-100 last:border-0 transition-colors">
+                    <td class="p-3 text-sm text-gray-500 font-mono">#${c.id}</td>
+                    <td class="p-3 text-sm font-bold text-gray-800">${c.nombre} ${c.apellido || ''}</td>
+                    <td class="p-3 text-sm text-gray-600">${c.telefono || '-'}</td>
+                    <td class="p-3 text-sm text-gray-600">${c.ubicacion || '-'}</td>
+                    
+                    <td class="p-3 text-sm font-mono font-bold text-blue-700">L ${Number(c.precioFletePropio).toLocaleString('en-US')}</td>
+                    <td class="p-3 text-sm font-mono font-bold text-teal-700">L ${Number(c.precioFleteCliente).toLocaleString('en-US')}</td>
+                    
+                    <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase">
+                        ${c.unidad === 'quintal' ? 'QQ' : 'TON'}
+                    </td>
+            
+                    <td class="p-3 text-center">
+                        <div class="flex justify-center gap-2">
+                            <button onclick="abrirModalCliente('${c.id}')" class="text-blue-500 hover:text-blue-700 transition-colors"><span class="material-icons text-[18px]">edit</span></button>
+                            <button onclick="solicitarEliminarCliente('${c.id}')" class="text-red-500 hover:text-red-700 transition-colors"><span class="material-icons text-[18px]">delete</span></button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    // Ensure the dropdown in the Pesaje tab is updated as well
     populateClienteDropdown();
 }
 
@@ -290,3 +319,52 @@ async function aplicarAjusteGlobalForm() {
         mostrarNotificacion("Error al guardar el ajuste en la base de datos.", "error");
     }
 }
+
+// --- ANIMACIONES DE UI PARA BUSCAR Y ORDENAR ---
+
+function toggleSearchBar() {
+    const searchInput = document.getElementById('buscar-cliente');
+
+    // Verifica si la barra está oculta (w-0)
+    if (searchInput.classList.contains('w-0')) {
+        // Expandir barra de búsqueda hacia la izquierda
+        searchInput.classList.remove('w-0', 'opacity-0', 'border-0', 'px-0');
+        searchInput.classList.add('w-64', 'opacity-100', 'border', 'border-gray-200', 'px-4');
+        searchInput.focus();
+    } else {
+        // Contraer barra de búsqueda
+        searchInput.classList.remove('w-64', 'opacity-100', 'border', 'border-gray-200', 'px-4');
+        searchInput.classList.add('w-0', 'opacity-0', 'border-0', 'px-0');
+
+        // Limpiar el texto y actualizar la tabla al cerrar
+        searchInput.value = '';
+        renderClientesTab();
+    }
+}
+
+function toggleSortMenu() {
+    const sortMenu = document.getElementById('sort-menu');
+
+    if (sortMenu.classList.contains('opacity-0')) {
+        // Mostrar menú con efecto de escala
+        sortMenu.classList.remove('opacity-0', 'scale-95', 'pointer-events-none');
+        sortMenu.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+    } else {
+        // Ocultar menú
+        sortMenu.classList.add('opacity-0', 'scale-95', 'pointer-events-none');
+        sortMenu.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+    }
+}
+
+// Escuchar clics fuera del menú de ordenar para cerrarlo automáticamente
+document.addEventListener('click', (e) => {
+    const sortMenu = document.getElementById('sort-menu');
+    if (!sortMenu) return;
+
+    const sortBtn = sortMenu.previousElementSibling;
+
+    if (!sortMenu.contains(e.target) && !sortBtn.contains(e.target)) {
+        sortMenu.classList.add('opacity-0', 'scale-95', 'pointer-events-none');
+        sortMenu.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+    }
+});
