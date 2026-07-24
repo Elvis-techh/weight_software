@@ -1,100 +1,95 @@
-function abrirGastosModal(id = null) {
-    document.getElementById('gastos-modal').classList.remove('hidden');
-    if (id) {
-        const g = gastosData.find(x => x.id == id);
-        if (!g) return mostrarNotificacion("Gasto no encontrado.", "error");
-        document.getElementById('gastos-modal-title').innerText = "Editar Gasto";
-        document.getElementById('gastos-edit-id').value = g.id;
-        document.getElementById('gastos-fecha').value = g.fecha;
-        document.getElementById('gastos-monto').value = formatNumberForInput(g.monto, 2);
-        document.getElementById('gastos-concepto').value = g.concepto;
-        document.getElementById('gastos-justificacion').value = g.justificacion;
-    } else {
-        document.getElementById('gastos-modal-title').innerText = "Nuevo Gasto";
-        document.getElementById('gastos-edit-id').value = "";
-        document.getElementById('gastos-fecha').value = getLocalIsoDate();
-        document.getElementById('gastos-monto').value = "";
-        document.getElementById('gastos-concepto').value = "";
-        document.getElementById('gastos-justificacion').value = "";
-    }
-    document.getElementById('gastos-file').value = "";
+function normalizarGasto(record = {}) {
+    return {
+        id: record.id,
+        fecha: String(record.fecha || ''),
+        monto: toFiniteNumber(record.monto),
+        concepto: String(record.concepto || ''),
+        justificacion: String(record.justificacion || ''),
+        fileName: String(record.fileName ?? record.file_name ?? 'Sin Archivo')
+    };
 }
 
-function cerrarGastosModal() { document.getElementById('gastos-modal').classList.add('hidden'); }
+function abrirGastosModal(id = null) {
+    const gasto = id == null ? null : gastosData.find(item => sameRecordId(item.id, id));
+    if (id != null && !gasto) return mostrarNotificacion('Gasto no encontrado.', 'error');
+
+    document.getElementById('gastos-modal-title').textContent = gasto ? 'Editar Gasto' : 'Nuevo Gasto';
+    document.getElementById('gastos-edit-id').value = gasto?.id ?? '';
+    document.getElementById('gastos-fecha').value = gasto?.fecha || getLocalIsoDate();
+    document.getElementById('gastos-monto').value = gasto ? formatNumberForInput(gasto.monto, 2) : '';
+    document.getElementById('gastos-concepto').value = gasto?.concepto || '';
+    document.getElementById('gastos-justificacion').value = gasto?.justificacion || '';
+    document.getElementById('gastos-file').value = '';
+    document.getElementById('gastos-modal').classList.remove('hidden');
+}
+
+function cerrarGastosModal() {
+    document.getElementById('gastos-modal').classList.add('hidden');
+}
 
 async function guardarGasto() {
     const id = document.getElementById('gastos-edit-id').value;
-    const fecha = document.getElementById('gastos-fecha').value;
-    const monto = parseFormattedNumber(document.getElementById('gastos-monto').value);
-    const concepto = document.getElementById('gastos-concepto').value.trim();
-    const justificacion = document.getElementById('gastos-justificacion').value.trim();
-    const fileInput = document.getElementById('gastos-file');
-    const existing = id ? gastosData.find(x => x.id == id) : null;
-    const fileName = fileInput.files.length > 0 ? fileInput.files[0].name : (existing?.fileName || "Sin Archivo");
+    const existing = id ? gastosData.find(item => sameRecordId(item.id, id)) : null;
+    const selectedFile = document.getElementById('gastos-file').files[0] || null;
 
-    if (!fecha || !Number.isFinite(monto) || monto < 0 || !concepto) {
-        return mostrarNotificacion("Complete los campos obligatorios con valores válidos.", "error");
-    }
+    const payload = {
+        fecha: document.getElementById('gastos-fecha').value,
+        monto: parseFormattedNumber(document.getElementById('gastos-monto').value),
+        concepto: document.getElementById('gastos-concepto').value.trim(),
+        justificacion: document.getElementById('gastos-justificacion').value.trim(),
+        fileName: selectedFile?.name || existing?.fileName || 'Sin Archivo'
+    };
 
-    const payload = { fecha, monto, concepto, justificacion, fileName };
+    if (!payload.fecha || !payload.concepto) return mostrarNotificacion('Complete los campos obligatorios.', 'error');
+    if (!Number.isFinite(payload.monto) || payload.monto <= 0) return mostrarNotificacion('El monto debe ser mayor que cero.', 'error');
 
     try {
-        const method = id ? 'PUT' : 'POST';
-        const endpoint = id ? `${API_URL}/api/gastos/${id}` : `${API_URL}/api/gastos`;
+        const result = id
+            ? await apiRequest(`/api/gastos/${encodeURIComponent(id)}`, { method: 'PUT', body: payload })
+            : await apiRequest('/api/gastos', { method: 'POST', body: payload });
+        const saved = normalizarGasto(result?.gasto || result);
+        const index = gastosData.findIndex(item => sameRecordId(item.id, saved.id));
+        if (index >= 0) gastosData[index] = saved;
+        else gastosData.unshift(saved);
 
-        const response = await fetch(endpoint, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            let serverRecord = null;
-            try { serverRecord = await response.json(); } catch (_) { /* optional body */ }
-
-            if (id) {
-                const g = gastosData.find(x => x.id == id);
-                if (g) Object.assign(g, payload, serverRecord || {});
-                mostrarNotificacion("Gasto actualizado en el servidor.");
-            } else {
-                gastosData.unshift({ id: serverRecord?.id ?? Date.now(), ...payload, ...(serverRecord || {}) });
-                mostrarNotificacion("Gasto registrado en el servidor.");
-            }
-            renderGastos();
-            cerrarGastosModal();
-        } else {
-            mostrarNotificacion("Error al guardar el gasto en la nube.", "error");
-        }
+        renderGastos();
+        cerrarGastosModal();
+        mostrarNotificacion(id ? 'Gasto actualizado.' : 'Gasto registrado.');
     } catch (error) {
-        console.error(error);
-        mostrarNotificacion("Fallo de conexión. Revise la red.", "error");
+        console.error('Error al guardar gasto:', error);
+        mostrarNotificacion(error.message || 'No se pudo guardar el gasto.', 'error');
     }
 }
 
 function renderGastos() {
     const tbody = document.getElementById('gastos-table-body');
     if (!tbody) return;
+
     if (gastosData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin gastos registrados.</td></tr>`;
+        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin gastos registrados.</td></tr>';
         return;
     }
-    tbody.innerHTML = '';
-    gastosData.forEach(g => {
-        const displayDate = g.fecha.split('-').reverse().join('/');
-        tbody.innerHTML += `
-            <tr class="hover:bg-red-50">
-                <td class="p-4 font-mono text-gray-600">${displayDate}</td>
-                <td class="p-4 font-bold text-gray-800">${g.concepto}</td>
-                <td class="p-4 text-right font-mono font-bold text-red-700">L ${Number(g.monto || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                <td class="p-4 text-xs text-gray-500">${g.justificacion || '-'}</td>
-                <td class="p-4 text-center">
-                    <span class="text-[10px] bg-gray-200 px-2 py-1 rounded truncate max-w-[120px] inline-block" title="${g.fileName}">📎 ${g.fileName}</span>
-                </td>
-                <td class="p-4 text-center">
-                    <button onclick="abrirGastosModal(${g.id})" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
-                    <button onclick="gastosData = gastosData.filter(x=>x.id!=${g.id}); renderGastos();" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
-                </td>
-            </tr>
-        `;
+
+    tbody.innerHTML = gastosData.map(gasto => `
+        <tr class="hover:bg-red-50">
+            <td class="p-4 font-mono text-gray-600">${escapeHtml(formatDateForDisplay(gasto.fecha))}</td>
+            <td class="p-4 font-bold text-gray-800">${escapeHtml(gasto.concepto)}</td>
+            <td class="p-4 text-right font-mono font-bold text-red-700">L ${formatMoney(gasto.monto)}</td>
+            <td class="p-4 text-xs text-gray-500">${escapeHtml(gasto.justificacion || '-')}</td>
+            <td class="p-4 text-center"><span class="text-[10px] bg-gray-200 px-2 py-1 rounded truncate max-w-[120px] inline-block" title="${escapeHtml(gasto.fileName)}">📎 ${escapeHtml(gasto.fileName)}</span></td>
+            <td class="p-4 text-center">
+                <button type="button" onclick="abrirGastosModal('${escapeHtml(gasto.id)}')" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
+                <button type="button" onclick="abrirActionModal('delete_gasto', '${escapeHtml(gasto.id)}')" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function eliminarGastoServidor(id, justificacion) {
+    await apiRequest(`/api/gastos/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        body: { justificacion }
     });
+    gastosData = gastosData.filter(item => !sameRecordId(item.id, id));
+    renderGastos();
 }

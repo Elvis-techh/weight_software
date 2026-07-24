@@ -1,114 +1,133 @@
-function abrirPlanillaModal(id = null) {
-    document.getElementById('planilla-modal').classList.remove('hidden');
-    if (id) {
-        const p = planillaData.find(x => x.id == id);
-        if (!p) return mostrarNotificacion("Trabajador no encontrado.", "error");
-        document.getElementById('planilla-modal-title').innerText = "Editar Trabajador";
-        document.getElementById('planilla-edit-id').value = p.id;
-        document.getElementById('planilla-nombre').value = p.nombre;
-        document.getElementById('planilla-apellido').value = p.apellido;
-        document.getElementById('planilla-telefono').value = p.telefono;
-        document.getElementById('planilla-sueldo').value = p.sueldoBase;
-    } else {
-        document.getElementById('planilla-modal-title').innerText = "Agregar Trabajador";
-        document.getElementById('planilla-edit-id').value = "";
-        document.getElementById('planilla-nombre').value = "";
-        document.getElementById('planilla-apellido').value = "";
-        document.getElementById('planilla-telefono').value = "";
-        document.getElementById('planilla-sueldo').value = "";
-    }
+function normalizarTrabajador(record = {}) {
+    return {
+        id: record.id,
+        nombre: String(record.nombre || ''),
+        apellido: String(record.apellido || ''),
+        telefono: String(record.telefono || ''),
+        sueldoBase: toFiniteNumber(record.sueldoBase ?? record.sueldo_base),
+        diasTrabajados: toFiniteNumber(record.diasTrabajados ?? record.dias_trabajados, 6),
+        extras: toFiniteNumber(record.extras)
+    };
 }
 
-function cerrarPlanillaModal() { document.getElementById('planilla-modal').classList.add('hidden'); }
+function abrirPlanillaModal(id = null) {
+    const trabajador = id == null ? null : planillaData.find(item => sameRecordId(item.id, id));
+    if (id != null && !trabajador) return mostrarNotificacion('Trabajador no encontrado.', 'error');
+
+    document.getElementById('planilla-modal-title').textContent = trabajador ? 'Editar Trabajador' : 'Agregar Trabajador';
+    document.getElementById('planilla-edit-id').value = trabajador?.id ?? '';
+    document.getElementById('planilla-nombre').value = trabajador?.nombre || '';
+    document.getElementById('planilla-apellido').value = trabajador?.apellido || '';
+    document.getElementById('planilla-telefono').value = trabajador?.telefono || '';
+    document.getElementById('planilla-sueldo').value = trabajador?.sueldoBase || '';
+    document.getElementById('planilla-modal').classList.remove('hidden');
+}
+
+function cerrarPlanillaModal() {
+    document.getElementById('planilla-modal').classList.add('hidden');
+}
 
 async function guardarTrabajador() {
     const id = document.getElementById('planilla-edit-id').value;
-    const nombre = document.getElementById('planilla-nombre').value;
-    const apellido = document.getElementById('planilla-apellido').value;
-    const telefono = document.getElementById('planilla-telefono').value;
-    const sueldoBase = parseFloat(document.getElementById('planilla-sueldo').value);
+    const existing = id ? planillaData.find(item => sameRecordId(item.id, id)) : null;
+    const payload = {
+        nombre: document.getElementById('planilla-nombre').value.trim(),
+        apellido: document.getElementById('planilla-apellido').value.trim(),
+        telefono: document.getElementById('planilla-telefono').value.trim(),
+        sueldoBase: parseFormattedNumber(document.getElementById('planilla-sueldo').value),
+        diasTrabajados: existing?.diasTrabajados ?? 6,
+        extras: existing?.extras ?? 0
+    };
 
-    if (!nombre || !apellido || isNaN(sueldoBase)) return mostrarNotificacion("Complete los campos obligatorios.", "error");
-
-    const payload = { nombre, apellido, telefono, sueldoBase };
+    if (!payload.nombre || !payload.apellido) return mostrarNotificacion('Nombre y apellido son obligatorios.', 'error');
+    if (!Number.isFinite(payload.sueldoBase) || payload.sueldoBase <= 0) return mostrarNotificacion('El sueldo base debe ser mayor que cero.', 'error');
 
     try {
-        const method = id ? 'PUT' : 'POST';
-        const endpoint = id ? `${API_URL}/api/planilla/${id}` : `${API_URL}/api/planilla`;
+        const result = id
+            ? await apiRequest(`/api/planilla/${encodeURIComponent(id)}`, { method: 'PUT', body: payload })
+            : await apiRequest('/api/planilla', { method: 'POST', body: payload });
+        const saved = normalizarTrabajador(result?.trabajador || result);
+        const index = planillaData.findIndex(item => sameRecordId(item.id, saved.id));
+        if (index >= 0) planillaData[index] = saved;
+        else planillaData.push(saved);
 
-        const response = await fetch(endpoint, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            let serverRecord = null;
-            try { serverRecord = await response.json(); } catch (_) { /* optional response */ }
-            if (id) {
-                const p = planillaData.find(x => x.id == id);
-                if (p) Object.assign(p, payload, serverRecord || {});
-                mostrarNotificacion("Trabajador actualizado en el servidor.");
-            } else {
-                planillaData.push({ id: serverRecord?.id ?? Date.now(), ...payload, diasTrabajados: 6, extras: 0, ...(serverRecord || {}) });
-                mostrarNotificacion("Trabajador registrado en el servidor.");
-            }
-            renderPlanilla();
-            cerrarPlanillaModal();
-        } else {
-            mostrarNotificacion("Error al guardar el trabajador en la nube.", "error");
-        }
+        renderPlanilla();
+        cerrarPlanillaModal();
+        mostrarNotificacion(id ? 'Trabajador actualizado.' : 'Trabajador registrado.');
     } catch (error) {
-        mostrarNotificacion("Fallo de conexión. Revise la red.", "error");
+        console.error('Error al guardar trabajador:', error);
+        mostrarNotificacion(error.message || 'No se pudo guardar el trabajador.', 'error');
     }
 }
 
 function calcularFilaPlanilla(id) {
-    const p = planillaData.find(x => x.id == id);
-    if (!p) return;
+    const trabajador = planillaData.find(item => sameRecordId(item.id, id));
+    if (!trabajador) return;
 
-    p.diasTrabajados = parseFloat(document.getElementById(`dias-${id}`).value) || 0;
-    p.extras = parseFloat(document.getElementById(`extras-${id}`).value) || 0;
+    const dias = parseFormattedNumber(document.getElementById(`dias-${id}`)?.value);
+    const extras = parseFormattedNumber(document.getElementById(`extras-${id}`)?.value);
+    trabajador.diasTrabajados = Number.isFinite(dias) ? Math.min(Math.max(dias, 0), 7) : 0;
+    trabajador.extras = Number.isFinite(extras) ? Math.max(extras, 0) : 0;
 
-    const dailyRate = p.sueldoBase / 6;
-    const total = (dailyRate * p.diasTrabajados) + p.extras;
+    const total = (trabajador.sueldoBase / 6) * trabajador.diasTrabajados + trabajador.extras;
+    const display = document.getElementById(`total-${id}`);
+    if (display) display.textContent = formatMoney(total);
+}
 
-    document.getElementById(`total-${id}`).innerText = total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+async function guardarFilaPlanilla(id) {
+    const trabajador = planillaData.find(item => sameRecordId(item.id, id));
+    if (!trabajador) return;
+    calcularFilaPlanilla(id);
+
+    try {
+        const result = await apiRequest(`/api/planilla/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            body: {
+                diasTrabajados: trabajador.diasTrabajados,
+                extras: trabajador.extras
+            }
+        });
+        Object.assign(trabajador, normalizarTrabajador(result?.trabajador || result));
+    } catch (error) {
+        console.error('No se pudo actualizar la fila de planilla:', error);
+        mostrarNotificacion(error.message || 'No se pudo guardar la jornada.', 'error');
+        await fetchPlanilla().catch(() => {});
+    }
 }
 
 function renderPlanilla() {
     const tbody = document.getElementById('planilla-table-body');
     if (!tbody) return;
+
     if (planillaData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin trabajadores registrados.</td></tr>`;
+        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin trabajadores registrados.</td></tr>';
         return;
     }
-    tbody.innerHTML = '';
-    planillaData.forEach(p => {
-        const dailyRate = p.sueldoBase / 6;
-        const initialTotal = (dailyRate * p.diasTrabajados) + p.extras;
 
-        tbody.innerHTML += `
+    tbody.innerHTML = planillaData.map(trabajador => {
+        const total = (trabajador.sueldoBase / 6) * trabajador.diasTrabajados + trabajador.extras;
+        const id = escapeHtml(trabajador.id);
+        return `
             <tr class="hover:bg-orange-50 border-b border-gray-100">
-                <td class="p-3">
-                    <div class="font-bold text-gray-800">${p.nombre} ${p.apellido}</div>
-                    <div class="text-xs text-gray-500">${p.telefono || 'Sin teléfono'}</div>
-                </td>
-                <td class="p-3 text-center font-mono font-bold text-gray-600">L ${p.sueldoBase.toLocaleString()}</td>
+                <td class="p-3"><div class="font-bold text-gray-800">${escapeHtml(`${trabajador.nombre} ${trabajador.apellido}`)}</div><div class="text-xs text-gray-500">${escapeHtml(trabajador.telefono || 'Sin teléfono')}</div></td>
+                <td class="p-3 text-center font-mono font-bold text-gray-600">L ${formatMoney(trabajador.sueldoBase)}</td>
+                <td class="p-3 text-center"><input type="number" id="dias-${id}" value="${trabajador.diasTrabajados}" step="0.5" min="0" max="7" oninput="calcularFilaPlanilla('${id}')" onchange="guardarFilaPlanilla('${id}')" class="w-16 border rounded p-1 text-center font-bold text-orange-900 focus:ring-2 outline-none"></td>
+                <td class="p-3 text-center"><input type="number" id="extras-${id}" value="${trabajador.extras}" step="10" min="0" oninput="calcularFilaPlanilla('${id}')" onchange="guardarFilaPlanilla('${id}')" class="w-20 border rounded p-1 text-right font-bold text-green-700 focus:ring-2 outline-none"></td>
+                <td class="p-3 text-right bg-orange-50"><div class="font-mono font-black text-orange-700 text-lg">L <span id="total-${id}">${formatMoney(total)}</span></div></td>
                 <td class="p-3 text-center">
-                    <input type="number" id="dias-${p.id}" value="${p.diasTrabajados}" step="0.5" min="0" max="7" oninput="calcularFilaPlanilla(${p.id})" class="w-16 border rounded p-1 text-center font-bold text-orange-900 focus:ring-2 outline-none">
-                </td>
-                <td class="p-3 text-center">
-                    <input type="number" id="extras-${p.id}" value="${p.extras}" step="10" oninput="calcularFilaPlanilla(${p.id})" class="w-20 border rounded p-1 text-right font-bold text-green-700 focus:ring-2 outline-none">
-                </td>
-                <td class="p-3 text-right bg-orange-50">
-                    <div class="font-mono font-black text-orange-700 text-lg">L <span id="total-${p.id}">${initialTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                </td>
-                <td class="p-3 text-center">
-                    <button onclick="abrirPlanillaModal(${p.id})" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
-                    <button onclick="planillaData = planillaData.filter(x=>x.id!=${p.id}); renderPlanilla();" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
+                    <button type="button" onclick="abrirPlanillaModal('${id}')" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
+                    <button type="button" onclick="abrirActionModal('delete_trabajador', '${id}')" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
                 </td>
             </tr>
         `;
+    }).join('');
+}
+
+async function eliminarTrabajadorServidor(id, justificacion) {
+    await apiRequest(`/api/planilla/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        body: { justificacion }
     });
+    planillaData = planillaData.filter(item => !sameRecordId(item.id, id));
+    renderPlanilla();
 }

@@ -8,17 +8,33 @@ class ApiError extends Error {
     }
 }
 
-async function apiRequest(path, { method = 'GET', body, timeoutMs = 10000 } = {}) {
+async function apiRequest(path, {
+    method = 'GET',
+    body,
+    timeoutMs = 10000,
+    headers = {}
+} = {}) {
+    if (typeof path !== 'string' || !path.startsWith('/')) {
+        throw new ApiError('La ruta solicitada no es válida.', { code: 'INVALID_PATH' });
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const hasBody = body !== undefined && body !== null;
 
     try {
         const response = await fetch(`${API_URL}${path}`, {
             method,
-            headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-            body: body === undefined ? undefined : JSON.stringify(body),
+            headers: {
+                Accept: 'application/json',
+                ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+                ...headers
+            },
+            body: hasBody ? JSON.stringify(body) : undefined,
             signal: controller.signal
         });
+
+        if (response.status === 204) return null;
 
         const rawText = await response.text();
         let payload = null;
@@ -37,14 +53,14 @@ async function apiRequest(path, { method = 'GET', body, timeoutMs = 10000 } = {}
                 {
                     status: response.status,
                     code: payload?.error?.code || 'HTTP_ERROR',
-                    details: payload?.error?.details || null
+                    details: payload?.error?.details ?? null
                 }
             );
         }
 
         return payload?.ok === true ? payload.data : payload;
     } catch (error) {
-        if (error.name === 'AbortError') {
+        if (error?.name === 'AbortError') {
             throw new ApiError('El servidor tardó demasiado en responder.', {
                 code: 'REQUEST_TIMEOUT'
             });
@@ -54,7 +70,7 @@ async function apiRequest(path, { method = 'GET', body, timeoutMs = 10000 } = {}
 
         throw new ApiError('No fue posible conectar con el servidor.', {
             code: 'NETWORK_ERROR',
-            details: error.message
+            details: error?.message || String(error)
         });
     } finally {
         clearTimeout(timeoutId);

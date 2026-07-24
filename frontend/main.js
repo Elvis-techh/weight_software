@@ -1,8 +1,33 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 
-let mainWindow;
+let mainWindow = null;
 let scaleSimulationTimer = null;
+let simulationPreset = 'loaded';
+
+const SCALE_SIMULATION_ENABLED = process.env.SCALE_SIMULATION !== 'false';
+const SCALE_PRESETS = Object.freeze({
+    loaded: { weight: 20500, label: 'CARGADO' },
+    empty: { weight: 8500, label: 'VACÍO' }
+});
+
+function getSimulationPreset(name = simulationPreset) {
+    return SCALE_PRESETS[name] || SCALE_PRESETS.loaded;
+}
+
+function emitSimulatedScaleData() {
+    if (!SCALE_SIMULATION_ENABLED || !mainWindow || mainWindow.isDestroyed()) return;
+
+    const preset = getSimulationPreset();
+    const jitter = Math.floor(Math.random() * 5) - 2;
+
+    mainWindow.webContents.send('scale-data', {
+        weight: preset.weight + jitter,
+        stable: true,
+        source: `simulator:${simulationPreset}`,
+        preset: simulationPreset
+    });
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -10,24 +35,67 @@ function createWindow() {
         height: 800,
         minWidth: 1000,
         minHeight: 700,
-        title: "Báscula Central - Terminal de Pesaje",
+        show: false,
+        backgroundColor: '#f3f4f6',
+        title: 'Báscula Central - Terminal de Pesaje',
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            sandbox: true,
             preload: path.join(__dirname, 'preload.js')
         }
     });
 
-    mainWindow.loadFile('index.html');
-    mainWindow.on('closed', () => { mainWindow = null; });
+    mainWindow.once('ready-to-show', () => mainWindow?.show());
+    mainWindow.webContents.once('did-finish-load', emitSimulatedScaleData);
+    mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+    });
+}
+
+function startScaleSimulation() {
+    stopScaleSimulation();
+    if (!SCALE_SIMULATION_ENABLED) return;
+
+    emitSimulatedScaleData();
+    scaleSimulationTimer = setInterval(emitSimulatedScaleData, 500);
+}
+
+function stopScaleSimulation() {
+    if (!scaleSimulationTimer) return;
+    clearInterval(scaleSimulationTimer);
+    scaleSimulationTimer = null;
+}
+
+function registerScaleSimulationIpc() {
+    ipcMain.removeHandler('scale-simulation:set-preset');
+    ipcMain.handle('scale-simulation:set-preset', (_event, presetName) => {
+        const requestedPreset = String(presetName || '');
+        if (!Object.hasOwn(SCALE_PRESETS, requestedPreset)) {
+            throw new Error('Preset de simulación inválido.');
+        }
+
+        simulationPreset = requestedPreset;
+        emitSimulatedScaleData();
+
+        return {
+            ok: true,
+            preset: simulationPreset,
+            ...getSimulationPreset()
+        };
+    });
 }
 
 app.whenReady().then(() => {
+    registerScaleSimulationIpc();
     createWindow();
+    startScaleSimulation();
+
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
-    startScaleSimulation();
 });
 
 app.on('window-all-closed', () => {
@@ -35,19 +103,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-    if (scaleSimulationTimer) clearInterval(scaleSimulationTimer);
+    stopScaleSimulation();
+    ipcMain.removeHandler('scale-simulation:set-preset');
 });
-
-function startScaleSimulation() {
-    if (scaleSimulationTimer) clearInterval(scaleSimulationTimer);
-    scaleSimulationTimer = setInterval(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            const jitter = Math.floor(Math.random() * 40) - 20;
-            const simulatedWeight = 20500 + jitter;
-            mainWindow.webContents.send('scale-data', {
-                weight: simulatedWeight,
-                stable: Math.abs(jitter) < 8
-            });
-        }
-    }, 500);
-}

@@ -72,7 +72,7 @@
             </div>
 
             <!-- 1. Changed this from a <div> to a <form id="client-form"> -->
-            <form id="client-form" class="p-6 flex flex-col gap-4">
+            <form id="client-form" class="p-6 flex flex-col gap-4" onsubmit="guardarCliente(event)">
 
                 <input type="hidden" id="modal-client-id">
 
@@ -144,7 +144,7 @@
                     <!-- 3. Added type="button" so this doesn't accidentally trigger a save -->
                     <button type="button" onclick="cerrarModalCliente()"
                         class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
-                    <button onclick="guardarCliente(event)"
+                    <button id="btn-guardar-cliente" type="submit"
                         class="px-6 py-2 bg-brand-500 text-white font-bold rounded shadow hover:bg-brand-600">Guardar</button>
                 </div>
 
@@ -199,7 +199,7 @@
 
                             <option value="tonelada">Por Tonelada</option>
 
-                            <option value="quintal">Por Quintal (1,000 lbs)</option>
+                            <option value="quintal">Por Quintal (100 lbs)</option>
 
                         </select>
 
@@ -247,8 +247,8 @@
                 <button onclick="cerrarActionModal()"
                     class="px-4 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded">Cancelar</button>
 
-                <button onclick="confirmarActionModal()"
-                    class="px-6 py-2 bg-brand-900 text-white font-bold rounded shadow hover:bg-black">Confirmar</button>
+                <button id="action-confirm-button" type="button" onclick="confirmarActionModal()"
+                    class="px-6 py-2 bg-brand-900 text-white font-bold rounded shadow hover:bg-black disabled:opacity-60 disabled:cursor-not-allowed">Confirmar</button>
 
             </div>
 
@@ -830,13 +830,14 @@
                 <div class="w-1/2 flex flex-col gap-6 h-full">
 
                     <div
-                        class="bg-gray-900 rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center relative border-4 border-gray-800 shrink-0 h-64">
+                        class="bg-gray-900 rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center relative border-4 border-gray-800 shrink-0 h-72">
 
                         <div class="absolute top-4 left-4 flex items-center gap-2 text-gray-400">
 
                             <span class="material-icons text-sm">settings_input_component</span>
 
-                            <span class="text-xs font-bold tracking-widest uppercase">COM3: LECTURA EN VIVO</span>
+                            <span id="scale-source-label" class="text-xs font-bold tracking-widest uppercase">SIMULADOR
+                                DE BÁSCULA</span>
 
                         </div>
 
@@ -849,6 +850,19 @@
                         </div>
 
                         <p class="text-gray-500 text-sm mt-2 font-mono" id="scale-status">Estabilizando...</p>
+
+                        <div class="mt-4 flex items-center gap-2" aria-label="Controles del simulador de báscula">
+                            <span class="text-[10px] font-bold tracking-widest text-gray-500 uppercase">Prueba:</span>
+                            <button id="simulator-loaded-button" type="button"
+                                onclick="setScaleSimulatorPreset('loaded')"
+                                class="bg-green-500 text-white border border-gray-600 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors">
+                                CARGADO 20,500
+                            </button>
+                            <button id="simulator-empty-button" type="button" onclick="setScaleSimulatorPreset('empty')"
+                                class="bg-gray-700 text-gray-200 border border-gray-600 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors">
+                                VACÍO 8,500
+                            </button>
+                        </div>
 
                     </div>
 
@@ -997,7 +1011,7 @@
 
                                     <span class="text-gray-500 font-bold uppercase text-sm">Peso Bruto (Lleno)</span>
 
-                                    <button onclick="manualWeight('bruto')"
+                                    <button id="manual-bruto-button" type="button" onclick="manualWeight('bruto')"
                                         class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit"><span
                                             class="material-icons text-[12px]">keyboard</span> Ingreso Manual</button>
 
@@ -1030,7 +1044,7 @@
 
                                     <span class="text-gray-500 font-bold uppercase text-sm">Tara (Vacío)</span>
 
-                                    <button onclick="manualWeight('tara')"
+                                    <button id="manual-tara-button" type="button" onclick="manualWeight('tara')"
                                         class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit"><span
                                             class="material-icons text-[12px]">keyboard</span> Ingreso Manual</button>
 
@@ -1039,7 +1053,7 @@
                                 <div class="flex items-center gap-3">
 
                                     <span id="tara-display"
-                                        class="font-mono text-2xl font-bold text-gray-800 w-48 whitespace-nowrapF text-right">-----
+                                        class="font-mono text-2xl font-bold text-gray-800 w-48 whitespace-nowrap text-right">-----
 
                                         LBS</span>
 
@@ -1332,7 +1346,7 @@
 
                                     <th class="p-4 font-semibold text-right">Neto (LBS)</th>
 
-                                    <th class="p-4 font-semibold text-right">Precio/Ton</th>
+                                    <th class="p-4 font-semibold text-right">Precio/Unidad</th>
 
                                     <th class="p-4 font-semibold text-right text-green-700">Total Pago (L)</th>
 
@@ -1411,7 +1425,7 @@
 
                                     <th class="p-3 font-semibold">Recibo #</th>
 
-                                    <th class="p-3 font-semibold text-right">Precio/Ton</th>
+                                    <th class="p-3 font-semibold text-right">Precio/Unidad</th>
 
                                     <th class="p-3 font-semibold text-right">Toneladas</th>
 

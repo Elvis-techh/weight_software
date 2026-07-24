@@ -1,3 +1,25 @@
+function normalizarCorapsa(record = {}) {
+    const normalized = {
+        id: record.id,
+        fecha: String(record.fecha || ''),
+        reciboIn: String(record.reciboIn ?? record.recibo_in ?? ''),
+        reciboOut: String(record.reciboOut ?? record.recibo_out ?? ''),
+        cliente: String(record.cliente || ''),
+        toneladas: toFiniteNumber(record.toneladas),
+        precio: toFiniteNumber(record.precio),
+        total: toFiniteNumber(record.total),
+        fileName: String(record.fileName ?? record.file_name ?? 'Sin Archivo'),
+        fileNuestro: String(record.fileNuestro ?? record.file_nuestro ?? 'Sin Archivo'),
+        pagado: record.pagado === true || Number(record.pagado) === 1
+    };
+
+    ['filePreviewUrl', 'fileMimeType', 'fileNuestroPreviewUrl', 'fileNuestroMimeType'].forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(record, key)) normalized[key] = record[key];
+    });
+
+    return normalized;
+}
+
 function getCorapsaAttachmentKeys(type) {
     return type === 'nuestro'
         ? { name: 'fileNuestro', url: 'fileNuestroPreviewUrl', mime: 'fileNuestroMimeType' }
@@ -15,55 +37,53 @@ function revokePreviewUrl(url) {
     }
 }
 
-function assignCorapsaAttachment(trans, type, file) {
+function assignCorapsaAttachment(record, type, file) {
     const keys = getCorapsaAttachmentKeys(type);
-    revokePreviewUrl(trans[keys.url]);
-    trans[keys.name] = file.name;
-    trans[keys.url] = URL.createObjectURL(file);
-    trans[keys.mime] = file.type || '';
+    revokePreviewUrl(record[keys.url]);
+    record[keys.name] = file.name;
+    record[keys.url] = URL.createObjectURL(file);
+    record[keys.mime] = file.type || '';
 }
 
-function clearCorapsaAttachment(trans, type) {
+function clearCorapsaAttachment(record, type) {
     const keys = getCorapsaAttachmentKeys(type);
-    revokePreviewUrl(trans[keys.url]);
-    trans[keys.name] = 'Sin Archivo';
-    trans[keys.url] = null;
-    trans[keys.mime] = '';
+    revokePreviewUrl(record[keys.url]);
+    record[keys.name] = 'Sin Archivo';
+    record[keys.url] = null;
+    record[keys.mime] = '';
 }
 
-function abrirCorapsaModal(id = null) {
-    document.getElementById('corapsa-modal').classList.remove('hidden');
+function abrirCorapsaModal(id = null, justificacion = '') {
+    const modal = document.getElementById('corapsa-modal');
+    const record = id == null ? null : corapsaData.find(item => sameRecordId(item.id, id));
 
-    if (id) {
-        const trans = corapsaData.find(t => t.id == id);
-        if (!trans) return mostrarNotificacion("Recibo externo no encontrado.", "error");
-        document.getElementById('corapsa-modal-title').innerText = "Editar Recibo Externo";
-        document.getElementById('corapsa-edit-id').value = trans.id;
-        document.getElementById('corapsa-fecha').value = trans.fecha;
-        document.getElementById('corapsa-recibo-in').value = trans.reciboIn;
-        document.getElementById('corapsa-cliente').value = trans.cliente;
-        document.getElementById('corapsa-toneladas').value = trans.toneladas;
-        document.getElementById('corapsa-precio').value = formatNumberForInput(trans.precio, 2);
-        document.getElementById('corapsa-total-display').innerText = Number(trans.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        document.getElementById('corapsa-file').value = "";
-    } else {
-        document.getElementById('corapsa-modal-title').innerText = "Registrar Recibo Externo";
-        document.getElementById('corapsa-edit-id').value = "";
-        document.getElementById('corapsa-fecha').value = getLocalIsoDate();
-        document.getElementById('corapsa-recibo-in').value = '';
-        document.getElementById('corapsa-cliente').value = '';
-        document.getElementById('corapsa-toneladas').value = '';
-        document.getElementById('corapsa-precio').value = '';
-        document.getElementById('corapsa-total-display').innerText = '0.00';
-        document.getElementById('corapsa-file').value = "";
-    }
+    if (id != null && !record) return mostrarNotificacion('Recibo externo no encontrado.', 'error');
+
+    activeCorapsaEditJustification = justificacion;
+    document.getElementById('corapsa-modal-title').textContent = record ? 'Editar Recibo Externo' : 'Registrar Recibo Externo';
+    document.getElementById('corapsa-edit-id').value = record?.id ?? '';
+    document.getElementById('corapsa-fecha').value = record?.fecha || getLocalIsoDate();
+    document.getElementById('corapsa-recibo-in').value = record?.reciboIn || '';
+    document.getElementById('corapsa-cliente').value = record?.cliente || '';
+    document.getElementById('corapsa-toneladas').value = record?.toneladas || '';
+    document.getElementById('corapsa-precio').value = record ? formatNumberForInput(record.precio, 2) : '';
+    document.getElementById('corapsa-recibo-out').value = record?.reciboOut || 'Se generará automáticamente';
+    document.getElementById('corapsa-total-display').textContent = formatMoney(record?.total || 0);
+    document.getElementById('corapsa-file').value = '';
+    modal.classList.remove('hidden');
 }
 
-function cerrarCorapsaModal() { document.getElementById('corapsa-modal').classList.add('hidden'); }
+function cerrarCorapsaModal() {
+    document.getElementById('corapsa-modal').classList.add('hidden');
+    activeCorapsaEditJustification = '';
+}
 
 function handleCorapsaClientInput() {
-    const inputVal = document.getElementById('corapsa-cliente').value;
-    const match = MOCK_CLIENTES.find(c => `${c.nombre} ${c.apellido || ''}`.trim() === inputVal);
+    const inputValue = document.getElementById('corapsa-cliente').value.trim();
+    const match = MOCK_CLIENTES.find(cliente =>
+        `${cliente.nombre} ${cliente.apellido || ''}`.trim().toLocaleLowerCase('es') === inputValue.toLocaleLowerCase('es')
+    );
+
     if (match) {
         document.getElementById('corapsa-precio').value = formatNumberForInput(match.precioFletePropio, 2);
         calcularTotalCorapsa();
@@ -71,150 +91,128 @@ function handleCorapsaClientInput() {
 }
 
 function calcularTotalCorapsa() {
-    const tons = parseFormattedNumber(document.getElementById('corapsa-toneladas').value) || 0;
-    const precio = parseFormattedNumber(document.getElementById('corapsa-precio').value) || 0;
-    const total = tons * precio;
-    document.getElementById('corapsa-total-display').innerText = total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const toneladas = toFiniteNumber(document.getElementById('corapsa-toneladas').value);
+    const precio = toFiniteNumber(document.getElementById('corapsa-precio').value);
+    const total = toneladas * precio;
+    document.getElementById('corapsa-total-display').textContent = formatMoney(total);
     return total;
-}
-
-async function parseOptionalJson(response) {
-    try { return await response.json(); } catch (_) { return null; }
 }
 
 async function guardarCorapsa() {
     const id = document.getElementById('corapsa-edit-id').value;
-    const fecha = document.getElementById('corapsa-fecha').value;
-    const reciboIn = document.getElementById('corapsa-recibo-in').value.trim();
-    const cliente = document.getElementById('corapsa-cliente').value.trim();
-    const toneladas = parseFormattedNumber(document.getElementById('corapsa-toneladas').value);
-    const precio = parseFormattedNumber(document.getElementById('corapsa-precio').value);
+    const selectedFile = document.getElementById('corapsa-file').files[0] || null;
+    const existing = id ? corapsaData.find(item => sameRecordId(item.id, id)) : null;
 
-    const fileInput = document.getElementById('corapsa-file');
-    const selectedFile = fileInput.files.length > 0 ? fileInput.files[0] : null;
-    const existing = id ? corapsaData.find(t => t.id == id) : null;
-
-    if (!cliente || !Number.isFinite(toneladas) || !Number.isFinite(precio) || !fecha || !reciboIn) {
-        return mostrarNotificacion("Todos los campos con * son obligatorios.", "error");
-    }
-    if (toneladas <= 0 || precio < 0) {
-        return mostrarNotificacion("Toneladas y precio deben contener valores válidos.", "error");
-    }
-
-    const totalCalculado = toneladas * precio;
     const payload = {
-        fecha,
-        reciboIn,
-        cliente,
-        toneladas,
-        precio,
-        total: totalCalculado,
-        fileName: selectedFile?.name || existing?.fileName || "Sin Archivo",
-        pagado: existing?.pagado ?? false
+        fecha: document.getElementById('corapsa-fecha').value,
+        reciboIn: document.getElementById('corapsa-recibo-in').value.trim(),
+        cliente: document.getElementById('corapsa-cliente').value.trim(),
+        toneladas: parseFormattedNumber(document.getElementById('corapsa-toneladas').value),
+        precio: parseFormattedNumber(document.getElementById('corapsa-precio').value),
+        fileName: selectedFile?.name || existing?.fileName || 'Sin Archivo',
+        fileNuestro: existing?.fileNuestro || 'Sin Archivo',
+        pagado: existing?.pagado || false,
+        justificacion: activeCorapsaEditJustification
     };
 
+    if (!payload.fecha || !payload.reciboIn || !payload.cliente) {
+        return mostrarNotificacion('Complete todos los campos obligatorios.', 'error');
+    }
+    if (!Number.isFinite(payload.toneladas) || payload.toneladas <= 0) {
+        return mostrarNotificacion('Las toneladas deben ser mayores que cero.', 'error');
+    }
+    if (!Number.isFinite(payload.precio) || payload.precio < 0) {
+        return mostrarNotificacion('El precio no es válido.', 'error');
+    }
+    if (id && !payload.justificacion) {
+        return mostrarNotificacion('La edición requiere una justificación.', 'error');
+    }
+
     try {
-        const method = id ? 'PUT' : 'POST';
-        const endpoint = id ? `${API_URL}/api/corapsa/${id}` : `${API_URL}/api/corapsa`;
-        const response = await fetch(endpoint, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        const result = id
+            ? await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, { method: 'PUT', body: payload })
+            : await apiRequest('/api/corapsa', { method: 'POST', body: payload });
+        const saved = normalizarCorapsa(result?.corapsa || result);
 
-        if (response.ok) {
-            const serverRecord = await parseOptionalJson(response);
-            if (id) {
-                const trans = corapsaData.find(t => t.id == id);
-                if (trans) {
-                    const preservedNuestro = {
-                        fileNuestro: trans.fileNuestro,
-                        fileNuestroPreviewUrl: trans.fileNuestroPreviewUrl,
-                        fileNuestroMimeType: trans.fileNuestroMimeType
-                    };
-                    Object.assign(trans, payload, serverRecord || {}, preservedNuestro);
-                    if (selectedFile) assignCorapsaAttachment(trans, 'cliente', selectedFile);
-                }
-                mostrarNotificacion("Recibo actualizado en el servidor.");
-            } else {
-                const autoReciboOut = `CRX-${Date.now().toString().slice(-6)}`;
-                const newRecord = {
-                    id: serverRecord?.id ?? Date.now(),
-                    reciboOut: serverRecord?.reciboOut ?? autoReciboOut,
-                    ...payload,
-                    ...(serverRecord || {})
-                };
-                if (selectedFile) assignCorapsaAttachment(newRecord, 'cliente', selectedFile);
-                corapsaData.unshift(newRecord);
-                mostrarNotificacion("Recibo externo registrado en el servidor.");
-            }
-            renderCorapsaTab();
-            cerrarCorapsaModal();
+        if (existing) {
+            const previews = {
+                filePreviewUrl: existing.filePreviewUrl,
+                fileMimeType: existing.fileMimeType,
+                fileNuestroPreviewUrl: existing.fileNuestroPreviewUrl,
+                fileNuestroMimeType: existing.fileNuestroMimeType
+            };
+            Object.assign(existing, saved, previews);
+            if (selectedFile) assignCorapsaAttachment(existing, 'cliente', selectedFile);
         } else {
-            mostrarNotificacion("Error al guardar el recibo en la nube.", "error");
+            if (selectedFile) assignCorapsaAttachment(saved, 'cliente', selectedFile);
+            corapsaData.unshift(saved);
         }
-    } catch (error) {
-        console.error(error);
-        mostrarNotificacion("Fallo de conexión. Revise la red.", "error");
-    }
-}
 
-function togglePagoCorapsa(id) {
-    const trans = corapsaData.find(t => t.id == id);
-    if (trans) {
-        trans.pagado = !trans.pagado;
         renderCorapsaTab();
+        cerrarCorapsaModal();
+        mostrarNotificacion(id ? 'Recibo actualizado.' : 'Recibo externo registrado.');
+    } catch (error) {
+        console.error('Error al guardar Corapsa:', error);
+        mostrarNotificacion(error.message || 'No se pudo guardar el recibo.', 'error');
     }
 }
 
-function imprimirCorapsa(id) { mostrarNotificacion("Imprimiendo comprobante Corapsa...", "success"); }
+async function togglePagoCorapsa(id) {
+    const record = corapsaData.find(item => sameRecordId(item.id, id));
+    if (!record) return;
+
+    const previous = record.pagado;
+    record.pagado = !record.pagado;
+    renderCorapsaTab();
+
+    try {
+        const result = await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            body: { pagado: record.pagado }
+        });
+        Object.assign(record, normalizarCorapsa(result?.corapsa || result));
+    } catch (error) {
+        record.pagado = previous;
+        renderCorapsaTab();
+        mostrarNotificacion(error.message || 'No se pudo actualizar el estado.', 'error');
+    }
+}
+
+function imprimirCorapsa(id) {
+    const record = corapsaData.find(item => sameRecordId(item.id, id));
+    if (!record) return mostrarNotificacion('Recibo no encontrado.', 'error');
+    mostrarNotificacion(`Recibo ${record.reciboOut || record.reciboIn} listo para impresión.`);
+}
 
 function abrirVisorRecibo(id, type = 'cliente') {
-    const trans = corapsaData.find(t => t.id == id);
-    if (!trans) return mostrarNotificacion("Recibo no encontrado.", "error");
+    const record = corapsaData.find(item => sameRecordId(item.id, id));
+    if (!record) return mostrarNotificacion('Recibo no encontrado.', 'error');
 
     const keys = getCorapsaAttachmentKeys(type);
-    const fileName = trans[keys.name];
-    if (!fileName || fileName === 'Sin Archivo') {
-        return mostrarNotificacion("No hay archivo adjunto.", "error");
-    }
+    const fileName = record[keys.name];
+    if (!fileName || fileName === 'Sin Archivo') return mostrarNotificacion('No hay archivo adjunto.', 'error');
 
-    activeReceiptViewer = { id: trans.id, type };
-    document.getElementById('visor-file-name').innerText = fileName;
+    activeReceiptViewer = { id: record.id, type };
+    document.getElementById('visor-file-name').textContent = fileName;
 
     const container = document.getElementById('receipt-preview-container');
     container.replaceChildren();
-
-    const previewUrl = trans[keys.url];
-    const mimeType = trans[keys.mime] || '';
+    const previewUrl = record[keys.url];
+    const mimeType = record[keys.mime] || '';
 
     if (previewUrl) {
-        if (mimeType.startsWith('image/')) {
-            const image = document.createElement('img');
-            image.src = previewUrl;
-            image.alt = fileName;
-            image.className = 'max-w-full max-h-full object-contain rounded shadow';
-            container.appendChild(image);
-        } else {
-            const frame = document.createElement('iframe');
-            frame.src = previewUrl;
-            frame.title = fileName;
-            frame.className = 'w-full h-full min-h-[500px] bg-white rounded border';
-            container.appendChild(frame);
-        }
+        const preview = mimeType.startsWith('image/') ? document.createElement('img') : document.createElement('iframe');
+        preview.src = previewUrl;
+        preview.title = fileName;
+        preview.alt = fileName;
+        preview.className = mimeType.startsWith('image/')
+            ? 'max-w-full max-h-full object-contain rounded shadow'
+            : 'w-full h-full min-h-[500px] bg-white rounded border';
+        container.appendChild(preview);
     } else {
         const message = document.createElement('div');
         message.className = 'max-w-lg text-center text-gray-500 bg-white border-2 border-dashed rounded-xl p-8';
-        const icon = document.createElement('span');
-        icon.className = 'material-icons text-6xl text-gray-400';
-        icon.textContent = 'cloud_off';
-        const heading = document.createElement('p');
-        heading.className = 'mt-3 font-bold text-gray-700';
-        heading.textContent = 'El nombre del archivo está registrado, pero el contenido no está disponible localmente.';
-        const detail = document.createElement('p');
-        detail.className = 'mt-2 text-sm';
-        detail.textContent = 'Los archivos nuevos seleccionados durante esta sesión sí se pueden visualizar. La persistencia completa llegará con la etapa de cargas reales.';
-        message.append(icon, heading, detail);
+        message.textContent = 'El nombre del archivo está guardado, pero el contenido binario todavía no se almacena en el servidor.';
         container.appendChild(message);
     }
 
@@ -227,35 +225,41 @@ function cerrarVisorRecibo() {
 }
 
 function solicitarEliminarArchivoActual() {
-    if (!activeReceiptViewer.id) return mostrarNotificacion("No hay archivo seleccionado.", "error");
+    if (activeReceiptViewer.id == null) return mostrarNotificacion('No hay archivo seleccionado.', 'error');
     abrirActionModal('delete_corapsa_file', `${activeReceiptViewer.id}|${activeReceiptViewer.type}`);
 }
 
 function solicitarReemplazarArchivoActual() {
-    if (!activeReceiptViewer.id) return mostrarNotificacion("No hay archivo seleccionado.", "error");
+    if (activeReceiptViewer.id == null) return mostrarNotificacion('No hay archivo seleccionado.', 'error');
     abrirActionModal('replace_corapsa_file', `${activeReceiptViewer.id}|${activeReceiptViewer.type}`);
 }
 
-function eliminarArchivoCorapsa(ref, justificacion) {
+async function eliminarArchivoCorapsa(ref, justificacion) {
     const { id, type } = getCorapsaReferenceParts(ref);
-    const trans = corapsaData.find(t => t.id == id);
-    if (!trans) return mostrarNotificacion("Recibo no encontrado.", "error");
+    const record = corapsaData.find(item => sameRecordId(item.id, id));
+    if (!record) throw new Error('Recibo no encontrado.');
 
     const keys = getCorapsaAttachmentKeys(type);
-    const oldName = trans[keys.name];
-    clearCorapsaAttachment(trans, type);
-    console.log(`[AUDITORIA] Archivo Corapsa eliminado (${oldName}). Razón: ${justificacion}`);
+    const body = type === 'nuestro'
+        ? { fileNuestro: 'Sin Archivo', justificacion }
+        : { fileName: 'Sin Archivo', justificacion };
+
+    const result = await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+    clearCorapsaAttachment(record, type);
+    Object.assign(record, normalizarCorapsa(result?.corapsa || result), {
+        [keys.url]: null,
+        [keys.mime]: ''
+    });
     cerrarVisorRecibo();
     renderCorapsaTab();
-    mostrarNotificacion("Archivo eliminado exitosamente.");
 }
 
 function prepararReemplazoArchivoCorapsa(ref, justificacion) {
     const { id, type } = getCorapsaReferenceParts(ref);
-    const trans = corapsaData.find(t => t.id == id);
-    if (!trans) return mostrarNotificacion("Recibo no encontrado.", "error");
+    const record = corapsaData.find(item => sameRecordId(item.id, id));
+    if (!record) return mostrarNotificacion('Recibo no encontrado.', 'error');
 
-    activeUploadId = trans.id;
+    activeUploadId = record.id;
     activeUploadType = type;
     activeUploadJustification = justificacion;
     cerrarVisorRecibo();
@@ -266,108 +270,104 @@ function renderCorapsaTab() {
     const tbody = document.getElementById('corapsa-table-body');
     if (!tbody) return;
 
-    const startD = document.getElementById('corapsa-filter-start')?.value || '';
-    const endD = document.getElementById('corapsa-filter-end')?.value || '';
-    const searchVal = (document.getElementById('corapsa-filter-client')?.value || '').toLowerCase();
+    const startDate = document.getElementById('corapsa-filter-start')?.value || '';
+    const endDate = document.getElementById('corapsa-filter-end')?.value || '';
+    const search = (document.getElementById('corapsa-filter-client')?.value || '').trim().toLocaleLowerCase('es');
 
-    const filtered = corapsaData.filter(t => {
-        if (startD && t.fecha < startD) return false;
-        if (endD && t.fecha > endD) return false;
-        if (searchVal && !String(t.cliente || '').toLowerCase().includes(searchVal) && !String(t.reciboIn || '').toLowerCase().includes(searchVal)) return false;
-        return true;
+    const filtered = corapsaData.filter(record => {
+        if (startDate && record.fecha < startDate) return false;
+        if (endDate && record.fecha > endDate) return false;
+        const searchable = `${record.cliente} ${record.reciboIn} ${record.reciboOut}`.toLocaleLowerCase('es');
+        return !search || searchable.includes(search);
     });
 
-    let sumTons = 0;
-    let sumTotal = 0;
+    const sumTons = filtered.reduce((sum, item) => sum + item.toneladas, 0);
+    const sumTotal = filtered.reduce((sum, item) => sum + item.total, 0);
+    document.getElementById('corapsa-total-toneladas').textContent = sumTons.toFixed(2);
+    document.getElementById('corapsa-total-dinero').textContent = formatMoney(sumTotal);
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>`;
-        document.getElementById('corapsa-total-toneladas').innerText = "0.00";
-        document.getElementById('corapsa-total-dinero').innerText = "0.00";
+        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = '';
-    filtered.forEach(t => {
-        sumTons += Number(t.toneladas || 0);
-        sumTotal += Number(t.total || 0);
+    tbody.innerHTML = filtered.map(record => {
+        const fileC = record.fileName !== 'Sin Archivo' ? record.fileName : 'Sin archivo';
+        const fileN = record.fileNuestro !== 'Sin Archivo' ? record.fileNuestro : 'Sin archivo';
+        const badgeClass = record.pagado ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200';
+        const badgeText = record.pagado ? 'PAGADO' : 'NO PAGADO';
+        const id = escapeHtml(record.id);
 
-        const displayDate = t.fecha.split('-').reverse().join('/');
-        const badgeClass = t.pagado ? "bg-green-100 text-green-700 border-green-200" : "bg-red-100 text-red-700 border-red-200";
-        const badgeText = t.pagado ? "PAGADO" : "NO PAGADO";
-
-        const fileC = t.fileName && t.fileName !== "Sin Archivo" ? t.fileName : "Sin archivo";
-        const fileN = t.fileNuestro && t.fileNuestro !== "Sin Archivo" ? t.fileNuestro : "Sin archivo";
-        const iconC = fileC !== "Sin archivo" ? "text-blue-600 border-blue-200 bg-blue-50" : "text-gray-400";
-        const iconN = fileN !== "Sin archivo" ? "text-brand-600 border-brand-200 bg-brand-50" : "text-gray-400";
-        const actionC = fileC !== 'Sin archivo' ? `abrirVisorRecibo(${t.id}, 'cliente')` : `triggerQuickUpload(${t.id}, 'cliente')`;
-        const actionN = fileN !== 'Sin archivo' ? `abrirVisorRecibo(${t.id}, 'nuestro')` : `triggerQuickUpload(${t.id}, 'nuestro')`;
-
-        tbody.innerHTML += `
+        return `
             <tr class="hover:bg-blue-50">
-                <td class="p-3 text-sm font-mono text-gray-600 font-bold">${displayDate}</td>
-                <td class="p-3 font-bold text-gray-800">${t.cliente}</td>
-                <td class="p-3">
-                    <span class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-1 rounded font-mono font-bold text-xs">
-                        <span class="material-icons text-[14px]">receipt_long</span>${t.reciboIn}
-                    </span>
-                </td>
-                <td class="p-3 text-right text-xs text-gray-500">L ${Number(t.precio || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
-                <td class="p-3 text-right font-mono font-bold text-gray-600">${Number(t.toneladas || 0).toFixed(2)}</td>
-                <td class="p-3 text-right font-mono font-bold text-blue-700 text-lg">L ${Number(t.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 text-sm font-mono text-gray-600 font-bold">${escapeHtml(formatDateForDisplay(record.fecha))}</td>
+                <td class="p-3 font-bold text-gray-800">${escapeHtml(record.cliente)}</td>
+                <td class="p-3"><span class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-1 rounded font-mono font-bold text-xs"><span class="material-icons text-[14px]">receipt_long</span>${escapeHtml(record.reciboIn)}</span></td>
+                <td class="p-3 text-right text-xs text-gray-500">L ${formatMoney(record.precio)}</td>
+                <td class="p-3 text-right font-mono font-bold text-gray-600">${record.toneladas.toFixed(2)}</td>
+                <td class="p-3 text-right font-mono font-bold text-blue-700 text-lg">L ${formatMoney(record.total)}</td>
                 <td class="p-3 text-center">
                     <div class="flex flex-col gap-1 items-center">
-                        <button onclick="${actionC}" title="${fileC !== 'Sin archivo' ? 'Abrir: ' + fileC : 'Adjuntar archivo del cliente'}" class="text-[10px] font-bold border rounded px-2 py-1.5 hover:shadow flex items-center gap-1 w-28 truncate justify-center ${iconC}">
-                            <span class="material-icons text-[14px]">${fileC !== 'Sin archivo' ? 'visibility' : 'attach_file'}</span> Cliente
-                        </button>
-                        <button onclick="${actionN}" title="${fileN !== 'Sin archivo' ? 'Abrir: ' + fileN : 'Adjuntar archivo interno'}" class="text-[10px] font-bold border rounded px-2 py-1.5 hover:shadow flex items-center gap-1 w-28 truncate justify-center ${iconN}">
-                            <span class="material-icons text-[14px]">${fileN !== 'Sin archivo' ? 'visibility' : 'attach_file'}</span> Nuestro
-                        </button>
+                        <button type="button" onclick="${fileC === 'Sin archivo' ? `triggerQuickUpload('${id}', 'cliente')` : `abrirVisorRecibo('${id}', 'cliente')`}" title="${escapeHtml(fileC)}" class="text-[10px] font-bold border rounded px-2 py-1.5 w-28 truncate">Cliente</button>
+                        <button type="button" onclick="${fileN === 'Sin archivo' ? `triggerQuickUpload('${id}', 'nuestro')` : `abrirVisorRecibo('${id}', 'nuestro')`}" title="${escapeHtml(fileN)}" class="text-[10px] font-bold border rounded px-2 py-1.5 w-28 truncate">Nuestro</button>
                     </div>
                 </td>
+                <td class="p-3 text-center"><button type="button" onclick="togglePagoCorapsa('${id}')" class="${badgeClass} px-3 py-1 rounded-full text-[10px] font-bold border">${badgeText}</button></td>
                 <td class="p-3 text-center">
-                    <button onclick="togglePagoCorapsa(${t.id})" class="${badgeClass} px-3 py-1 rounded-full text-[10px] font-bold border transition-colors hover:shadow-md cursor-pointer">${badgeText}</button>
-                </td>
-                <td class="p-3 text-center">
-                    <div class="flex justify-center gap-1 items-center">
-                        <button onclick="abrirActionModal('edit_corapsa', ${t.id})" class="text-blue-500 hover:text-blue-800 transition-colors"><span class="material-icons text-[18px]">edit</span></button>
-                        <button onclick="abrirActionModal('delete_corapsa', ${t.id})" class="text-red-400 hover:text-red-700 transition-colors"><span class="material-icons text-[18px]">delete</span></button>
-                    </div>
+                    <button type="button" onclick="abrirActionModal('edit_corapsa', '${id}')" class="text-blue-500 hover:text-blue-800"><span class="material-icons text-[18px]">edit</span></button>
+                    <button type="button" onclick="abrirActionModal('delete_corapsa', '${id}')" class="text-red-400 hover:text-red-700"><span class="material-icons text-[18px]">delete</span></button>
                 </td>
             </tr>
         `;
-    });
-
-    document.getElementById('corapsa-total-toneladas').innerText = sumTons.toFixed(2);
-    document.getElementById('corapsa-total-dinero').innerText = sumTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }).join('');
 }
 
 function triggerQuickUpload(id, type) {
     activeUploadId = id;
     activeUploadType = type;
-    activeUploadJustification = null;
+    activeUploadJustification = '';
     document.getElementById(type === 'cliente' ? 'hidden-file-cliente' : 'hidden-file-nuestro').click();
 }
 
-function processQuickUpload(event, fallbackType) {
-    if (!activeUploadId || event.target.files.length === 0) return;
+async function processQuickUpload(event, fallbackType) {
+    if (activeUploadId == null || event.target.files.length === 0) return;
+
     const type = activeUploadType || fallbackType;
-    const trans = corapsaData.find(t => t.id == activeUploadId);
+    const record = corapsaData.find(item => sameRecordId(item.id, activeUploadId));
     const file = event.target.files[0];
     const idToOpen = activeUploadId;
 
-    if (trans) {
-        assignCorapsaAttachment(trans, type, file);
-        const reason = activeUploadJustification ? ` Razón: ${activeUploadJustification}` : '';
-        console.log(`[AUDITORIA] Archivo ${type} adjuntado/reemplazado: ${file.name}.${reason}`);
-        mostrarNotificacion(`Archivo ${type} adjuntado.`);
+    try {
+        if (!record) throw new Error('Recibo no encontrado.');
+        const body = type === 'nuestro'
+            ? { fileNuestro: file.name, justificacion: activeUploadJustification }
+            : { fileName: file.name, justificacion: activeUploadJustification };
+        const result = await apiRequest(`/api/corapsa/${encodeURIComponent(record.id)}`, { method: 'PATCH', body });
+        Object.assign(record, normalizarCorapsa(result?.corapsa || result));
+        assignCorapsaAttachment(record, type, file);
         renderCorapsaTab();
+        mostrarNotificacion(`Archivo ${type} adjuntado.`);
+        abrirVisorRecibo(idToOpen, type);
+    } catch (error) {
+        mostrarNotificacion(error.message || 'No se pudo guardar el archivo.', 'error');
+    } finally {
+        event.target.value = '';
+        activeUploadId = null;
+        activeUploadType = null;
+        activeUploadJustification = null;
     }
+}
 
-    event.target.value = '';
-    activeUploadId = null;
-    activeUploadType = null;
-    activeUploadJustification = null;
-
-    if (trans) abrirVisorRecibo(idToOpen, type);
+async function eliminarCorapsaServidor(id, justificacion) {
+    await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        body: { justificacion }
+    });
+    const record = corapsaData.find(item => sameRecordId(item.id, id));
+    if (record) {
+        revokePreviewUrl(record.filePreviewUrl);
+        revokePreviewUrl(record.fileNuestroPreviewUrl);
+    }
+    corapsaData = corapsaData.filter(item => !sameRecordId(item.id, id));
+    renderCorapsaTab();
 }
