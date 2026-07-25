@@ -9,6 +9,89 @@ async function ensureColumn(db, table, column, definition) {
     }
 }
 
+function formatLocalIsoDate(date) {
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+    ].join('-');
+}
+
+function addLocalDays(date, days) {
+    const copy = new Date(date);
+    copy.setHours(12, 0, 0, 0);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+}
+
+function getCurrentWeekRange() {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const mondayOffset = today.getDay() === 0 ? -6 : 1 - today.getDay();
+    const monday = addLocalDays(today, mondayOffset);
+    return {
+        monday,
+        start: formatLocalIsoDate(monday),
+        end: formatLocalIsoDate(addLocalDays(monday, 6))
+    };
+}
+
+async function migrateLegacyPayrollAttendance(db) {
+    const workers = await db.all(`
+        SELECT id, dias_trabajados, extras
+        FROM planilla
+        WHERE COALESCE(asistencia_migrada, 0) = 0
+        ORDER BY id
+    `);
+
+    if (workers.length === 0) return;
+
+    const week = getCurrentWeekRange();
+    await db.exec('BEGIN IMMEDIATE');
+    try {
+        for (const worker of workers) {
+            const existing = await db.get(
+                'SELECT COUNT(*) AS total FROM planilla_asistencia WHERE trabajador_id = ?',
+                [worker.id]
+            );
+
+            if (Number(existing?.total || 0) === 0) {
+                const days = Math.min(7, Math.max(0, Math.floor(Number(worker.dias_trabajados || 0))));
+                for (let index = 0; index < days; index += 1) {
+                    const fecha = formatLocalIsoDate(addLocalDays(week.monday, index));
+                    await db.run(`
+                        INSERT OR IGNORE INTO planilla_asistencia
+                            (trabajador_id, fecha, trabajado, hora_inicio, hora_fin)
+                        VALUES (?, ?, 1, '07:00', '16:00')
+                    `, [worker.id, fecha]);
+                }
+            }
+
+            const extras = Math.max(0, Number(worker.extras || 0));
+            if (extras > 0) {
+                await db.run(`
+                    INSERT INTO planilla_periodos
+                        (trabajador_id, fecha_inicio, fecha_fin, extras)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(trabajador_id, fecha_inicio, fecha_fin)
+                    DO UPDATE SET extras = excluded.extras, updated_at = CURRENT_TIMESTAMP
+                `, [worker.id, week.start, week.end, extras]);
+            }
+
+            await db.run(
+                'UPDATE planilla SET asistencia_migrada = 1 WHERE id = ?',
+                [worker.id]
+            );
+        }
+
+        await db.exec('COMMIT');
+        console.log(`Planilla: ${workers.length} trabajador(es) migrados al control diario.`);
+    } catch (error) {
+        await db.exec('ROLLBACK');
+        throw error;
+    }
+}
+
 async function repairLegacyQueueIds(db) {
     const columns = await db.all('PRAGMA table_info(camiones_en_patio)');
     const idColumn = columns.find(column => column.name === 'id');
@@ -67,6 +150,8 @@ async function initializeDB() {
             ubicacion TEXT NOT NULL DEFAULT '',
             precio_flete_propio REAL NOT NULL DEFAULT 0,
             precio_flete_cliente REAL NOT NULL DEFAULT 0,
+            precio_tonelada_propio REAL,
+            precio_tonelada_cliente REAL,
             unidad TEXT NOT NULL DEFAULT 'tonelada',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -113,8 +198,30 @@ async function initializeDB() {
             precio REAL NOT NULL,
             total REAL NOT NULL,
             file_name TEXT NOT NULL DEFAULT 'Sin Archivo',
+            file_mime_type TEXT NOT NULL DEFAULT '',
+            file_data BLOB,
             file_nuestro TEXT NOT NULL DEFAULT 'Sin Archivo',
+            file_nuestro_mime_type TEXT NOT NULL DEFAULT '',
+            file_nuestro_data BLOB,
             pagado INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+
+
+        CREATE TABLE IF NOT EXISTS corapsa_pagos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_pago TEXT NOT NULL,
+            periodo_inicio TEXT NOT NULL,
+            periodo_fin TEXT NOT NULL,
+            referencia TEXT NOT NULL DEFAULT '',
+            toneladas REAL NOT NULL,
+            monto REAL NOT NULL,
+            notas TEXT NOT NULL DEFAULT '',
+            file_name TEXT NOT NULL DEFAULT 'Sin Archivo',
+            file_mime_type TEXT NOT NULL DEFAULT '',
+            file_data BLOB,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
@@ -126,6 +233,8 @@ async function initializeDB() {
             concepto TEXT NOT NULL,
             justificacion TEXT NOT NULL DEFAULT '',
             file_name TEXT NOT NULL DEFAULT 'Sin Archivo',
+            file_mime_type TEXT NOT NULL DEFAULT '',
+            file_data BLOB,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
@@ -136,10 +245,36 @@ async function initializeDB() {
             apellido TEXT NOT NULL,
             telefono TEXT NOT NULL DEFAULT '',
             sueldo_base REAL NOT NULL,
-            dias_trabajados REAL NOT NULL DEFAULT 6,
+            dias_trabajados REAL NOT NULL DEFAULT 0,
             extras REAL NOT NULL DEFAULT 0,
+            asistencia_migrada INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS planilla_asistencia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trabajador_id INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            trabajado INTEGER NOT NULL DEFAULT 1,
+            hora_inicio TEXT NOT NULL DEFAULT '07:00',
+            hora_fin TEXT NOT NULL DEFAULT '16:00',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(trabajador_id, fecha),
+            FOREIGN KEY (trabajador_id) REFERENCES planilla(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS planilla_periodos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trabajador_id INTEGER NOT NULL,
+            fecha_inicio TEXT NOT NULL,
+            fecha_fin TEXT NOT NULL,
+            extras REAL NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(trabajador_id, fecha_inicio, fecha_fin),
+            FOREIGN KEY (trabajador_id) REFERENCES planilla(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS auditoria (
@@ -154,11 +289,18 @@ async function initializeDB() {
 
         CREATE INDEX IF NOT EXISTS idx_transacciones_fecha ON transacciones(fecha);
         CREATE INDEX IF NOT EXISTS idx_corapsa_fecha ON corapsa(fecha);
+        CREATE INDEX IF NOT EXISTS idx_corapsa_pagos_periodo ON corapsa_pagos(periodo_inicio, periodo_fin);
+        CREATE INDEX IF NOT EXISTS idx_corapsa_pagos_fecha_pago ON corapsa_pagos(fecha_pago);
         CREATE INDEX IF NOT EXISTS idx_gastos_fecha ON gastos(fecha);
+        CREATE INDEX IF NOT EXISTS idx_planilla_asistencia_fecha ON planilla_asistencia(fecha);
+        CREATE INDEX IF NOT EXISTS idx_planilla_asistencia_trabajador ON planilla_asistencia(trabajador_id);
+        CREATE INDEX IF NOT EXISTS idx_planilla_periodos_rango ON planilla_periodos(fecha_inicio, fecha_fin);
     `);
 
     // Compatible migrations for databases created by earlier project versions.
     await ensureColumn(db, 'clientes', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
+    await ensureColumn(db, 'clientes', 'precio_tonelada_propio', 'REAL');
+    await ensureColumn(db, 'clientes', 'precio_tonelada_cliente', 'REAL');
     await ensureColumn(db, 'clientes', 'created_at', 'TEXT');
     await ensureColumn(db, 'clientes', 'updated_at', 'TEXT');
 
@@ -171,9 +313,47 @@ async function initializeDB() {
     await ensureColumn(db, 'transacciones', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'transacciones', 'created_at', 'TEXT');
 
+    await ensureColumn(db, 'corapsa', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
+    await ensureColumn(db, 'corapsa', 'file_data', 'BLOB');
+    await ensureColumn(db, 'corapsa', 'file_nuestro_mime_type', "TEXT NOT NULL DEFAULT ''");
+    await ensureColumn(db, 'corapsa', 'file_nuestro_data', 'BLOB');
+    await ensureColumn(db, 'corapsa', 'created_at', 'TEXT');
+    await ensureColumn(db, 'corapsa', 'updated_at', 'TEXT');
+
+    await ensureColumn(db, 'corapsa_pagos', 'referencia', "TEXT NOT NULL DEFAULT ''");
+    await ensureColumn(db, 'corapsa_pagos', 'notas', "TEXT NOT NULL DEFAULT ''");
+    await ensureColumn(db, 'corapsa_pagos', 'file_name', "TEXT NOT NULL DEFAULT 'Sin Archivo'");
+    await ensureColumn(db, 'corapsa_pagos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
+    await ensureColumn(db, 'corapsa_pagos', 'file_data', 'BLOB');
+    await ensureColumn(db, 'corapsa_pagos', 'created_at', 'TEXT');
+    await ensureColumn(db, 'corapsa_pagos', 'updated_at', 'TEXT');
+
+    await ensureColumn(db, 'gastos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
+    await ensureColumn(db, 'gastos', 'file_data', 'BLOB');
+    await ensureColumn(db, 'gastos', 'created_at', 'TEXT');
+    await ensureColumn(db, 'gastos', 'updated_at', 'TEXT');
+
+    await ensureColumn(db, 'planilla', 'asistencia_migrada', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(db, 'planilla', 'created_at', 'TEXT');
+    await ensureColumn(db, 'planilla', 'updated_at', 'TEXT');
+
     await db.exec(`
         UPDATE clientes
-        SET created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
+        SET precio_tonelada_propio = COALESCE(
+                precio_tonelada_propio,
+                CASE
+                    WHEN unidad = 'quintal' THEN ROUND(precio_flete_propio * 22.04, 2)
+                    ELSE precio_flete_propio
+                END
+            ),
+            precio_tonelada_cliente = COALESCE(
+                precio_tonelada_cliente,
+                CASE
+                    WHEN unidad = 'quintal' THEN ROUND(precio_flete_cliente * 22.04, 2)
+                    ELSE precio_flete_cliente
+                END
+            ),
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
             updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
 
         UPDATE camiones_en_patio
@@ -181,9 +361,32 @@ async function initializeDB() {
 
         UPDATE transacciones
         SET created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP);
+
+        UPDATE corapsa
+        SET file_name = COALESCE(NULLIF(TRIM(file_name), ''), 'Sin Archivo'),
+            file_mime_type = COALESCE(file_mime_type, ''),
+            file_nuestro = COALESCE(NULLIF(TRIM(file_nuestro), ''), 'Sin Archivo'),
+            file_nuestro_mime_type = COALESCE(file_nuestro_mime_type, ''),
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
+
+        UPDATE corapsa_pagos
+        SET referencia = COALESCE(referencia, ''),
+            notas = COALESCE(notas, ''),
+            file_name = COALESCE(NULLIF(TRIM(file_name), ''), 'Sin Archivo'),
+            file_mime_type = COALESCE(file_mime_type, ''),
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
+
+        UPDATE gastos
+        SET file_name = COALESCE(NULLIF(TRIM(file_name), ''), 'Sin Archivo'),
+            file_mime_type = COALESCE(file_mime_type, ''),
+            created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
     `);
 
     await repairLegacyQueueIds(db);
+    await migrateLegacyPayrollAttendance(db);
     await db.exec('CREATE INDEX IF NOT EXISTS idx_camiones_created_at ON camiones_en_patio(created_at);');
 
     return db;

@@ -20,6 +20,8 @@ let transaccionesData = [];
 let corapsaData = [];
 let gastosData = [];
 let planillaData = [];
+let overviewData = null;
+let corapsaPagosData = [];
 
 let activeUploadId = null;
 let activeUploadType = null;
@@ -58,13 +60,77 @@ function createEmptyTransaction() {
     };
 }
 
-function getLocalIsoDate() {
-    const d = new Date();
+function formatLocalIsoDate(date) {
+    const d = date instanceof Date ? date : new Date();
     return [
         d.getFullYear(),
         String(d.getMonth() + 1).padStart(2, '0'),
         String(d.getDate()).padStart(2, '0')
     ].join('-');
+}
+
+function getLocalIsoDate() {
+    return formatLocalIsoDate(new Date());
+}
+
+function parseLocalIsoDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return null;
+
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    if (
+        date.getFullYear() !== Number(match[1]) ||
+        date.getMonth() !== Number(match[2]) - 1 ||
+        date.getDate() !== Number(match[3])
+    ) return null;
+
+    date.setHours(12, 0, 0, 0);
+    return date;
+}
+
+function addLocalDays(dateOrIso, days) {
+    const date = dateOrIso instanceof Date
+        ? new Date(dateOrIso)
+        : parseLocalIsoDate(dateOrIso);
+    if (!date) return null;
+    date.setDate(date.getDate() + Number(days || 0));
+    return date;
+}
+
+function getCurrentWeekRange(referenceDate = new Date()) {
+    const reference = new Date(referenceDate);
+    reference.setHours(12, 0, 0, 0);
+    const mondayOffset = reference.getDay() === 0 ? -6 : 1 - reference.getDay();
+    const monday = addLocalDays(reference, mondayOffset);
+    const sunday = addLocalDays(monday, 6);
+    return {
+        start: formatLocalIsoDate(monday),
+        end: formatLocalIsoDate(sunday)
+    };
+}
+
+function getCurrentMonthRange(referenceDate = new Date()) {
+    const reference = new Date(referenceDate);
+    const first = new Date(reference.getFullYear(), reference.getMonth(), 1, 12, 0, 0, 0);
+    const last = new Date(reference.getFullYear(), reference.getMonth() + 1, 0, 12, 0, 0, 0);
+    return {
+        start: formatLocalIsoDate(first),
+        end: formatLocalIsoDate(last)
+    };
+}
+
+function enumerateLocalDates(startIso, endIso, maximumDays = 31) {
+    const start = parseLocalIsoDate(startIso);
+    const end = parseLocalIsoDate(endIso);
+    if (!start || !end || start > end) return [];
+
+    const dates = [];
+    let cursor = new Date(start);
+    while (cursor <= end && dates.length < maximumDays) {
+        dates.push(formatLocalIsoDate(cursor));
+        cursor = addLocalDays(cursor, 1);
+    }
+    return dates;
 }
 
 function getLocalTimeString() {
@@ -164,6 +230,17 @@ function formatPhone(event) {
     event.target.value = value;
 }
 
+function isValidInternationalPhone(value) {
+    const phone = String(value || '').trim();
+    if (!phone || phone === '+504') return true;
+    if (phone.startsWith('+504')) return /^\+504 \d{4}-\d{4}$/.test(phone);
+
+    // Other country codes remain editable. Require a leading plus sign and
+    // between 7 and 15 total digits, following the E.164 length limit.
+    const digits = phone.replace(/\D/g, '');
+    return /^\+/.test(phone) && digits.length >= 7 && digits.length <= 15;
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -192,14 +269,38 @@ function getLiveScaleReading() {
     };
 }
 
-function calculatePayment(netWeightLbs, price, unit) {
-    const net = toFiniteNumber(netWeightLbs);
-    const appliedPrice = toFiniteNumber(price);
-    const divisor = unit === 'quintal'
-        ? APP_CONFIG.lbsPerQuintal
-        : APP_CONFIG.lbsPerMetricTon;
+function truncateToDecimals(value, decimalPlaces = 2) {
+    const number = toFiniteNumber(value);
+    const places = Number.isInteger(decimalPlaces) && decimalPlaces >= 0
+        ? decimalPlaces
+        : 2;
+    const factor = 10 ** places;
 
-    return (net / divisor) * appliedPrice;
+    // Weights and prices are non-negative in this workflow. The tiny tolerance
+    // prevents a value such as 2.26 being represented internally as 2.2599999.
+    return Math.floor((number + 1e-9) * factor) / factor;
+}
+
+function calculateMetricTons(netWeightLbs, { truncate = false } = {}) {
+    const metricTons = toFiniteNumber(netWeightLbs) / APP_CONFIG.lbsPerMetricTon;
+    return truncate ? truncateToDecimals(metricTons, 2) : metricTons;
+}
+
+function calculateBillableQuantity(netWeightLbs, unit) {
+    const net = toFiniteNumber(netWeightLbs);
+
+    if (unit === 'quintal') {
+        return net / APP_CONFIG.lbsPerQuintal;
+    }
+
+    // Business rule: truncate metric tons to two decimal places BEFORE
+    // multiplying by the price. Example: 2.2679 becomes 2.26, not 2.27.
+    return calculateMetricTons(net, { truncate: true });
+}
+
+function calculatePayment(netWeightLbs, price, unit) {
+    const appliedPrice = toFiniteNumber(price);
+    return calculateBillableQuantity(netWeightLbs, unit) * appliedPrice;
 }
 
 function isPreviewableAttachmentType(mimeType) {
@@ -246,4 +347,3 @@ async function buildAttachmentPayload(file) {
 function buildApiUrl(path) {
     return `${API_URL}${path}`;
 }
-

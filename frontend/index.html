@@ -122,8 +122,9 @@
                         <span class="material-icons text-blue-600 text-[18px]">calculate</span>
                         <div>
                             <p class="text-xs font-black text-blue-900 uppercase tracking-wide">Precio en Tonelada</p>
-                            <p class="text-[11px] text-blue-700 mt-1">El precio por quintal se calcula automáticamente:
-                                precio por tonelada ÷ 22.04, redondeado a la décima más cercana.</p>
+                            <p class="text-[11px] text-blue-700 mt-1">El precio sugerido por quintal se calcula
+                                automáticamente: precio por tonelada ÷ 22.04, redondeado al lempira entero más cercano.
+                                Puede editar el resultado antes de guardar.</p>
                         </div>
                     </div>
                     <div class="flex gap-4">
@@ -259,7 +260,8 @@
 
     <!-- UNIVERSAL ACTION MODAL (Replaces prompt/confirm freezes) -->
 
-    <div id="action-modal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
+    <div id="action-modal" role="dialog" aria-modal="true" aria-labelledby="action-title"
+        class="hidden fixed inset-0 bg-black/70 z-[100] flex items-center justify-center">
 
         <div class="bg-white rounded-xl shadow-2xl w-[400px] p-6 flex flex-col gap-4 border-t-4 border-brand-500">
 
@@ -293,7 +295,7 @@
     <!-- TOAST NOTIFICATION (Replaces alert freezes) -->
 
     <div id="toast"
-        class="hidden fixed top-5 right-5 px-6 py-4 rounded shadow-xl font-bold z-50 text-white flex items-center gap-2">
+        class="hidden fixed top-5 right-5 px-6 py-4 rounded shadow-xl font-bold z-[110] text-white flex items-center gap-2">
 
     </div>
 
@@ -461,7 +463,8 @@
 
     <!-- VIEW RECEIPT MODAL -->
 
-    <div id="view-receipt-modal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6">
+    <div id="view-receipt-modal" role="dialog" aria-modal="true"
+        class="hidden fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-6">
         <div class="bg-white rounded-2xl shadow-2xl w-[900px] max-w-full h-[85vh] overflow-hidden flex flex-col">
             <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white shrink-0">
                 <div>
@@ -678,83 +681,122 @@
 
     <!-- PLANILLA MODAL -->
 
-    <div id="planilla-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
-
-        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
-
+    <div id="planilla-modal" class="hidden fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-[560px] max-w-full overflow-hidden">
             <div class="bg-orange-900 px-6 py-4 flex justify-between items-center text-white">
-
                 <h3 class="font-bold text-lg" id="planilla-modal-title">Agregar Trabajador</h3>
-
-                <button onclick="cerrarPlanillaModal()" class="hover:text-red-400 transition-colors"><span
-                        class="material-icons">close</span></button>
-
+                <button type="button" onclick="cerrarPlanillaModal()" class="hover:text-red-300 transition-colors">
+                    <span class="material-icons">close</span>
+                </button>
             </div>
 
             <div class="p-6 flex flex-col gap-4">
-
                 <input type="hidden" id="planilla-edit-id">
 
-                <div class="flex gap-4">
-
-                    <div class="flex-1">
-
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
                         <label class="block text-xs font-bold text-gray-600 mb-1">Nombre *</label>
-
                         <input type="text" id="planilla-nombre"
-                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
-
+                            class="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 outline-none">
                     </div>
-
-                    <div class="flex-1">
-
+                    <div>
                         <label class="block text-xs font-bold text-gray-600 mb-1">Apellido *</label>
-
                         <input type="text" id="planilla-apellido"
-                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
-
+                            class="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 outline-none">
                     </div>
-
                 </div>
 
-                <div class="flex gap-4">
-
-                    <div class="flex-1">
-
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
                         <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono</label>
-
-                        <input type="text" id="planilla-telefono"
-                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none">
-
+                        <input type="text" id="planilla-telefono" maxlength="30" onfocus="initPhone(event)"
+                            oninput="formatPhone(event)" placeholder="+504 1234-5678"
+                            class="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 outline-none font-mono">
+                        <p class="mt-1 text-[10px] text-gray-400">El código +504 usa automáticamente el formato
+                            1234-5678.</p>
                     </div>
-
-                    <div class="flex-1">
-
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Sueldo Base Semanal (L) *</label>
-
-                        <input type="number" id="planilla-sueldo"
-                            class="w-full border rounded p-2 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-orange-900">
-
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Sueldo Base Semanal (HNL) *</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-orange-800">L</span>
+                            <input type="text" inputmode="numeric" id="planilla-sueldo"
+                                oninput="formatCurrencyInput(event)" placeholder="4,500"
+                                class="w-full border rounded-lg py-2.5 pl-8 pr-3 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-orange-900 text-right">
+                        </div>
                     </div>
-
                 </div>
 
                 <div class="mt-4 flex justify-end gap-3">
-
-                    <button onclick="cerrarPlanillaModal()"
-                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
-
-                    <button onclick="guardarTrabajador()"
-                        class="px-6 py-2 bg-orange-700 text-white font-bold rounded shadow hover:bg-orange-800">Guardar</button>
-
+                    <button type="button" onclick="cerrarPlanillaModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
+                    <button type="button" id="planilla-save-button" onclick="guardarTrabajador()"
+                        class="px-6 py-2 bg-orange-700 text-white font-bold rounded-lg shadow hover:bg-orange-800 disabled:opacity-50">Guardar</button>
                 </div>
-
             </div>
-
         </div>
-
     </div>
 
+    <!-- DAILY ATTENDANCE MODAL -->
+    <div id="planilla-day-modal" class="hidden fixed inset-0 bg-black/70 z-[90] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-[480px] max-w-full overflow-hidden">
+            <div class="bg-orange-800 px-6 py-4 flex justify-between items-center text-white">
+                <div>
+                    <h3 class="font-bold text-lg">Registrar Jornada</h3>
+                    <p id="planilla-day-worker-name" class="text-sm text-orange-100"></p>
+                </div>
+                <button type="button" onclick="cerrarJornadaModal()" class="hover:text-red-300">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div class="p-6 flex flex-col gap-5">
+                <input type="hidden" id="planilla-day-worker-id">
+                <input type="hidden" id="planilla-day-date">
+
+                <div class="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                    <p class="text-xs uppercase font-bold text-orange-600">Fecha detectada</p>
+                    <p id="planilla-day-date-label" class="mt-1 font-black text-orange-900"></p>
+                </div>
+
+                <label class="flex items-center gap-3 rounded-xl border p-4 cursor-pointer hover:bg-gray-50">
+                    <input type="checkbox" id="planilla-day-worked" onchange="toggleJornadaTimeInputs()"
+                        class="w-5 h-5 accent-orange-600">
+                    <div>
+                        <p class="font-bold text-gray-800">Trabajó este día</p>
+                        <p class="text-xs text-gray-500">Los domingos permanecen desactivados por defecto.</p>
+                    </div>
+                </label>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Hora de entrada</label>
+                        <input type="time" id="planilla-day-start-time" value="07:00"
+                            onchange="actualizarDuracionJornada()"
+                            class="w-full border rounded-lg p-2.5 font-bold focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Hora de salida</label>
+                        <input type="time" id="planilla-day-end-time" value="16:00"
+                            onchange="actualizarDuracionJornada()"
+                            class="w-full border rounded-lg p-2.5 font-bold focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center rounded-lg bg-gray-100 px-4 py-3">
+                    <span class="text-xs font-bold uppercase text-gray-500">Duración registrada</span>
+                    <span id="planilla-day-duration" class="font-mono font-black text-gray-800">9 h</span>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="cerrarJornadaModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
+                    <button type="button" id="planilla-day-save-button" onclick="guardarJornadaPlanilla()"
+                        class="px-5 py-2 bg-orange-700 text-white font-bold rounded-lg shadow hover:bg-orange-800 disabled:opacity-50">Guardar
+                        Jornada</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 
     <!-- HIDDEN FILE INPUTS FOR INSTANT CORAPSA ATTACHMENTS -->
@@ -766,6 +808,85 @@
         onchange="processQuickUpload(event, 'nuestro')">
 
 
+
+
+    <!-- CORAPSA COMPANY PAYMENT / BANK STATEMENT MODAL -->
+    <div id="overview-payment-modal"
+        class="hidden fixed inset-0 bg-black/65 z-[85] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-[720px] max-w-full max-h-[92vh] overflow-y-auto">
+            <div class="bg-indigo-900 px-6 py-4 flex justify-between items-center text-white">
+                <div>
+                    <h3 id="overview-payment-modal-title" class="font-bold text-lg">Registrar Pago de Corapsa</h3>
+                    <p class="text-xs text-indigo-200">Registre las toneladas y el dinero que Corapsa pagó por un
+                        período.</p>
+                </div>
+                <button type="button" onclick="cerrarPagoCorapsaModal()"><span
+                        class="material-icons">close</span></button>
+            </div>
+            <div class="p-6 flex flex-col gap-4">
+                <input type="hidden" id="overview-payment-id">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div><label class="block text-xs font-bold text-gray-600 mb-1">Inicio del período *</label><input
+                            type="date" id="overview-payment-period-start"
+                            class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+                    <div><label class="block text-xs font-bold text-gray-600 mb-1">Fin del período *</label><input
+                            type="date" id="overview-payment-period-end"
+                            class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+                    <div><label class="block text-xs font-bold text-gray-600 mb-1">Fecha de pago *</label><input
+                            type="date" id="overview-payment-date"
+                            class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div><label class="block text-xs font-bold text-gray-600 mb-1">Referencia / Estado #</label><input
+                            type="text" id="overview-payment-reference"
+                            class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                            placeholder="Ej. COR-2026-07"></div>
+                    <div><label class="block text-xs font-bold text-gray-600 mb-1">Toneladas pagadas *</label><input
+                            type="text" inputmode="decimal" id="overview-payment-tons"
+                            oninput="formatDecimalThousandsInput(event)"
+                            class="w-full border rounded-lg p-2 font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                            placeholder="Ej. 150.00"></div>
+                    <div><label class="block text-xs font-bold text-gray-600 mb-1">Monto pagado (L) *</label><input
+                            type="text" inputmode="decimal" id="overview-payment-amount"
+                            oninput="formatDecimalThousandsInput(event)"
+                            class="w-full border rounded-lg p-2 font-bold text-emerald-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                            placeholder="Ej. 825,000.00"></div>
+                </div>
+                <div><label class="block text-xs font-bold text-gray-600 mb-1">Notas</label><textarea
+                        id="overview-payment-notes" rows="2"
+                        class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        placeholder="Información del correo, banco o liquidación..."></textarea></div>
+                <div class="rounded-xl border bg-gray-50 p-4">
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                        <div>
+                            <p class="text-xs font-bold text-gray-700">Estado de cuenta / comprobante</p>
+                            <p id="overview-payment-current-file" class="text-[11px] text-gray-500">Sin archivo guardado
+                            </p>
+                        </div>
+                        <button type="button" id="overview-payment-current-preview"
+                            class="hidden text-indigo-700 font-bold text-xs hover:underline">Ver actual</button>
+                    </div>
+                    <input type="file" id="overview-payment-file" accept="application/pdf,image/*"
+                        class="w-full text-sm border rounded-lg p-2 bg-white">
+                    <p class="text-[10px] text-gray-500 mt-1">PDF o imagen, máximo 10 MB. Al editar, seleccionar otro
+                        archivo reemplaza el anterior.</p>
+                </div>
+                <div id="overview-payment-justification-container"
+                    class="hidden rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+                    <label class="block text-xs font-bold text-yellow-800 mb-1">Justificación de edición *</label>
+                    <input type="text" id="overview-payment-justification"
+                        class="w-full border border-yellow-300 rounded-lg p-2 focus:ring-2 focus:ring-yellow-500 outline-none"
+                        placeholder="Explique por qué se modifica el pago">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="cerrarPagoCorapsaModal()"
+                        class="px-4 py-2 font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                    <button type="button" id="overview-payment-save-button" onclick="guardarPagoCorapsa()"
+                        class="px-6 py-2 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- SIDEBAR NAVIGATION -->
 
@@ -786,6 +907,13 @@
 
                 <span class="text-[10px] font-bold tracking-wider">PESAJE</span>
 
+            </button>
+
+
+            <button onclick="switchTab('overview')" id="nav-overview"
+                class="w-full py-4 flex flex-col items-center gap-1 tab-inactive transition-colors">
+                <span class="material-icons">dashboard</span>
+                <span class="text-[10px] font-bold tracking-wider">OVERVIEW</span>
             </button>
 
             <button onclick="switchTab('clientes')" id="nav-clientes"
@@ -1180,7 +1308,147 @@
 
 
 
-            <!-- VIEW 2: CLIENTES -->
+
+            <!-- VIEW 2: OVERVIEW / RECONCILIACIÓN -->
+            <main id="view-overview" class="absolute inset-0 p-6 hidden flex-col gap-5 overflow-auto bg-slate-50">
+                <div class="flex flex-wrap justify-between items-end gap-4 shrink-0">
+                    <div>
+                        <h2 class="text-2xl font-black text-slate-900">Overview Financiero y Conciliación</h2>
+                        <p class="text-sm text-slate-600">Compare producto comprado, pagos de Corapsa, gastos y
+                            planilla.</p>
+                    </div>
+                    <div class="flex flex-wrap items-end gap-3 bg-white border rounded-xl p-3 shadow-sm">
+                        <div><label class="block text-[10px] uppercase font-bold text-gray-500 mb-1">Desde</label><input
+                                type="date" id="overview-filter-start" onchange="fetchOverview()"
+                                class="border rounded-lg px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-400 outline-none">
+                        </div>
+                        <div><label class="block text-[10px] uppercase font-bold text-gray-500 mb-1">Hasta</label><input
+                                type="date" id="overview-filter-end" onchange="fetchOverview()"
+                                class="border rounded-lg px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-400 outline-none">
+                        </div>
+                        <button type="button" onclick="irMesActualOverview()"
+                            class="h-10 px-4 rounded-lg bg-slate-100 text-slate-700 font-bold hover:bg-slate-200">Mes
+                            actual</button>
+                        <button type="button" onclick="abrirPagoCorapsaModal()"
+                            class="h-10 px-4 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow flex items-center gap-2"><span
+                                class="material-icons text-[19px]">add_card</span> Registrar pago Corapsa</button>
+                    </div>
+                </div>
+
+                <div id="overview-reconciliation-status"
+                    class="rounded-xl border bg-amber-50 border-amber-200 text-amber-900 px-4 py-3"></div>
+
+                <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <article class="bg-white border rounded-2xl p-4 shadow-sm">
+                        <p class="text-[11px] uppercase font-black text-blue-700">Compras en báscula</p>
+                        <p id="overview-inhouse-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
+                        </p>
+                        <p id="overview-inhouse-money" class="mt-1 font-mono font-bold text-blue-700">L 0.00</p>
+                    </article>
+                    <article class="bg-white border rounded-2xl p-4 shadow-sm">
+                        <p class="text-[11px] uppercase font-black text-violet-700">Compras directas a Corapsa</p>
+                        <p id="overview-direct-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
+                        </p>
+                        <p id="overview-direct-money" class="mt-1 font-mono font-bold text-violet-700">L 0.00</p>
+                    </article>
+                    <article class="bg-white border-2 border-slate-300 rounded-2xl p-4 shadow-sm">
+                        <p class="text-[11px] uppercase font-black text-slate-700">Producto total rastreado</p>
+                        <p id="overview-tracked-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
+                        </p>
+                        <p id="overview-supplier-cost" class="mt-1 font-mono font-bold text-slate-700">L 0.00</p>
+                    </article>
+                    <article class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 shadow-sm">
+                        <p class="text-[11px] uppercase font-black text-indigo-700">Corapsa nos pagó</p>
+                        <p id="overview-corapsa-tons" class="mt-2 text-2xl font-mono font-black text-indigo-950">0.00
+                            TON</p>
+                        <p id="overview-corapsa-money" class="mt-1 font-mono font-bold text-emerald-700">L 0.00</p>
+                    </article>
+                    <article class="bg-white border rounded-2xl p-4 shadow-sm">
+                        <p class="text-[11px] uppercase font-black text-gray-600">Diferencia de toneladas</p>
+                        <p id="overview-ton-difference" class="mt-2 text-2xl font-mono font-black">0.00 TON</p>
+                        <p class="mt-1 text-[10px] text-gray-500">Corapsa − producto rastreado</p>
+                    </article>
+                </section>
+
+                <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <article class="bg-white border rounded-2xl p-4">
+                        <p class="text-[11px] uppercase font-black text-emerald-700">Margen bruto</p>
+                        <p id="overview-gross-margin" class="mt-2 text-xl font-mono font-black">L 0.00</p>
+                        <p class="text-[10px] text-gray-500 mt-1">Ingresos Corapsa − compras</p>
+                    </article>
+                    <article class="bg-white border rounded-2xl p-4">
+                        <p class="text-[11px] uppercase font-black text-red-700">Gastos operativos</p>
+                        <p id="overview-expenses" class="mt-2 text-xl font-mono font-black text-red-700">L 0.00</p>
+                    </article>
+                    <article class="bg-white border rounded-2xl p-4">
+                        <p class="text-[11px] uppercase font-black text-orange-700">Planilla</p>
+                        <p id="overview-payroll" class="mt-2 text-xl font-mono font-black text-orange-700">L 0.00</p>
+                    </article>
+                    <article class="bg-white border rounded-2xl p-4">
+                        <p class="text-[11px] uppercase font-black text-slate-700">Costos operativos</p>
+                        <p id="overview-operating-costs" class="mt-2 text-xl font-mono font-black text-slate-800">L 0.00
+                        </p>
+                        <p class="text-[10px] text-gray-500 mt-1">Gastos + planilla</p>
+                    </article>
+                    <article class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4">
+                        <p class="text-[11px] uppercase font-black text-emerald-800">Utilidad neta estimada</p>
+                        <p id="overview-net-profit" class="mt-2 text-2xl font-mono font-black">L 0.00</p>
+                    </article>
+                </section>
+
+                <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div class="bg-white rounded-2xl border p-5 xl:col-span-1">
+                        <h3 class="font-black text-slate-900">Fórmulas utilizadas</h3>
+                        <div class="mt-4 space-y-4 text-sm">
+                            <div>
+                                <p class="font-bold text-gray-700">1. Total pagado a proveedores</p>
+                                <p class="text-xs text-gray-500">Compras en báscula + compras directas</p>
+                                <p id="overview-formula-suppliers" class="font-mono font-bold mt-1">L 0.00</p>
+                            </div>
+                            <div>
+                                <p class="font-bold text-gray-700">2. Margen bruto</p>
+                                <p class="text-xs text-gray-500">Corapsa nos pagó − total pagado a proveedores</p>
+                                <p id="overview-formula-margin" class="font-mono font-bold mt-1">L 0.00</p>
+                            </div>
+                            <div>
+                                <p class="font-bold text-gray-700">3. Utilidad neta estimada</p>
+                                <p class="text-xs text-gray-500">Margen bruto − gastos − planilla</p>
+                                <p id="overview-formula-profit" class="font-mono font-bold mt-1">L 0.00</p>
+                            </div>
+                        </div>
+                        <p class="mt-5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                            Esta es la primera versión de la lógica financiera. Las fórmulas quedan centralizadas para
+                            poder ajustarlas cuando confirme el proceso contable real.</p>
+                    </div>
+                    <div class="bg-white rounded-2xl border overflow-hidden xl:col-span-2 min-h-[310px]">
+                        <div class="px-5 py-4 border-b bg-indigo-50">
+                            <h3 class="font-black text-indigo-950">Pagos / Estados de Cuenta de Corapsa</h3>
+                            <p class="text-xs text-indigo-700 mt-1">Solo se suman registros cuyo período completo está
+                                dentro de las fechas seleccionadas.</p>
+                        </div>
+                        <div class="overflow-auto max-h-[360px]">
+                            <table class="w-full min-w-[1050px] text-sm">
+                                <thead
+                                    class="sticky top-0 bg-indigo-100 text-indigo-950 text-[10px] uppercase tracking-wide z-10">
+                                    <tr>
+                                        <th class="p-3 text-left">Período</th>
+                                        <th class="p-3 text-left">Fecha pago</th>
+                                        <th class="p-3 text-left">Referencia</th>
+                                        <th class="p-3 text-right">Toneladas</th>
+                                        <th class="p-3 text-right">Monto</th>
+                                        <th class="p-3 text-left">Notas</th>
+                                        <th class="p-3 text-center">Archivo</th>
+                                        <th class="p-3 text-center">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="overview-payments-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <!-- VIEW 3: CLIENTES -->
 
             <main id="view-clientes" class="absolute inset-0 p-8 hidden flex-col overflow-hidden">
 
@@ -1548,9 +1816,9 @@
 
             <!-- VIEW 5: GASTOS -->
 
-            <main id="view-gastos" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden bg-red-50">
+            <main id="view-gastos" class="absolute inset-0 p-8 hidden flex-col gap-5 overflow-hidden bg-red-50">
 
-                <div class="flex justify-between items-center shrink-0">
+                <div class="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-4 shrink-0">
 
                     <div>
 
@@ -1560,20 +1828,73 @@
 
                     </div>
 
-                    <button onclick="abrirGastosModal()"
-                        class="bg-red-600 hover:bg-red-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+                    <div class="flex flex-wrap items-end justify-end gap-3">
 
-                        <span class="material-icons">add_shopping_cart</span> Nuevo Gasto
+                        <div>
+                            <label for="gastos-filter-start"
+                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Desde</label>
+                            <input type="date" id="gastos-filter-start" onchange="renderGastos()"
+                                class="border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-red-400">
+                        </div>
 
-                    </button>
+                        <div>
+                            <label for="gastos-filter-end"
+                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Hasta</label>
+                            <input type="date" id="gastos-filter-end" onchange="renderGastos()"
+                                class="border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-red-400">
+                        </div>
+
+                        <div class="min-w-[250px]">
+                            <label for="gastos-filter-search"
+                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Buscar</label>
+                            <div class="relative">
+                                <span
+                                    class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[19px]">search</span>
+                                <input type="search" id="gastos-filter-search" oninput="renderGastos()"
+                                    placeholder="Concepto, justificación o recibo..."
+                                    class="w-full border border-red-200 bg-white rounded-lg pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-400">
+                            </div>
+                        </div>
+
+                        <div class="min-w-[190px]">
+                            <label for="gastos-sort"
+                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Ordenar</label>
+                            <select id="gastos-sort" onchange="renderGastos()"
+                                class="w-full border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-red-400 cursor-pointer">
+                                <option value="fecha-desc">Más recientes</option>
+                                <option value="fecha-asc">Más antiguos</option>
+                                <option value="concepto-asc">Concepto (A - Z)</option>
+                                <option value="concepto-desc">Concepto (Z - A)</option>
+                                <option value="monto-desc">Monto (Mayor a menor)</option>
+                                <option value="monto-asc">Monto (Menor a mayor)</option>
+                                <option value="recibo-asc">Recibo (A - Z)</option>
+                                <option value="recibo-desc">Recibo (Z - A)</option>
+                            </select>
+                        </div>
+
+                        <button type="button" onclick="limpiarFiltrosGastos()"
+                            class="h-[38px] px-3 rounded-lg border border-red-200 bg-white text-red-700 font-bold hover:bg-red-100 transition-colors flex items-center gap-1"
+                            title="Mostrar todos los gastos">
+                            <span class="material-icons text-[18px]">filter_alt_off</span>
+                            Limpiar
+                        </button>
+
+                        <button type="button" onclick="abrirGastosModal()"
+                            class="h-[38px] bg-red-600 hover:bg-red-800 text-white px-5 rounded-lg font-bold shadow-md flex items-center gap-2">
+
+                            <span class="material-icons">add_shopping_cart</span> Nuevo Gasto
+
+                        </button>
+
+                    </div>
 
                 </div>
 
                 <div class="bg-white rounded-2xl shadow-sm border border-red-200 flex-1 overflow-hidden flex flex-col">
 
-                    <div class="overflow-y-auto flex-1 p-0">
+                    <div class="overflow-auto flex-1 p-0">
 
-                        <table class="w-full text-left text-sm">
+                        <table class="w-full min-w-[1050px] text-left text-sm">
 
                             <thead class="bg-red-100 sticky top-0 shadow-sm z-10">
 
@@ -1599,6 +1920,21 @@
 
                             </tbody>
 
+                            <tfoot class="bg-red-50 border-t-2 border-red-200 sticky bottom-0 z-10">
+                                <tr>
+                                    <td colspan="2" class="p-4 font-bold text-right text-red-900 uppercase">
+                                        Totales filtrados: <span id="gastos-total-registros">0</span> gasto(s)
+                                    </td>
+                                    <td class="p-4 text-right font-mono font-black text-red-700 text-lg">
+                                        L <span id="gastos-total-monto">0.00</span>
+                                    </td>
+                                    <td colspan="3" class="p-4 text-xs text-gray-500">
+                                        El total cambia automáticamente según la búsqueda, las fechas y el orden
+                                        seleccionado.
+                                    </td>
+                                </tr>
+                            </tfoot>
+
                         </table>
 
                     </div>
@@ -1611,64 +1947,87 @@
 
             <!-- VIEW 6: PLANILLA -->
 
-            <main id="view-planilla" class="absolute inset-0 p-8 hidden flex-col gap-6 overflow-hidden bg-orange-50">
-
-                <div class="flex justify-between items-center shrink-0">
-
+            <main id="view-planilla" class="absolute inset-0 p-6 hidden flex-col gap-4 overflow-hidden bg-orange-50">
+                <div class="flex justify-between items-center shrink-0 gap-4">
                     <div>
-
                         <h2 class="text-2xl font-bold text-orange-900">Planilla de Trabajadores</h2>
-
-                        <p class="text-orange-700">Controle días laborados, bonos y calcule nómina dinámicamente.</p>
-
+                        <p class="text-orange-700">Registre jornadas por fecha y calcule la nómina del período
+                            seleccionado.</p>
                     </div>
-
-                    <button onclick="abrirPlanillaModal()"
-                        class="bg-orange-600 hover:bg-orange-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
-
+                    <button type="button" onclick="abrirPlanillaModal()"
+                        class="bg-orange-600 hover:bg-orange-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 whitespace-nowrap">
                         <span class="material-icons">person_add</span> Agregar Trabajador
-
                     </button>
-
                 </div>
 
                 <div
-                    class="bg-white rounded-2xl shadow-sm border border-orange-200 flex-1 overflow-hidden flex flex-col">
-
-                    <div class="overflow-y-auto flex-1 p-0">
-
-                        <table class="w-full text-left text-sm">
-
-                            <thead class="bg-orange-100 sticky top-0 shadow-sm z-10">
-
-                                <tr class="text-orange-900 text-[11px] uppercase tracking-wider">
-
-                                    <th class="p-3 font-semibold">Trabajador</th>
-
-                                    <th class="p-3 font-semibold text-center w-24">Base<br>(Semanal)</th>
-
-                                    <th class="p-3 font-semibold text-center w-24">Días<br>Trabajados</th>
-
-                                    <th class="p-3 font-semibold text-center w-24">Overtime/<br>Extras (L)</th>
-
-                                    <th class="p-3 font-semibold text-right bg-orange-200/50">Total a Pagar</th>
-
-                                    <th class="p-3 font-semibold text-center">Gestión</th>
-
-                                </tr>
-
-                            </thead>
-
-                            <tbody id="planilla-table-body" class="divide-y divide-gray-100">
-
-                            </tbody>
-
-                        </table>
-
+                    class="bg-white rounded-2xl shadow-sm border border-orange-200 p-4 shrink-0 flex flex-wrap items-end gap-3">
+                    <button type="button" onclick="moverRangoPlanilla(-7)"
+                        class="h-10 w-10 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50"
+                        title="Período anterior">
+                        <span class="material-icons text-[20px]">chevron_left</span>
+                    </button>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-gray-500 mb-1">Desde</label>
+                        <input type="date" id="planilla-filter-start" onchange="actualizarRangoPlanilla()"
+                            class="border rounded-lg px-3 py-2 font-bold text-gray-700 focus:ring-2 focus:ring-orange-400 outline-none">
                     </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-gray-500 mb-1">Hasta</label>
+                        <input type="date" id="planilla-filter-end" onchange="actualizarRangoPlanilla()"
+                            class="border rounded-lg px-3 py-2 font-bold text-gray-700 focus:ring-2 focus:ring-orange-400 outline-none">
+                    </div>
+                    <button type="button" onclick="moverRangoPlanilla(7)"
+                        class="h-10 w-10 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50"
+                        title="Período siguiente">
+                        <span class="material-icons text-[20px]">chevron_right</span>
+                    </button>
+                    <button type="button" onclick="irSemanaActualPlanilla()"
+                        class="h-10 px-4 rounded-lg bg-orange-100 text-orange-800 font-bold hover:bg-orange-200">Semana
+                        actual</button>
 
+                    <div class="ml-auto flex flex-wrap gap-3">
+                        <div class="rounded-xl bg-gray-50 border px-4 py-2 min-w-[105px]">
+                            <p class="text-[10px] uppercase font-bold text-gray-500">Trabajadores</p>
+                            <p id="planilla-total-trabajadores" class="font-mono font-black text-gray-800 text-lg">0</p>
+                        </div>
+                        <div class="rounded-xl bg-orange-50 border border-orange-200 px-4 py-2 min-w-[105px]">
+                            <p class="text-[10px] uppercase font-bold text-orange-600">Días pagados</p>
+                            <p id="planilla-total-dias" class="font-mono font-black text-orange-800 text-lg">0</p>
+                        </div>
+                        <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-2 min-w-[175px]">
+                            <p class="text-[10px] uppercase font-bold text-emerald-700">Total del período</p>
+                            <p id="planilla-total-pagar"
+                                class="font-mono font-black text-emerald-800 text-lg whitespace-nowrap">L 0.00</p>
+                        </div>
+                    </div>
                 </div>
 
+                <div
+                    class="bg-white rounded-2xl shadow-sm border border-orange-200 flex-1 overflow-hidden flex flex-col min-h-0">
+                    <div class="px-4 py-2 border-b bg-orange-50 flex items-center justify-between shrink-0">
+                        <p class="text-xs text-orange-800">
+                            <strong>Período:</strong> <span id="planilla-period-label">—</span>
+                        </p>
+                        <p class="text-[11px] text-gray-500">Verde = trabajado · Rojo = no laborable/no trabajado</p>
+                    </div>
+                    <div class="overflow-auto flex-1">
+                        <table class="w-full text-left text-sm min-w-[1100px]">
+                            <thead class="bg-orange-100 sticky top-0 shadow-sm z-10">
+                                <tr class="text-orange-900 text-[11px] uppercase tracking-wider">
+                                    <th class="p-3 font-semibold">Trabajador</th>
+                                    <th class="p-3 font-semibold text-right">Base semanal</th>
+                                    <th class="p-3 font-semibold">Asistencia por día</th>
+                                    <th class="p-3 font-semibold text-center">Días</th>
+                                    <th class="p-3 font-semibold text-center">Overtime / Extras (L)</th>
+                                    <th class="p-3 font-semibold text-right bg-orange-200/50">Total a pagar</th>
+                                    <th class="p-3 font-semibold text-center">Gestión</th>
+                                </tr>
+                            </thead>
+                            <tbody id="planilla-table-body" class="divide-y divide-gray-100"></tbody>
+                        </table>
+                    </div>
+                </div>
             </main>
 
 
@@ -1699,6 +2058,7 @@
     <script src="js/corapsa.js" defer></script>
     <script src="js/gastos.js" defer></script>
     <script src="js/planilla.js" defer></script>
+    <script src="js/overview.js" defer></script>
     <script src="js/app.js" defer></script>
 
 </body>

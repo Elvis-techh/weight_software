@@ -18,7 +18,7 @@ function startClock() {
 }
 
 function switchTab(tabName) {
-    ['pesaje', 'clientes', 'reportes', 'corapsa', 'gastos', 'planilla'].forEach(name => {
+    ['pesaje', 'overview', 'clientes', 'reportes', 'corapsa', 'gastos', 'planilla'].forEach(name => {
         const button = document.getElementById(`nav-${name}`);
         const view = document.getElementById(`view-${name}`);
         if (!button || !view) return;
@@ -31,6 +31,7 @@ function switchTab(tabName) {
     });
 
     const renderers = {
+        overview: fetchOverview,
         reportes: updateReportesTab,
         corapsa: renderCorapsaTab,
         clientes: renderClientesTab,
@@ -71,7 +72,8 @@ function actionRequiresRecordId(action) {
         'delete_corapsa_file',
         'replace_corapsa_file',
         'delete_gasto',
-        'delete_trabajador'
+        'delete_trabajador',
+        'delete_corapsa_pago'
     ]).has(action);
 }
 
@@ -93,7 +95,8 @@ function getActionModalCopy(action) {
         delete_reporte: ['Eliminar Transacción', 'Justificación para eliminar la transacción:', 'Explique el motivo'],
         delete_corapsa: ['Eliminar Recibo', 'Justificación para eliminar el recibo:', 'Explique el motivo'],
         delete_gasto: ['Eliminar Gasto', 'Justificación para eliminar el gasto:', 'Explique el motivo'],
-        delete_trabajador: ['Eliminar Trabajador', 'Justificación para eliminar al trabajador:', 'Explique el motivo']
+        delete_trabajador: ['Eliminar Trabajador', 'Justificación para eliminar al trabajador:', 'Explique el motivo'],
+        delete_corapsa_pago: ['Eliminar Pago de Corapsa', 'Justificación para eliminar el estado de cuenta:', 'Explique el motivo']
     };
 
     return copies[action] || ['Confirmar Acción', 'Justificación obligatoria:', 'Explique el motivo'];
@@ -231,6 +234,11 @@ async function confirmarActionModal() {
             case 'delete_gasto':
                 await eliminarGastoServidor(id, value);
                 mostrarNotificacion('Gasto eliminado.');
+                break;
+
+            case 'delete_corapsa_pago':
+                await eliminarPagoCorapsaServidor(id, value);
+                mostrarNotificacion('Pago de Corapsa eliminado.');
                 break;
 
             case 'delete_trabajador':

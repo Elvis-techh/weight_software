@@ -8,6 +8,9 @@ const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
 const LBS_PER_METRIC_TON = 2204.62262185;
 const LBS_PER_QUINTAL = 100;
+const QUINTALES_PER_TON = 22.04;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const JSON_BODY_LIMIT = '30mb';
 
 let db;
 let server;
@@ -68,6 +71,188 @@ function asNumber(value, { required = false, min = -Infinity, field = 'valor' } 
     return number;
 }
 
+function asIsoDate(value, field = 'La fecha') {
+    const text = String(value || '').trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (!match) throw new HttpError(400, `${field} no es válida.`, 'VALIDATION_ERROR');
+
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    if (
+        date.getUTCFullYear() !== Number(match[1]) ||
+        date.getUTCMonth() !== Number(match[2]) - 1 ||
+        date.getUTCDate() !== Number(match[3])
+    ) throw new HttpError(400, `${field} no es válida.`, 'VALIDATION_ERROR');
+
+    return text;
+}
+
+function getDateRangeLength(start, end) {
+    const startMs = Date.parse(`${start}T00:00:00Z`);
+    const endMs = Date.parse(`${end}T00:00:00Z`);
+    return Math.floor((endMs - startMs) / 86400000) + 1;
+}
+
+function validatePayrollRange(startValue, endValue) {
+    const start = asIsoDate(startValue, 'La fecha inicial');
+    const end = asIsoDate(endValue, 'La fecha final');
+    if (start > end) {
+        throw new HttpError(400, 'La fecha inicial no puede ser posterior a la fecha final.', 'VALIDATION_ERROR');
+    }
+    const days = getDateRangeLength(start, end);
+    if (days > 31) {
+        throw new HttpError(400, 'El período de planilla no puede superar 31 días.', 'VALIDATION_ERROR');
+    }
+    return { start, end, days };
+}
+
+function validateOverviewRange(startValue, endValue) {
+    const start = asIsoDate(startValue, 'La fecha inicial');
+    const end = asIsoDate(endValue, 'La fecha final');
+    if (start > end) {
+        throw new HttpError(400, 'La fecha inicial no puede ser posterior a la fecha final.', 'VALIDATION_ERROR');
+    }
+    const days = getDateRangeLength(start, end);
+    if (days > 3660) {
+        throw new HttpError(400, 'El período del Overview no puede superar 10 años.', 'VALIDATION_ERROR');
+    }
+    return { start, end, days };
+}
+
+function asTime(value, field) {
+    const text = String(value || '').trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text)) {
+        throw new HttpError(400, `${field} no es válida.`, 'VALIDATION_ERROR');
+    }
+    return text;
+}
+
+function asBoolean(value) {
+    if (value === true || value === 1 || value === '1' || value === 'true') return true;
+    if (value === false || value === 0 || value === '0' || value === 'false') return false;
+    throw new HttpError(400, 'El estado de la jornada no es válido.', 'VALIDATION_ERROR');
+}
+
+function asWorkerPhone(value) {
+    const phone = asText(value, { maxLength: 30 });
+    if (!phone || phone === '+504') return '';
+    if (phone.startsWith('+504')) {
+        if (!/^\+504 \d{4}-\d{4}$/.test(phone)) {
+            throw new HttpError(400, 'Para Honduras use el formato +504 1234-5678.', 'VALIDATION_ERROR');
+        }
+        return phone;
+    }
+
+    const digits = phone.replace(/\D/g, '');
+    if (!phone.startsWith('+') || digits.length < 7 || digits.length > 15) {
+        throw new HttpError(400, 'El teléfono internacional debe comenzar con + y un código de área válido.', 'VALIDATION_ERROR');
+    }
+    return phone;
+}
+
+function roundToNearestWhole(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) throw new HttpError(400, 'No se pudo calcular el precio por quintal.', 'VALIDATION_ERROR');
+    return Math.round(number + Number.EPSILON);
+}
+
+function roundToCurrency(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) throw new HttpError(400, 'Precio inválido.', 'VALIDATION_ERROR');
+    return Math.round((number + Number.EPSILON) * 100) / 100;
+}
+
+function truncateToDecimals(value, decimalPlaces = 2) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+        throw new HttpError(400, 'No se pudo calcular la cantidad facturable.', 'VALIDATION_ERROR');
+    }
+
+    const places = Number.isInteger(decimalPlaces) && decimalPlaces >= 0
+        ? decimalPlaces
+        : 2;
+    const factor = 10 ** places;
+    return Math.floor((number + 1e-9) * factor) / factor;
+}
+
+function calculateBillableQuantity(netWeightLbs, unit) {
+    const net = Number(netWeightLbs);
+    if (!Number.isFinite(net) || net < 0) {
+        throw new HttpError(400, 'El peso neto no es válido.', 'VALIDATION_ERROR');
+    }
+
+    if (unit === 'quintal') return net / LBS_PER_QUINTAL;
+
+    // Business rule: truncate metric tons to two decimals before applying price.
+    return truncateToDecimals(net / LBS_PER_METRIC_TON, 2);
+}
+
+function buildClientPricing(body, unidad) {
+    if (unidad === 'quintal') {
+        const precioToneladaPropio = asNumber(body?.precioToneladaPropio, {
+            required: true,
+            min: 0,
+            field: 'El precio en tonelada de flete propio'
+        });
+        const precioToneladaCliente = asNumber(body?.precioToneladaCliente, {
+            required: true,
+            min: 0,
+            field: 'El precio en tonelada de flete cliente'
+        });
+
+        const precioSugeridoPropio = roundToNearestWhole(precioToneladaPropio / QUINTALES_PER_TON);
+        const precioSugeridoCliente = roundToNearestWhole(precioToneladaCliente / QUINTALES_PER_TON);
+        const precioFletePropio = asNumber(body?.precioFletePropio ?? precioSugeridoPropio, {
+            required: true,
+            min: 0,
+            field: 'El precio por quintal de flete propio'
+        });
+        const precioFleteCliente = asNumber(body?.precioFleteCliente ?? precioSugeridoCliente, {
+            required: true,
+            min: 0,
+            field: 'El precio por quintal de flete cliente'
+        });
+
+        return {
+            precioToneladaPropio: roundToCurrency(precioToneladaPropio),
+            precioToneladaCliente: roundToCurrency(precioToneladaCliente),
+            precioFletePropio: roundToNearestWhole(precioFletePropio),
+            precioFleteCliente: roundToNearestWhole(precioFleteCliente)
+        };
+    }
+
+    const precioFletePropio = asNumber(body?.precioFletePropio, {
+        required: true,
+        min: 0,
+        field: 'El precio de flete propio'
+    });
+    const precioFleteCliente = asNumber(body?.precioFleteCliente, {
+        required: true,
+        min: 0,
+        field: 'El precio de flete cliente'
+    });
+
+    return {
+        precioToneladaPropio: roundToCurrency(precioFletePropio),
+        precioToneladaCliente: roundToCurrency(precioFleteCliente),
+        precioFletePropio: roundToCurrency(precioFletePropio),
+        precioFleteCliente: roundToCurrency(precioFleteCliente)
+    };
+}
+
+function getStoredTonPrice(row, freightType) {
+    const isOwn = freightType === 'Propio';
+    const storedRaw = isOwn ? row.precio_tonelada_propio : row.precio_tonelada_cliente;
+    const stored = Number(storedRaw);
+    if (storedRaw !== null && storedRaw !== undefined && storedRaw !== '' && Number.isFinite(stored)) {
+        return stored;
+    }
+
+    const unitPrice = Number(isOwn ? row.precio_flete_propio : row.precio_flete_cliente) || 0;
+    return row.unidad === 'quintal'
+        ? roundToCurrency(unitPrice * QUINTALES_PER_TON)
+        : roundToCurrency(unitPrice);
+}
+
 function asUnit(value) {
     const unit = String(value || 'tonelada');
     if (!VALID_UNITS.has(unit)) throw new HttpError(400, 'Unidad de medida inválida.', 'VALIDATION_ERROR');
@@ -94,16 +279,98 @@ function safeJsonParse(value) {
     try { return JSON.parse(value); } catch (_) { return null; }
 }
 
+function isAllowedAttachmentMime(mimeType) {
+    const mime = String(mimeType || '').toLowerCase();
+    return mime === 'application/pdf' || mime.startsWith('image/');
+}
+
+function parseAttachmentPayload(value, fieldName = 'El archivo') {
+    if (value == null) return null;
+    if (typeof value !== 'object' || Array.isArray(value)) {
+        throw new HttpError(400, `${fieldName} no tiene un formato válido.`, 'VALIDATION_ERROR');
+    }
+
+    const fileName = asText(value.fileName ?? value.name, {
+        required: true,
+        field: `El nombre de ${fieldName.toLowerCase()}`,
+        maxLength: 255
+    });
+    const dataUrl = String(value.dataUrl ?? value.data ?? '');
+    const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=\r\n]+)$/.exec(dataUrl);
+    if (!match) {
+        throw new HttpError(400, `${fieldName} no contiene datos válidos.`, 'INVALID_ATTACHMENT');
+    }
+
+    const mimeType = String(match[1] || value.mimeType || value.fileMimeType || '').toLowerCase();
+    if (!isAllowedAttachmentMime(mimeType)) {
+        throw new HttpError(415, 'Solo se permiten imágenes y archivos PDF.', 'UNSUPPORTED_ATTACHMENT_TYPE');
+    }
+
+    let data;
+    try {
+        data = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
+    } catch (_) {
+        throw new HttpError(400, `${fieldName} está dañado o incompleto.`, 'INVALID_ATTACHMENT');
+    }
+
+    if (!data.length) {
+        throw new HttpError(400, `${fieldName} está vacío.`, 'INVALID_ATTACHMENT');
+    }
+    if (data.length > MAX_ATTACHMENT_BYTES) {
+        throw new HttpError(
+            413,
+            `${fieldName} supera el límite de 10 MB.`,
+            'ATTACHMENT_TOO_LARGE',
+            { maxBytes: MAX_ATTACHMENT_BYTES }
+        );
+    }
+
+    return { fileName, mimeType, data };
+}
+
+function hasStoredAttachment(value) {
+    if (Buffer.isBuffer(value)) return value.length > 0;
+    if (value instanceof Uint8Array) return value.byteLength > 0;
+    return typeof value === 'string' && value.length > 0;
+}
+
+function normalizeStoredAttachment(value) {
+    if (Buffer.isBuffer(value)) return value;
+    if (value instanceof Uint8Array) return Buffer.from(value);
+    if (typeof value === 'string' && value) return Buffer.from(value, 'base64');
+    return null;
+}
+
+function sendStoredAttachment(res, { fileName, mimeType, data }) {
+    const buffer = normalizeStoredAttachment(data);
+    if (!buffer?.length) throw new HttpError(404, 'El archivo adjunto no está disponible.', 'ATTACHMENT_NOT_FOUND');
+
+    res.setHeader('Content-Type', isAllowedAttachmentMime(mimeType) ? mimeType : 'application/octet-stream');
+    res.setHeader('Content-Length', String(buffer.length));
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName || 'archivo')}`);
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.send(buffer);
+}
+
 function mapClient(row) {
+    const unidad = row.unidad === 'quintal' ? 'quintal' : 'tonelada';
+    const precioFletePropioRaw = Number(row.precio_flete_propio || 0);
+    const precioFleteClienteRaw = Number(row.precio_flete_cliente || 0);
     return {
         id: row.id,
         nombre: row.nombre,
         apellido: row.apellido || '',
         telefono: row.telefono || '',
         ubicacion: row.ubicacion || '',
-        precioFletePropio: Number(row.precio_flete_propio || 0),
-        precioFleteCliente: Number(row.precio_flete_cliente || 0),
-        unidad: row.unidad === 'quintal' ? 'quintal' : 'tonelada'
+        precioFletePropio: unidad === 'quintal'
+            ? roundToNearestWhole(precioFletePropioRaw)
+            : precioFletePropioRaw,
+        precioFleteCliente: unidad === 'quintal'
+            ? roundToNearestWhole(precioFleteClienteRaw)
+            : precioFleteClienteRaw,
+        precioToneladaPropio: getStoredTonPrice(row, 'Propio'),
+        precioToneladaCliente: getStoredTonPrice(row, 'Cliente'),
+        unidad
     };
 }
 
@@ -151,8 +418,30 @@ function mapCorapsa(row) {
         precio: Number(row.precio || 0),
         total: Number(row.total || 0),
         fileName: row.file_name || 'Sin Archivo',
+        fileMimeType: row.file_mime_type || '',
+        hasFile: Boolean(row.has_file) || hasStoredAttachment(row.file_data),
         fileNuestro: row.file_nuestro || 'Sin Archivo',
-        pagado: Boolean(row.pagado)
+        fileNuestroMimeType: row.file_nuestro_mime_type || '',
+        hasFileNuestro: Boolean(row.has_file_nuestro) || hasStoredAttachment(row.file_nuestro_data),
+        pagado: Boolean(row.pagado),
+        updatedAt: row.updated_at || row.created_at || ''
+    };
+}
+
+function mapCorapsaPayment(row) {
+    return {
+        id: row.id,
+        fechaPago: row.fecha_pago,
+        periodoInicio: row.periodo_inicio,
+        periodoFin: row.periodo_fin,
+        referencia: row.referencia || '',
+        toneladas: Number(row.toneladas || 0),
+        monto: Number(row.monto || 0),
+        notas: row.notas || '',
+        fileName: row.file_name || 'Sin Archivo',
+        fileMimeType: row.file_mime_type || '',
+        hasFile: Boolean(row.has_file) || hasStoredAttachment(row.file_data),
+        updatedAt: row.updated_at || row.created_at || ''
     };
 }
 
@@ -163,7 +452,10 @@ function mapExpense(row) {
         monto: Number(row.monto || 0),
         concepto: row.concepto,
         justificacion: row.justificacion || '',
-        fileName: row.file_name || 'Sin Archivo'
+        fileName: row.file_name || 'Sin Archivo',
+        fileMimeType: row.file_mime_type || '',
+        hasFile: Boolean(row.has_file) || hasStoredAttachment(row.file_data),
+        updatedAt: row.updated_at || row.created_at || ''
     };
 }
 
@@ -174,8 +466,216 @@ function mapWorker(row) {
         apellido: row.apellido,
         telefono: row.telefono || '',
         sueldoBase: Number(row.sueldo_base || 0),
-        diasTrabajados: Number(row.dias_trabajados ?? 6),
+        diasTrabajados: Number(row.dias_trabajados ?? 0),
         extras: Number(row.extras || 0)
+    };
+}
+
+function mapAttendance(row) {
+    return {
+        fecha: row.fecha,
+        trabajado: Boolean(row.trabajado),
+        horaInicio: row.hora_inicio || '07:00',
+        horaFin: row.hora_fin || '16:00'
+    };
+}
+
+async function buildPayrollSummary(start, end, workerId = null) {
+    const workerParams = [start, end];
+    let workerFilter = '';
+    if (workerId != null) {
+        workerFilter = 'WHERE p.id = ?';
+        workerParams.push(workerId);
+    }
+
+    const workers = await db.all(`
+        SELECT p.*, COALESCE(pp.extras, 0) AS extras_periodo
+        FROM planilla p
+        LEFT JOIN planilla_periodos pp
+            ON pp.trabajador_id = p.id
+           AND pp.fecha_inicio = ?
+           AND pp.fecha_fin = ?
+        ${workerFilter}
+        ORDER BY p.apellido, p.nombre, p.id
+    `, workerParams);
+
+    const attendanceParams = [start, end];
+    let attendanceFilter = '';
+    if (workerId != null) {
+        attendanceFilter = 'AND trabajador_id = ?';
+        attendanceParams.push(workerId);
+    }
+
+    const attendanceRows = await db.all(`
+        SELECT trabajador_id, fecha, trabajado, hora_inicio, hora_fin
+        FROM planilla_asistencia
+        WHERE fecha BETWEEN ? AND ?
+        ${attendanceFilter}
+        ORDER BY fecha
+    `, attendanceParams);
+
+    const attendanceByWorker = new Map();
+    for (const row of attendanceRows) {
+        const key = String(row.trabajador_id);
+        if (!attendanceByWorker.has(key)) attendanceByWorker.set(key, []);
+        attendanceByWorker.get(key).push(mapAttendance(row));
+    }
+
+    const mapped = workers.map(row => {
+        const asistencia = attendanceByWorker.get(String(row.id)) || [];
+        const diasTrabajados = asistencia.filter(item => item.trabajado).length;
+        const extras = Number(row.extras_periodo || 0);
+        const sueldoBase = Number(row.sueldo_base || 0);
+        const totalPeriodo = (sueldoBase / 6) * diasTrabajados + extras;
+        return {
+            ...mapWorker(row),
+            diasTrabajados,
+            extras,
+            totalPeriodo,
+            asistencia
+        };
+    });
+
+    return {
+        inicio: start,
+        fin: end,
+        trabajadores: mapped,
+        totalGeneral: mapped.reduce((sum, worker) => sum + worker.totalPeriodo, 0)
+    };
+}
+
+async function buildOverviewSummary(start, end) {
+    const inHouse = await db.get(`
+        SELECT COUNT(*) AS registros,
+               COALESCE(SUM(neto), 0) AS libras,
+               COALESCE(SUM(total), 0) AS monto
+        FROM transacciones
+        WHERE fecha BETWEEN ? AND ?
+    `, [start, end]);
+
+    const direct = await db.get(`
+        SELECT COUNT(*) AS registros,
+               COALESCE(SUM(toneladas), 0) AS toneladas,
+               COALESCE(SUM(total), 0) AS monto
+        FROM corapsa
+        WHERE fecha BETWEEN ? AND ?
+    `, [start, end]);
+
+    const expenses = await db.get(`
+        SELECT COUNT(*) AS registros,
+               COALESCE(SUM(monto), 0) AS monto
+        FROM gastos
+        WHERE fecha BETWEEN ? AND ?
+    `, [start, end]);
+
+    const payrollRows = await db.all(`
+        SELECT p.id, p.sueldo_base,
+               COALESCE(SUM(CASE WHEN a.trabajado = 1 THEN 1 ELSE 0 END), 0) AS dias
+        FROM planilla p
+        LEFT JOIN planilla_asistencia a
+          ON a.trabajador_id = p.id
+         AND a.fecha BETWEEN ? AND ?
+        GROUP BY p.id, p.sueldo_base
+    `, [start, end]);
+
+    const payrollExtras = await db.get(`
+        SELECT COALESCE(SUM(extras), 0) AS monto
+        FROM planilla_periodos
+        WHERE fecha_inicio >= ? AND fecha_fin <= ?
+    `, [start, end]);
+
+    const statementRows = await db.all(`
+        SELECT id, fecha_pago, periodo_inicio, periodo_fin, referencia,
+               toneladas, monto, notas, file_name, file_mime_type,
+               LENGTH(file_data) > 0 AS has_file, created_at, updated_at
+        FROM corapsa_pagos
+        WHERE periodo_inicio >= ? AND periodo_fin <= ?
+        ORDER BY periodo_inicio DESC, periodo_fin DESC, id DESC
+    `, [start, end]);
+
+    const inHouseLbs = Number(inHouse?.libras || 0);
+    const inHouseTons = truncateToDecimals(inHouseLbs / LBS_PER_METRIC_TON, 2);
+    const inHouseMoney = roundToCurrency(inHouse?.monto || 0);
+    const directTons = roundToCurrency(direct?.toneladas || 0);
+    const directMoney = roundToCurrency(direct?.monto || 0);
+    const trackedTons = roundToCurrency(inHouseTons + directTons);
+    const supplierCost = roundToCurrency(inHouseMoney + directMoney);
+
+    const payrollBase = payrollRows.reduce((sum, row) => {
+        return sum + ((Number(row.sueldo_base || 0) / 6) * Number(row.dias || 0));
+    }, 0);
+    const payrollMoney = roundToCurrency(payrollBase + Number(payrollExtras?.monto || 0));
+    const expenseMoney = roundToCurrency(expenses?.monto || 0);
+
+    const statements = statementRows.map(mapCorapsaPayment);
+    const corapsaTons = roundToCurrency(statements.reduce((sum, row) => sum + row.toneladas, 0));
+    const corapsaRevenue = roundToCurrency(statements.reduce((sum, row) => sum + row.monto, 0));
+
+    const tonDifference = roundToCurrency(corapsaTons - trackedTons);
+    const grossMargin = roundToCurrency(corapsaRevenue - supplierCost);
+    const operatingCosts = roundToCurrency(expenseMoney + payrollMoney);
+    const netProfit = roundToCurrency(grossMargin - operatingCosts);
+
+    return {
+        inicio: start,
+        fin: end,
+        comprasInternas: {
+            registros: Number(inHouse?.registros || 0),
+            libras: inHouseLbs,
+            toneladas: inHouseTons,
+            monto: inHouseMoney
+        },
+        comprasDirectas: {
+            registros: Number(direct?.registros || 0),
+            toneladas: directTons,
+            monto: directMoney
+        },
+        productoRastreado: {
+            toneladas: trackedTons,
+            montoPagadoProveedores: supplierCost
+        },
+        corapsaPagado: {
+            registros: statements.length,
+            toneladas: corapsaTons,
+            monto: corapsaRevenue
+        },
+        conciliacion: {
+            diferenciaToneladas: tonDifference,
+            margenBruto: grossMargin
+        },
+        gastos: {
+            registros: Number(expenses?.registros || 0),
+            monto: expenseMoney
+        },
+        planilla: {
+            monto: payrollMoney,
+            basePorAsistencia: roundToCurrency(payrollBase),
+            extras: roundToCurrency(payrollExtras?.monto || 0)
+        },
+        resultado: {
+            costosOperativos: operatingCosts,
+            utilidadNeta: netProfit
+        },
+        pagosCorapsa: statements
+    };
+}
+
+function validateCorapsaPaymentBody(body, { editing = false } = {}) {
+    const periodoInicio = asIsoDate(body?.periodoInicio, 'La fecha inicial del período');
+    const periodoFin = asIsoDate(body?.periodoFin, 'La fecha final del período');
+    if (periodoInicio > periodoFin) {
+        throw new HttpError(400, 'La fecha inicial del período no puede ser posterior a la fecha final.', 'VALIDATION_ERROR');
+    }
+
+    return {
+        fechaPago: asIsoDate(body?.fechaPago, 'La fecha de pago'),
+        periodoInicio,
+        periodoFin,
+        referencia: asText(body?.referencia, { maxLength: 150 }),
+        toneladas: asNumber(body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas pagadas' }),
+        monto: asNumber(body?.monto, { required: true, min: 0.01, field: 'El monto pagado por Corapsa' }),
+        notas: asText(body?.notas, { maxLength: 1000 }),
+        justificacion: editing ? requireJustification(body) : ''
     };
 }
 
@@ -213,7 +713,7 @@ async function createQueueId() {
 const app = express();
 app.disable('x-powered-by');
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(serializeDatabaseAccess);
 
 app.get('/api/health', (_req, res) => {
@@ -227,26 +727,68 @@ app.get('/api/clientes', asyncHandler(async (_req, res) => {
 }));
 
 app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
-    const monto = asNumber(req.body?.monto, { required: true, field: 'El monto' });
+    const montoTonelada = asNumber(req.body?.montoTonelada ?? req.body?.monto, {
+        required: true,
+        field: 'El monto por tonelada'
+    });
     const razon = requireJustification(req.body);
-    if (monto === 0) throw new HttpError(400, 'El monto del ajuste no puede ser cero.', 'VALIDATION_ERROR');
+    if (montoTonelada === 0) {
+        throw new HttpError(400, 'El monto del ajuste no puede ser cero.', 'VALIDATION_ERROR');
+    }
 
     const clientes = await withTransaction(async () => {
-        const minimums = await db.get(`
-            SELECT MIN(precio_flete_propio) AS propio, MIN(precio_flete_cliente) AS cliente
-            FROM clientes
-        `);
-        if ((minimums?.propio ?? 0) + monto < 0 || (minimums?.cliente ?? 0) + monto < 0) {
-            throw new HttpError(409, 'El ajuste dejaría uno o más precios negativos.', 'NEGATIVE_PRICE');
+        const rows = await db.all('SELECT * FROM clientes ORDER BY id DESC');
+        const updates = rows.map(row => {
+            const precioToneladaPropio = roundToCurrency(getStoredTonPrice(row, 'Propio') + montoTonelada);
+            const precioToneladaCliente = roundToCurrency(getStoredTonPrice(row, 'Cliente') + montoTonelada);
+
+            if (precioToneladaPropio < 0 || precioToneladaCliente < 0) {
+                throw new HttpError(
+                    409,
+                    `El ajuste dejaría un precio negativo para ${row.nombre}.`,
+                    'NEGATIVE_PRICE'
+                );
+            }
+
+            const unidad = row.unidad === 'quintal' ? 'quintal' : 'tonelada';
+            return {
+                id: row.id,
+                precioToneladaPropio,
+                precioToneladaCliente,
+                precioFletePropio: unidad === 'quintal'
+                    ? roundToNearestWhole(precioToneladaPropio / QUINTALES_PER_TON)
+                    : precioToneladaPropio,
+                precioFleteCliente: unidad === 'quintal'
+                    ? roundToNearestWhole(precioToneladaCliente / QUINTALES_PER_TON)
+                    : precioToneladaCliente
+            };
+        });
+
+        for (const update of updates) {
+            await db.run(`
+                UPDATE clientes
+                SET precio_flete_propio = ?,
+                    precio_flete_cliente = ?,
+                    precio_tonelada_propio = ?,
+                    precio_tonelada_cliente = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `, [
+                update.precioFletePropio,
+                update.precioFleteCliente,
+                update.precioToneladaPropio,
+                update.precioToneladaCliente,
+                update.id
+            ]);
         }
 
-        await db.run(`
-            UPDATE clientes
-            SET precio_flete_propio = precio_flete_propio + ?,
-                precio_flete_cliente = precio_flete_cliente + ?,
-                updated_at = CURRENT_TIMESTAMP
-        `, [monto, monto]);
-        await logAudit({ entity: 'clientes', action: 'ajuste_global', justification: razon, details: { monto } });
+        await logAudit({
+            entity: 'clientes',
+            action: 'ajuste_global',
+            justification: razon,
+            details: { montoTonelada, formulaQuintal: 'roundToNearestWhole(precioTonelada / 22.04)' }
+        });
+
         return (await db.all('SELECT * FROM clientes ORDER BY id DESC')).map(mapClient);
     });
 
@@ -254,20 +796,36 @@ app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/clientes', asyncHandler(async (req, res) => {
+    const unidad = asUnit(req.body?.unidad);
+    const pricing = buildClientPricing(req.body, unidad);
     const client = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { field: 'El apellido', maxLength: 120 }),
         telefono: asText(req.body?.telefono, { field: 'El teléfono', maxLength: 40 }),
         ubicacion: asText(req.body?.ubicacion, { field: 'La ubicación', maxLength: 200 }),
-        precioFletePropio: asNumber(req.body?.precioFletePropio, { required: true, min: 0, field: 'El precio de flete propio' }),
-        precioFleteCliente: asNumber(req.body?.precioFleteCliente, { required: true, min: 0, field: 'El precio de flete cliente' }),
-        unidad: asUnit(req.body?.unidad)
+        unidad,
+        ...pricing
     };
 
     const result = await db.run(`
-        INSERT INTO clientes (nombre, apellido, telefono, ubicacion, precio_flete_propio, precio_flete_cliente, unidad)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [client.nombre, client.apellido, client.telefono, client.ubicacion, client.precioFletePropio, client.precioFleteCliente, client.unidad]);
+        INSERT INTO clientes (
+            nombre, apellido, telefono, ubicacion,
+            precio_flete_propio, precio_flete_cliente,
+            precio_tonelada_propio, precio_tonelada_cliente,
+            unidad
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+        client.nombre,
+        client.apellido,
+        client.telefono,
+        client.ubicacion,
+        client.precioFletePropio,
+        client.precioFleteCliente,
+        client.precioToneladaPropio,
+        client.precioToneladaCliente,
+        client.unidad
+    ]);
     const row = await db.get('SELECT * FROM clientes WHERE id = ?', [result.lastID]);
     await logAudit({ entity: 'cliente', entityId: result.lastID, action: 'crear', details: client });
     sendData(res, { cliente: mapClient(row) }, 201);
@@ -276,22 +834,36 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
 app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
+    const unidad = asUnit(req.body?.unidad);
+    const pricing = buildClientPricing(req.body, unidad);
     const client = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { field: 'El apellido', maxLength: 120 }),
         telefono: asText(req.body?.telefono, { field: 'El teléfono', maxLength: 40 }),
         ubicacion: asText(req.body?.ubicacion, { field: 'La ubicación', maxLength: 200 }),
-        precioFletePropio: asNumber(req.body?.precioFletePropio, { required: true, min: 0, field: 'El precio de flete propio' }),
-        precioFleteCliente: asNumber(req.body?.precioFleteCliente, { required: true, min: 0, field: 'El precio de flete cliente' }),
-        unidad: asUnit(req.body?.unidad)
+        unidad,
+        ...pricing
     };
 
     const result = await db.run(`
         UPDATE clientes
         SET nombre = ?, apellido = ?, telefono = ?, ubicacion = ?,
-            precio_flete_propio = ?, precio_flete_cliente = ?, unidad = ?, updated_at = CURRENT_TIMESTAMP
+            precio_flete_propio = ?, precio_flete_cliente = ?,
+            precio_tonelada_propio = ?, precio_tonelada_cliente = ?,
+            unidad = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-    `, [client.nombre, client.apellido, client.telefono, client.ubicacion, client.precioFletePropio, client.precioFleteCliente, client.unidad, id]);
+    `, [
+        client.nombre,
+        client.apellido,
+        client.telefono,
+        client.ubicacion,
+        client.precioFletePropio,
+        client.precioFleteCliente,
+        client.precioToneladaPropio,
+        client.precioToneladaCliente,
+        client.unidad,
+        id
+    ]);
     if (!result.changes) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
 
     const row = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
@@ -442,8 +1014,8 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         const neto = Math.abs(Number(truck.peso_bruto) - Number(truck.peso_tara));
         if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
         const unidad = truck.unidad === 'quintal' ? 'quintal' : 'tonelada';
-        const divisor = unidad === 'quintal' ? LBS_PER_QUINTAL : LBS_PER_METRIC_TON;
-        const total = (neto / divisor) * Number(truck.precio_aplicado || 0);
+        const cantidadFacturable = calculateBillableQuantity(neto, unidad);
+        const total = cantidadFacturable * Number(truck.precio_aplicado || 0);
 
         const insertResult = await db.run(`
             INSERT INTO transacciones (
@@ -489,8 +1061,29 @@ app.delete('/api/transacciones/:id', asyncHandler(async (req, res) => {
 }));
 
 // CORAPSA
+app.get('/api/corapsa/:id/archivo/:type', asyncHandler(async (req, res) => {
+    const type = req.params.type === 'nuestro' ? 'nuestro' : 'cliente';
+    const row = await db.get(`
+        SELECT file_name, file_mime_type, file_data,
+               file_nuestro, file_nuestro_mime_type, file_nuestro_data
+        FROM corapsa WHERE id = ?
+    `, [req.params.id]);
+    if (!row) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
+
+    sendStoredAttachment(res, type === 'nuestro'
+        ? { fileName: row.file_nuestro, mimeType: row.file_nuestro_mime_type, data: row.file_nuestro_data }
+        : { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data });
+}));
+
 app.get('/api/corapsa', asyncHandler(async (_req, res) => {
-    const rows = await db.all('SELECT * FROM corapsa ORDER BY fecha DESC, id DESC');
+    const rows = await db.all(`
+        SELECT id, fecha, recibo_in, recibo_out, cliente, toneladas, precio, total,
+               file_name, file_mime_type, LENGTH(file_data) > 0 AS has_file,
+               file_nuestro, file_nuestro_mime_type, LENGTH(file_nuestro_data) > 0 AS has_file_nuestro,
+               pagado, created_at, updated_at
+        FROM corapsa
+        ORDER BY fecha DESC, id DESC
+    `);
     sendData(res, rows.map(mapCorapsa));
 }));
 
@@ -501,16 +1094,22 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
     const total = toneladas * precio;
+    const archivoCliente = parseAttachmentPayload(req.body?.archivoCliente, 'El archivo del cliente');
+    const archivoNuestro = parseAttachmentPayload(req.body?.archivoNuestro, 'El archivo nuestro');
 
     const result = await db.run(`
-        INSERT INTO corapsa (fecha, recibo_in, cliente, toneladas, precio, total, file_name, file_nuestro, pagado)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO corapsa (
+            fecha, recibo_in, cliente, toneladas, precio, total,
+            file_name, file_mime_type, file_data,
+            file_nuestro, file_nuestro_mime_type, file_nuestro_data, pagado
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
         fecha, reciboIn, cliente, toneladas, precio, total,
-        asText(req.body?.fileName, { maxLength: 255 }) || 'Sin Archivo',
-        asText(req.body?.fileNuestro, { maxLength: 255 }) || 'Sin Archivo',
+        archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null,
+        archivoNuestro?.fileName || 'Sin Archivo', archivoNuestro?.mimeType || '', archivoNuestro?.data || null,
         req.body?.pagado ? 1 : 0
     ]);
+
     const reciboOut = `CRX-${String(result.lastID).padStart(6, '0')}`;
     await db.run('UPDATE corapsa SET recibo_out = ? WHERE id = ?', [reciboOut, result.lastID]);
     const row = await db.get('SELECT * FROM corapsa WHERE id = ?', [result.lastID]);
@@ -521,6 +1120,9 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
 app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
+    const current = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
+    if (!current) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
+
     const fecha = asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 });
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
@@ -528,19 +1130,34 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
     const total = toneladas * precio;
 
-    const result = await db.run(`
+    const hasClienteUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente');
+    const hasNuestroUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro');
+    const archivoCliente = hasClienteUpload
+        ? parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente')
+        : null;
+    const archivoNuestro = hasNuestroUpload
+        ? parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro')
+        : null;
+
+    await db.run(`
         UPDATE corapsa
         SET fecha = ?, recibo_in = ?, cliente = ?, toneladas = ?, precio = ?, total = ?,
-            file_name = ?, file_nuestro = ?, pagado = ?, updated_at = CURRENT_TIMESTAMP
+            file_name = ?, file_mime_type = ?, file_data = ?,
+            file_nuestro = ?, file_nuestro_mime_type = ?, file_nuestro_data = ?,
+            pagado = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     `, [
         fecha, reciboIn, cliente, toneladas, precio, total,
-        asText(req.body?.fileName, { maxLength: 255 }) || 'Sin Archivo',
-        asText(req.body?.fileNuestro, { maxLength: 255 }) || 'Sin Archivo',
-        req.body?.pagado ? 1 : 0,
+        hasClienteUpload ? archivoCliente.fileName : current.file_name,
+        hasClienteUpload ? archivoCliente.mimeType : current.file_mime_type,
+        hasClienteUpload ? archivoCliente.data : current.file_data,
+        hasNuestroUpload ? archivoNuestro.fileName : current.file_nuestro,
+        hasNuestroUpload ? archivoNuestro.mimeType : current.file_nuestro_mime_type,
+        hasNuestroUpload ? archivoNuestro.data : current.file_nuestro_data,
+        Object.prototype.hasOwnProperty.call(req.body || {}, 'pagado') ? (req.body.pagado ? 1 : 0) : current.pagado,
         id
     ]);
-    if (!result.changes) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
+
     const row = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
     await logAudit({ entity: 'corapsa', entityId: id, action: 'editar', justification: justificacion, details: mapCorapsa(row) });
     sendData(res, { corapsa: mapCorapsa(row) });
@@ -555,13 +1172,21 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         updates.push('pagado = ?');
         values.push(req.body.pagado ? 1 : 0);
     }
-    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'fileName')) {
-        updates.push('file_name = ?');
-        values.push(asText(req.body.fileName, { maxLength: 255 }) || 'Sin Archivo');
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente')) {
+        const attachment = parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente');
+        updates.push('file_name = ?', 'file_mime_type = ?', 'file_data = ?');
+        values.push(attachment.fileName, attachment.mimeType, attachment.data);
     }
-    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'fileNuestro')) {
-        updates.push('file_nuestro = ?');
-        values.push(asText(req.body.fileNuestro, { maxLength: 255 }) || 'Sin Archivo');
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro')) {
+        const attachment = parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro');
+        updates.push('file_nuestro = ?', 'file_nuestro_mime_type = ?', 'file_nuestro_data = ?');
+        values.push(attachment.fileName, attachment.mimeType, attachment.data);
+    }
+    if (req.body?.eliminarArchivoCliente === true || req.body?.fileName === 'Sin Archivo') {
+        updates.push("file_name = 'Sin Archivo'", "file_mime_type = ''", 'file_data = NULL');
+    }
+    if (req.body?.eliminarArchivoNuestro === true || req.body?.fileNuestro === 'Sin Archivo') {
+        updates.push("file_nuestro = 'Sin Archivo'", "file_nuestro_mime_type = ''", 'file_nuestro_data = NULL');
     }
     if (updates.length === 0) throw new HttpError(400, 'No hay campos válidos para actualizar.', 'VALIDATION_ERROR');
 
@@ -572,7 +1197,13 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     await logAudit({
         entity: 'corapsa', entityId: id, action: 'actualizar_parcial',
         justification: asText(req.body?.justificacion, { maxLength: 500 }),
-        details: req.body
+        details: {
+            pagado: req.body?.pagado,
+            archivoCliente: Boolean(req.body?.archivoCliente),
+            archivoNuestro: Boolean(req.body?.archivoNuestro),
+            eliminarArchivoCliente: Boolean(req.body?.eliminarArchivoCliente),
+            eliminarArchivoNuestro: Boolean(req.body?.eliminarArchivoNuestro)
+        }
     });
     sendData(res, { corapsa: mapCorapsa(row) });
 }));
@@ -587,8 +1218,20 @@ app.delete('/api/corapsa/:id', asyncHandler(async (req, res) => {
 }));
 
 // GASTOS
+app.get('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
+    const row = await db.get('SELECT file_name, file_mime_type, file_data FROM gastos WHERE id = ?', [req.params.id]);
+    if (!row) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
+    sendStoredAttachment(res, { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data });
+}));
+
 app.get('/api/gastos', asyncHandler(async (_req, res) => {
-    const rows = await db.all('SELECT * FROM gastos ORDER BY fecha DESC, id DESC');
+    const rows = await db.all(`
+        SELECT id, fecha, monto, concepto, justificacion,
+               file_name, file_mime_type, LENGTH(file_data) > 0 AS has_file,
+               created_at, updated_at
+        FROM gastos
+        ORDER BY fecha DESC, id DESC
+    `);
     sendData(res, rows.map(mapExpense));
 }));
 
@@ -597,34 +1240,76 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
         fecha: asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 }),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
-        justificacion: asText(req.body?.justificacion, { maxLength: 1000 }),
-        fileName: asText(req.body?.fileName, { maxLength: 255 }) || 'Sin Archivo'
+        justificacion: asText(req.body?.justificacion, { maxLength: 1000 })
     };
+    const attachment = parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto');
     const result = await db.run(`
-        INSERT INTO gastos (fecha, monto, concepto, justificacion, file_name)
-        VALUES (?, ?, ?, ?, ?)
-    `, [expense.fecha, expense.monto, expense.concepto, expense.justificacion, expense.fileName]);
+        INSERT INTO gastos (fecha, monto, concepto, justificacion, file_name, file_mime_type, file_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+        expense.fecha, expense.monto, expense.concepto, expense.justificacion,
+        attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null
+    ]);
     const row = await db.get('SELECT * FROM gastos WHERE id = ?', [result.lastID]);
-    await logAudit({ entity: 'gasto', entityId: result.lastID, action: 'crear', details: expense });
+    await logAudit({ entity: 'gasto', entityId: result.lastID, action: 'crear', details: mapExpense(row) });
     sendData(res, { gasto: mapExpense(row) }, 201);
 }));
 
 app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
+    const current = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
+    if (!current) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
+
     const expense = {
         fecha: asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 }),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
-        justificacion: asText(req.body?.justificacion, { maxLength: 1000 }),
-        fileName: asText(req.body?.fileName, { maxLength: 255 }) || 'Sin Archivo'
+        justificacion: asText(req.body?.justificacion, { maxLength: 1000 })
     };
-    const result = await db.run(`
-        UPDATE gastos SET fecha = ?, monto = ?, concepto = ?, justificacion = ?, file_name = ?, updated_at = CURRENT_TIMESTAMP
+    const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
+    const attachment = hasUpload ? parseAttachmentPayload(req.body.archivo, 'El recibo del gasto') : null;
+
+    await db.run(`
+        UPDATE gastos
+        SET fecha = ?, monto = ?, concepto = ?, justificacion = ?,
+            file_name = ?, file_mime_type = ?, file_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-    `, [expense.fecha, expense.monto, expense.concepto, expense.justificacion, expense.fileName, id]);
+    `, [
+        expense.fecha, expense.monto, expense.concepto, expense.justificacion,
+        hasUpload ? attachment.fileName : current.file_name,
+        hasUpload ? attachment.mimeType : current.file_mime_type,
+        hasUpload ? attachment.data : current.file_data,
+        id
+    ]);
+    const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
+    await logAudit({ entity: 'gasto', entityId: id, action: 'editar', details: mapExpense(row) });
+    sendData(res, { gasto: mapExpense(row) });
+}));
+
+app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
+    let result;
+
+    if (req.body?.eliminarArchivo === true) {
+        result = await db.run(`
+            UPDATE gastos
+            SET file_name = 'Sin Archivo', file_mime_type = '', file_data = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [id]);
+    } else {
+        const attachment = parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto');
+        if (!attachment) throw new HttpError(400, 'Seleccione un archivo.', 'VALIDATION_ERROR');
+        result = await db.run(`
+            UPDATE gastos
+            SET file_name = ?, file_mime_type = ?, file_data = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [attachment.fileName, attachment.mimeType, attachment.data, id]);
+    }
+
     if (!result.changes) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
     const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
-    await logAudit({ entity: 'gasto', entityId: id, action: 'editar', details: expense });
+    await logAudit({ entity: 'gasto', entityId: id, action: 'actualizar_archivo', justification: justificacion, details: mapExpense(row) });
     sendData(res, { gasto: mapExpense(row) });
 }));
 
@@ -637,7 +1322,90 @@ app.delete('/api/gastos/:id', asyncHandler(async (req, res) => {
     sendData(res, { id });
 }));
 
+// OVERVIEW / CONCILIACIÓN CORAPSA
+app.get('/api/overview', asyncHandler(async (req, res) => {
+    const range = validateOverviewRange(req.query?.inicio, req.query?.fin);
+    sendData(res, await buildOverviewSummary(range.start, range.end));
+}));
+
+app.get('/api/corapsa-pagos/:id/archivo', asyncHandler(async (req, res) => {
+    const row = await db.get(
+        'SELECT file_name, file_mime_type, file_data FROM corapsa_pagos WHERE id = ?',
+        [req.params.id]
+    );
+    if (!row) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
+    sendStoredAttachment(res, { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data });
+}));
+
+app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
+    const payment = validateCorapsaPaymentBody(req.body);
+    const attachment = parseAttachmentPayload(req.body?.archivo, 'El estado de cuenta de Corapsa');
+
+    const result = await db.run(`
+        INSERT INTO corapsa_pagos (
+            fecha_pago, periodo_inicio, periodo_fin, referencia, toneladas,
+            monto, notas, file_name, file_mime_type, file_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+        payment.fechaPago, payment.periodoInicio, payment.periodoFin,
+        payment.referencia, payment.toneladas, payment.monto, payment.notas,
+        attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null
+    ]);
+
+    const row = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [result.lastID]);
+    await logAudit({ entity: 'pago_corapsa', entityId: result.lastID, action: 'crear', details: mapCorapsaPayment(row) });
+    sendData(res, { pago: mapCorapsaPayment(row) }, 201);
+}));
+
+app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const current = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [id]);
+    if (!current) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
+
+    const payment = validateCorapsaPaymentBody(req.body, { editing: true });
+    const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
+    const attachment = hasUpload
+        ? parseAttachmentPayload(req.body.archivo, 'El estado de cuenta de Corapsa')
+        : null;
+
+    await db.run(`
+        UPDATE corapsa_pagos
+        SET fecha_pago = ?, periodo_inicio = ?, periodo_fin = ?, referencia = ?,
+            toneladas = ?, monto = ?, notas = ?, file_name = ?, file_mime_type = ?,
+            file_data = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `, [
+        payment.fechaPago, payment.periodoInicio, payment.periodoFin,
+        payment.referencia, payment.toneladas, payment.monto, payment.notas,
+        hasUpload ? attachment.fileName : current.file_name,
+        hasUpload ? attachment.mimeType : current.file_mime_type,
+        hasUpload ? attachment.data : current.file_data,
+        id
+    ]);
+
+    const row = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [id]);
+    await logAudit({
+        entity: 'pago_corapsa', entityId: id, action: 'editar',
+        justification: payment.justificacion, details: mapCorapsaPayment(row)
+    });
+    sendData(res, { pago: mapCorapsaPayment(row) });
+}));
+
+app.delete('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const justificacion = requireJustification(req.body);
+    const result = await db.run('DELETE FROM corapsa_pagos WHERE id = ?', [id]);
+    if (!result.changes) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
+    await logAudit({ entity: 'pago_corapsa', entityId: id, action: 'eliminar', justification: justificacion });
+    sendData(res, { id });
+}));
+
 // PLANILLA
+app.get('/api/planilla/resumen', asyncHandler(async (req, res) => {
+    const range = validatePayrollRange(req.query?.inicio, req.query?.fin);
+    sendData(res, await buildPayrollSummary(range.start, range.end));
+}));
+
 app.get('/api/planilla', asyncHandler(async (_req, res) => {
     const rows = await db.all('SELECT * FROM planilla ORDER BY apellido, nombre, id');
     sendData(res, rows.map(mapWorker));
@@ -647,19 +1415,90 @@ app.post('/api/planilla', asyncHandler(async (req, res) => {
     const worker = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { required: true, field: 'El apellido', maxLength: 120 }),
-        telefono: asText(req.body?.telefono, { maxLength: 40 }),
-        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, field: 'El sueldo base' }),
-        diasTrabajados: asNumber(req.body?.diasTrabajados ?? 6, { required: true, min: 0, field: 'Los días trabajados' }),
-        extras: asNumber(req.body?.extras ?? 0, { required: true, min: 0, field: 'Los extras' })
+        telefono: asWorkerPhone(req.body?.telefono),
+        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, field: 'El sueldo base' })
     };
-    if (worker.diasTrabajados > 7) throw new HttpError(400, 'Los días trabajados no pueden exceder 7.', 'VALIDATION_ERROR');
+
     const result = await db.run(`
-        INSERT INTO planilla (nombre, apellido, telefono, sueldo_base, dias_trabajados, extras)
-        VALUES (?, ?, ?, ?, ?, ?)
-    `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase, worker.diasTrabajados, worker.extras]);
+        INSERT INTO planilla
+            (nombre, apellido, telefono, sueldo_base, dias_trabajados, extras, asistencia_migrada)
+        VALUES (?, ?, ?, ?, 0, 0, 1)
+    `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase]);
     const row = await db.get('SELECT * FROM planilla WHERE id = ?', [result.lastID]);
     await logAudit({ entity: 'trabajador', entityId: result.lastID, action: 'crear', details: worker });
     sendData(res, { trabajador: mapWorker(row) }, 201);
+}));
+
+app.put('/api/planilla/:id/asistencia/:fecha', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const fecha = asIsoDate(req.params.fecha, 'La fecha de la jornada');
+    const trabajado = asBoolean(req.body?.trabajado);
+    const horaInicio = asTime(req.body?.horaInicio || '07:00', 'La hora de entrada');
+    const horaFin = asTime(req.body?.horaFin || '16:00', 'La hora de salida');
+
+    if (trabajado && horaFin <= horaInicio) {
+        throw new HttpError(400, 'La hora de salida debe ser posterior a la hora de entrada.', 'VALIDATION_ERROR');
+    }
+
+    const worker = await db.get('SELECT id FROM planilla WHERE id = ?', [id]);
+    if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
+
+    await db.run(`
+        INSERT INTO planilla_asistencia
+            (trabajador_id, fecha, trabajado, hora_inicio, hora_fin)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(trabajador_id, fecha)
+        DO UPDATE SET
+            trabajado = excluded.trabajado,
+            hora_inicio = excluded.hora_inicio,
+            hora_fin = excluded.hora_fin,
+            updated_at = CURRENT_TIMESTAMP
+    `, [id, fecha, trabajado ? 1 : 0, horaInicio, horaFin]);
+
+    const row = await db.get(`
+        SELECT trabajador_id, fecha, trabajado, hora_inicio, hora_fin
+        FROM planilla_asistencia
+        WHERE trabajador_id = ? AND fecha = ?
+    `, [id, fecha]);
+
+    await logAudit({
+        entity: 'asistencia',
+        entityId: `${id}:${fecha}`,
+        action: trabajado ? 'registrar_jornada' : 'marcar_no_trabajado',
+        details: mapAttendance(row)
+    });
+    sendData(res, { asistencia: mapAttendance(row) });
+}));
+
+app.put('/api/planilla/:id/periodo', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const range = validatePayrollRange(req.body?.inicio, req.body?.fin);
+    const extras = asNumber(req.body?.extras ?? 0, {
+        required: true,
+        min: 0,
+        field: 'Los extras'
+    });
+
+    const worker = await db.get('SELECT id FROM planilla WHERE id = ?', [id]);
+    if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
+
+    await db.run(`
+        INSERT INTO planilla_periodos
+            (trabajador_id, fecha_inicio, fecha_fin, extras)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(trabajador_id, fecha_inicio, fecha_fin)
+        DO UPDATE SET extras = excluded.extras, updated_at = CURRENT_TIMESTAMP
+    `, [id, range.start, range.end, extras]);
+
+    await logAudit({
+        entity: 'planilla_periodo',
+        entityId: `${id}:${range.start}:${range.end}`,
+        action: 'actualizar_extras',
+        details: { extras }
+    });
+
+    const summary = await buildPayrollSummary(range.start, range.end, id);
+    sendData(res, { trabajador: summary.trabajadores[0] });
 }));
 
 app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
@@ -667,28 +1506,28 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
     const worker = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { required: true, field: 'El apellido', maxLength: 120 }),
-        telefono: asText(req.body?.telefono, { maxLength: 40 }),
-        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, field: 'El sueldo base' }),
-        diasTrabajados: asNumber(req.body?.diasTrabajados ?? 6, { required: true, min: 0, field: 'Los días trabajados' }),
-        extras: asNumber(req.body?.extras ?? 0, { required: true, min: 0, field: 'Los extras' })
+        telefono: asWorkerPhone(req.body?.telefono),
+        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, field: 'El sueldo base' })
     };
-    if (worker.diasTrabajados > 7) throw new HttpError(400, 'Los días trabajados no pueden exceder 7.', 'VALIDATION_ERROR');
+
     const result = await db.run(`
         UPDATE planilla
-        SET nombre = ?, apellido = ?, telefono = ?, sueldo_base = ?, dias_trabajados = ?, extras = ?, updated_at = CURRENT_TIMESTAMP
+        SET nombre = ?, apellido = ?, telefono = ?, sueldo_base = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-    `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase, worker.diasTrabajados, worker.extras, id]);
+    `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase, id]);
     if (!result.changes) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
     const row = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
     await logAudit({ entity: 'trabajador', entityId: id, action: 'editar', details: worker });
     sendData(res, { trabajador: mapWorker(row) });
 }));
 
+// Kept for compatibility with earlier frontend versions. New versions persist
+// attendance by date and extras by selected payroll period instead.
 app.patch('/api/planilla/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const dias = asNumber(req.body?.diasTrabajados, { required: true, min: 0, field: 'Los días trabajados' });
     const extras = asNumber(req.body?.extras, { required: true, min: 0, field: 'Los extras' });
-    if (dias > 7) throw new HttpError(400, 'Los días trabajados no pueden exceder 7.', 'VALIDATION_ERROR');
+    if (dias > 31) throw new HttpError(400, 'Los días trabajados no pueden exceder 31.', 'VALIDATION_ERROR');
     const result = await db.run(`
         UPDATE planilla SET dias_trabajados = ?, extras = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `, [dias, extras, id]);

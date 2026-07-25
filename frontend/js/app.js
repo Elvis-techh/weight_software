@@ -40,8 +40,18 @@ async function fetchGastos() {
 }
 
 async function fetchPlanilla() {
-    const records = await apiRequest('/api/planilla');
-    planillaData = Array.isArray(records) ? records.map(normalizarTrabajador) : [];
+    const range = getPlanillaSelectedRange();
+    if (!range) {
+        planillaData = [];
+        renderPlanilla();
+        return;
+    }
+
+    const result = await apiRequest(
+        `/api/planilla/resumen?inicio=${encodeURIComponent(range.start)}&fin=${encodeURIComponent(range.end)}`
+    );
+    const records = Array.isArray(result?.trabajadores) ? result.trabajadores : [];
+    planillaData = records.map(normalizarTrabajador);
     renderPlanilla();
 }
 
@@ -154,10 +164,29 @@ function setupScaleListener() {
 
 function setDefaultDateFilters() {
     const today = getLocalIsoDate();
-    ['filter-start', 'filter-end', 'corapsa-filter-start', 'corapsa-filter-end'].forEach(id => {
+    [
+        'filter-start',
+        'filter-end',
+        'corapsa-filter-start',
+        'corapsa-filter-end',
+        'gastos-filter-start',
+        'gastos-filter-end'
+    ].forEach(id => {
         const input = document.getElementById(id);
         if (input && !input.value) input.value = today;
     });
+
+    const currentMonth = getCurrentMonthRange();
+    const overviewStart = document.getElementById('overview-filter-start');
+    const overviewEnd = document.getElementById('overview-filter-end');
+    if (overviewStart && !overviewStart.value) overviewStart.value = currentMonth.start;
+    if (overviewEnd && !overviewEnd.value) overviewEnd.value = currentMonth.end;
+
+    const currentWeek = getCurrentWeekRange();
+    const planillaStart = document.getElementById('planilla-filter-start');
+    const planillaEnd = document.getElementById('planilla-filter-end');
+    if (planillaStart && !planillaStart.value) planillaStart.value = currentWeek.start;
+    if (planillaEnd && !planillaEnd.value) planillaEnd.value = currentWeek.end;
 }
 
 function renderInitialState() {
@@ -166,6 +195,7 @@ function renderInitialState() {
     renderCorapsaTab();
     renderGastos();
     renderPlanilla();
+    renderOverview();
     renderQueue();
     updateReportesTab();
     updateSimulatorButtons('loaded');
@@ -183,7 +213,8 @@ async function initApp() {
         ['transacciones', fetchTransacciones],
         ['Corapsa', fetchCorapsa],
         ['gastos', fetchGastos],
-        ['planilla', fetchPlanilla]
+        ['planilla', fetchPlanilla],
+        ['overview', fetchOverview]
     ];
 
     const results = await Promise.allSettled(loaders.map(([, loader]) => loader()));

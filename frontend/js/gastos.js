@@ -128,16 +128,118 @@ function renderGastoAttachmentThumbnail(gasto) {
         </button>`;
 }
 
+function normalizeGastoSearchValue(value) {
+    return String(value ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('es');
+}
+
+function compareGastoIdsDescending(left, right) {
+    const leftNumber = Number(left.id);
+    const rightNumber = Number(right.id);
+
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+        return rightNumber - leftNumber;
+    }
+
+    return String(right.id).localeCompare(String(left.id), 'es', { numeric: true });
+}
+
+function getFilteredAndSortedGastos() {
+    const startDate = document.getElementById('gastos-filter-start')?.value || '';
+    const endDate = document.getElementById('gastos-filter-end')?.value || '';
+    const search = normalizeGastoSearchValue(document.getElementById('gastos-filter-search')?.value);
+    const sort = document.getElementById('gastos-sort')?.value || 'fecha-desc';
+
+    const invalidDateRange = Boolean(startDate && endDate && startDate > endDate);
+    if (invalidDateRange) return { records: [], invalidDateRange: true };
+
+    const records = gastosData
+        .filter(gasto => {
+            if (startDate && gasto.fecha < startDate) return false;
+            if (endDate && gasto.fecha > endDate) return false;
+
+            if (!search) return true;
+
+            const searchable = normalizeGastoSearchValue([
+                gasto.fecha,
+                formatDateForDisplay(gasto.fecha),
+                gasto.concepto,
+                gasto.justificacion,
+                gasto.fileName,
+                gasto.monto,
+                formatMoney(gasto.monto)
+            ].join(' '));
+
+            return searchable.includes(search);
+        })
+        .sort((left, right) => {
+            switch (sort) {
+                case 'fecha-asc':
+                    return left.fecha.localeCompare(right.fecha) || compareGastoIdsDescending(left, right) * -1;
+                case 'concepto-asc':
+                    return left.concepto.localeCompare(right.concepto, 'es', { sensitivity: 'base' });
+                case 'concepto-desc':
+                    return right.concepto.localeCompare(left.concepto, 'es', { sensitivity: 'base' });
+                case 'monto-asc':
+                    return left.monto - right.monto;
+                case 'monto-desc':
+                    return right.monto - left.monto;
+                case 'recibo-asc':
+                    return left.fileName.localeCompare(right.fileName, 'es', { sensitivity: 'base' });
+                case 'recibo-desc':
+                    return right.fileName.localeCompare(left.fileName, 'es', { sensitivity: 'base' });
+                default:
+                    return right.fecha.localeCompare(left.fecha) || compareGastoIdsDescending(left, right);
+            }
+        });
+
+    return { records, invalidDateRange: false };
+}
+
+function updateGastosTotals(records) {
+    const countElement = document.getElementById('gastos-total-registros');
+    const amountElement = document.getElementById('gastos-total-monto');
+    const total = records.reduce((sum, gasto) => sum + toFiniteNumber(gasto.monto), 0);
+
+    if (countElement) countElement.textContent = records.length.toLocaleString('en-US');
+    if (amountElement) amountElement.textContent = formatMoney(total);
+}
+
+function limpiarFiltrosGastos() {
+    const start = document.getElementById('gastos-filter-start');
+    const end = document.getElementById('gastos-filter-end');
+    const search = document.getElementById('gastos-filter-search');
+    const sort = document.getElementById('gastos-sort');
+
+    if (start) start.value = '';
+    if (end) end.value = '';
+    if (search) search.value = '';
+    if (sort) sort.value = 'fecha-desc';
+
+    renderGastos();
+}
+
 function renderGastos() {
     const tbody = document.getElementById('gastos-table-body');
     if (!tbody) return;
 
-    if (gastosData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400">Sin gastos registrados.</td></tr>';
+    const { records, invalidDateRange } = getFilteredAndSortedGastos();
+    updateGastosTotals(records);
+
+    if (invalidDateRange) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-red-600 font-bold">La fecha “Desde” no puede ser posterior a la fecha “Hasta”.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = gastosData.map(gasto => `
+    if (records.length === 0) {
+        const hasAnyRecords = gastosData.length > 0;
+        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-400">${hasAnyRecords ? 'No se encontraron gastos para los filtros seleccionados.' : 'Sin gastos registrados.'}</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = records.map(gasto => `
         <tr class="hover:bg-red-50">
             <td class="p-4 font-mono text-gray-600">${escapeHtml(formatDateForDisplay(gasto.fecha))}</td>
             <td class="p-4 font-bold text-gray-800">${escapeHtml(gasto.concepto)}</td>

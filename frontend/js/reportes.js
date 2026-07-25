@@ -36,7 +36,7 @@ function updateReportesTab() {
     const totalDinero = filteredData.reduce((sum, item) => sum + item.total, 0);
 
     document.getElementById('rep-camiones').textContent = String(filteredData.length);
-    document.getElementById('rep-toneladas').textContent = (totalLbs / APP_CONFIG.lbsPerMetricTon)
+    document.getElementById('rep-toneladas').textContent = calculateMetricTons(totalLbs, { truncate: true })
         .toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     document.getElementById('rep-libras').textContent = `${totalLbs.toLocaleString('en-US', {
         minimumFractionDigits: 0,
@@ -56,7 +56,7 @@ function updateReportesTab() {
                 ? transaction.conductor
                 : 'S/P';
         const unitLabel = transaction.unidad === 'quintal' ? 'QQ' : 'TON';
-        const metricTons = transaction.neto / APP_CONFIG.lbsPerMetricTon;
+        const metricTons = calculateMetricTons(transaction.neto, { truncate: true });
 
         return `
             <tr class="hover:bg-gray-50 border-b border-gray-100">
@@ -82,9 +82,7 @@ function imprimirRecibo(id) {
     if (!transaction) return mostrarNotificacion('Transacción no encontrada.', 'error');
 
     const unitLabel = transaction.unidad === 'quintal' ? 'Quintal' : 'Tonelada';
-    const quantity = transaction.unidad === 'quintal'
-        ? transaction.neto / APP_CONFIG.lbsPerQuintal
-        : transaction.neto / APP_CONFIG.lbsPerMetricTon;
+    const quantity = calculateBillableQuantity(transaction.neto, transaction.unidad);
 
     document.getElementById('print-content').innerHTML = `
         <p><strong>Fecha/Hora:</strong> ${escapeHtml(formatDateForDisplay(transaction.fecha))} ${escapeHtml(transaction.hora)}</p>

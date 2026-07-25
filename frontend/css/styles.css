@@ -54,7 +54,6 @@ body {
         width: 100%;
     }
 }
-
 button[data-busy="true"] {
     opacity: 0.65;
     cursor: wait;
