@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000';
+const API_URL = 'https://api.basculacentral.com';
 
 const APP_CONFIG = Object.freeze({
     lbsPerMetricTon: 2204.62262185,

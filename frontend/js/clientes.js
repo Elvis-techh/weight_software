@@ -15,7 +15,7 @@ function roundToCurrency(value) {
 function pricePerQuintalFromTon(priceInTon) {
     const price = Number(priceInTon);
     if (!Number.isFinite(price)) return NaN;
-    return roundToNearestTenth(price / QUINTALES_PER_TON);
+    return Math.round(price / QUINTALES_PER_TON);
 }
 
 function recoverTonPrice(unitPrice, unit) {
@@ -54,7 +54,7 @@ function normalizarCliente(record = {}) {
         unidad
     };
 }
-
+m
 function formatClientUnitPrice(value, unit) {
     return toFiniteNumber(value).toLocaleString('en-US', {
         minimumFractionDigits: unit === 'quintal' ? 1 : 2,
