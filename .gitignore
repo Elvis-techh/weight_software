@@ -10,3 +10,5 @@ backend/bascula.db-journal
 # Ignore environment variables and logs
 .env
 npm-debug.log
+
+frontend/dist/

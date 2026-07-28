@@ -1,6 +1,6 @@
 {
     "name": "bascula-central",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Weight tracking and administration system",
     "main": "main.js",
     "scripts": {
@@ -15,6 +15,13 @@
         "electron-builder": "^24.9.1"
     },
     "build": {
+        "publish": [
+            {
+                "provider": "github",
+                "owner": "Elvis-techh",
+                "repo": "weight_software"
+            }
+        ],
         "appId": "com.basculacentral.desktop",
         "productName": "Báscula Central",
         "directories": {
