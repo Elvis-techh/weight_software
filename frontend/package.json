@@ -1,17 +1,33 @@
 {
-    "name": "bascula-central-frontend",
+    "name": "bascula-central",
     "version": "1.0.0",
-    "description": "Terminal de Pesaje Frontend",
+    "description": "Weight tracking and administration system",
     "main": "main.js",
     "scripts": {
-        "start": "electron ."
+        "start": "electron .",
+        "dist": "electron-builder --win nsis"
     },
     "dependencies": {
-        "serialport": "^12.0.0"
+        "electron-updater": "^6.1.7"
     },
     "devDependencies": {
-        "electron": "^43.1.1"
+        "electron": "^28.0.0",
+        "electron-builder": "^24.9.1"
     },
-    "author": "Báscula Central Team",
-    "license": "ISC"
+    "build": {
+        "appId": "com.basculacentral.desktop",
+        "productName": "Báscula Central",
+        "directories": {
+            "output": "dist"
+        },
+        "win": {
+            "target": "nsis"
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true
+        }
+    }
 }
