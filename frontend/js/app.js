@@ -56,6 +56,9 @@ async function fetchPlanilla() {
 }
 
 function getScaleSourceLabel(source) {
+    if (source === 'disconnected') {
+        return 'BÁSCULA DESCONECTADA';
+    }
     if (source === 'simulator:empty' || source === 'browser-simulator:empty') {
         return 'PESO ESTABLE (SIMULADO - VACÍO)';
     }
@@ -80,27 +83,37 @@ function updateSimulatorButtons(activePreset) {
 function renderScaleReading(data) {
     setLiveScaleData(data);
 
+    const source = String(data?.source || '');
+    const disconnected = source === 'disconnected';
+
     const weightDisplay = document.getElementById('live-weight');
     const statusDisplay = document.getElementById('scale-status');
     const sourceDisplay = document.getElementById('scale-source-label');
+    const disconnectedBanner = document.getElementById('scale-disconnected-banner');
     if (!weightDisplay || !statusDisplay) return;
 
     weightDisplay.textContent = currentLiveWeight
         .toLocaleString('en-US')
         .padStart(6, '0');
 
-    weightDisplay.classList.toggle('text-green-400', currentScaleStable);
-    weightDisplay.classList.toggle('text-green-500', !currentScaleStable);
-    statusDisplay.textContent = getScaleSourceLabel(String(data?.source || ''));
+    weightDisplay.classList.toggle('text-green-400', currentScaleStable && !disconnected);
+    weightDisplay.classList.toggle('text-green-500', !currentScaleStable || disconnected);
+    statusDisplay.textContent = getScaleSourceLabel(source);
 
-    const preset = String(data?.preset || String(data?.source || '').split(':')[1] || '');
+    const preset = String(data?.preset || source.split(':')[1] || '');
     if (preset) updateSimulatorButtons(preset);
 
     if (sourceDisplay) {
-        sourceDisplay.textContent = String(data?.source || '').includes('simulator')
+        sourceDisplay.textContent = source.includes('simulator')
             ? 'SIMULADOR DE BÁSCULA'
             : 'LECTURA DE BÁSCULA';
     }
+
+    if (disconnectedBanner) disconnectedBanner.classList.toggle('hidden', !disconnected);
+
+    // Re-evaluate weight-button gating on every reading so a disconnect (or
+    // recovery) reflects in the UI immediately, not just on transaction load.
+    if (typeof actualizarEstadoBotonesPeso === 'function') actualizarEstadoBotonesPeso();
 }
 
 function emitBrowserSimulationReading() {
@@ -203,6 +216,7 @@ function renderInitialState() {
 
 async function initApp() {
     startClock();
+    await initScaleSettings();
     setupScaleListener();
     setDefaultDateFilters();
     renderInitialState();

@@ -12,44 +12,7 @@
 
     <title>Báscula Central - Terminal</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Share+Tech+Mono&display=swap"
-        rel="stylesheet">
-
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
-
-
-    <script>
-
-        tailwind.config = {
-
-            theme: {
-
-                extend: {
-
-                    fontFamily: {
-
-                        sans: ['Inter', 'sans-serif'],
-
-                        mono: ['Share Tech Mono', 'monospace'],
-
-                    },
-
-                    colors: {
-
-                        brand: { 50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7', 500: '#10b981', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' }
-
-                    }
-
-                }
-
-            }
-
-        }
-
-    </script>
+    <link rel="stylesheet" href="css/tailwind.css">
 
     <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -679,6 +642,91 @@
 
 
 
+    <!-- SCALE SETTINGS MODAL -->
+    <div id="scale-settings-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[480px] max-w-full max-h-[94vh] overflow-hidden flex flex-col">
+
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+                <h3 class="font-bold text-lg">Configuración de Báscula</h3>
+                <button onclick="cerrarScaleSettingsModal()" class="hover:text-gray-400 transition-colors">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div class="p-6 flex flex-col gap-4 overflow-y-auto">
+
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-xs font-bold text-gray-600">Puerto COM</label>
+                        <button type="button" onclick="refrescarPuertosScale()"
+                            class="text-[11px] font-bold text-brand-700 hover:text-brand-900">Actualizar lista</button>
+                    </div>
+                    <select id="scale-settings-com-port"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-mono text-sm">
+                        <option value="">Sin seleccionar</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Velocidad (baud rate)</label>
+                    <select id="scale-settings-baud-rate"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-mono text-sm">
+                        <option value="1200">1200</option>
+                        <option value="2400">2400</option>
+                        <option value="4800">4800</option>
+                        <option value="9600" selected>9600</option>
+                        <option value="19200">19200</option>
+                        <option value="38400">38400</option>
+                        <option value="57600">57600</option>
+                        <option value="115200">115200</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Patrón de lectura (opcional)</label>
+                    <input type="text" id="scale-settings-parse-pattern"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-mono text-sm"
+                        placeholder="Ej. GS,([\d.+-]+),">
+                    <p class="mt-1 text-[10px] text-gray-400">Déjelo vacío para usar el modo automático (toma el
+                        primer número de cada línea). Use una expresión regular con un grupo de captura para
+                        formatos especiales.</p>
+                </div>
+
+                <div class="bg-gray-50 p-3 border border-gray-200 rounded-lg">
+                    <label class="flex items-center gap-2 text-xs font-bold text-gray-700">
+                        <input type="checkbox" id="scale-settings-test-mode">
+                        Modo de prueba (simulador)
+                    </label>
+                    <p class="mt-1 text-[10px] text-gray-400">Genera pesos de prueba en lugar de leer la báscula
+                        real. No debe quedar activado en un equipo en producción.</p>
+                </div>
+
+                <div class="bg-gray-50 p-3 border border-gray-200 rounded-lg">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-xs font-bold text-gray-600">Probar conexión</p>
+                        <button type="button" onclick="probarConexionScale()"
+                            class="px-3 py-1.5 bg-gray-700 text-white text-[11px] font-bold rounded hover:bg-gray-800">Probar</button>
+                    </div>
+                    <p id="scale-settings-test-result" class="mt-2 text-[11px] font-mono text-gray-500">Sin probar
+                        todavía.</p>
+                </div>
+
+            </div>
+
+            <div class="px-6 pb-6 flex justify-end gap-3">
+                <button onclick="cerrarScaleSettingsModal()"
+                    class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+                <button onclick="guardarScaleSettings()"
+                    class="px-6 py-2 bg-gray-800 text-white font-bold rounded shadow hover:bg-gray-900">Guardar</button>
+            </div>
+
+        </div>
+
+    </div>
+
+
+
     <!-- PLANILLA MODAL -->
 
     <div id="planilla-modal" class="hidden fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4">
@@ -1026,7 +1074,10 @@
 
                         <div class="absolute top-4 left-4 flex items-center gap-2 text-gray-400">
 
-                            <span class="material-icons text-sm">settings_input_component</span>
+                            <button type="button" onclick="abrirScaleSettingsModal()" aria-label="Configurar báscula"
+                                class="text-gray-400 hover:text-gray-200 transition-colors">
+                                <span class="material-icons text-sm">settings_input_component</span>
+                            </button>
 
                             <span id="scale-source-label" class="text-xs font-bold tracking-widest uppercase">SIMULADOR
                                 DE BÁSCULA</span>
@@ -1043,7 +1094,14 @@
 
                         <p class="text-gray-500 text-sm mt-2 font-mono" id="scale-status">Estabilizando...</p>
 
-                        <div class="mt-4 flex items-center gap-2" aria-label="Controles del simulador de báscula">
+                        <div id="scale-disconnected-banner"
+                            class="hidden mt-2 flex items-center gap-2 bg-red-500/20 border border-red-500 text-red-300 text-xs font-bold px-3 py-1.5 rounded-lg">
+                            <span class="material-icons text-[16px]">warning</span>
+                            <span>BÁSCULA DESCONECTADA — Ingreso manual disponible</span>
+                        </div>
+
+                        <div id="simulator-controls" class="hidden mt-4 flex items-center gap-2"
+                            aria-label="Controles del simulador de báscula">
                             <span class="text-[10px] font-bold tracking-widest text-gray-500 uppercase">Prueba:</span>
                             <button id="simulator-loaded-button" type="button"
                                 onclick="setScaleSimulatorPreset('loaded')"
@@ -2059,6 +2117,7 @@
     <script src="js/gastos.js" defer></script>
     <script src="js/planilla.js" defer></script>
     <script src="js/overview.js" defer></script>
+    <script src="js/scaleSettings.js" defer></script>
     <script src="js/app.js" defer></script>
 
 </body>

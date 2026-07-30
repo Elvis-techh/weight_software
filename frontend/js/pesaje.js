@@ -387,10 +387,17 @@ function actualizarEstadoBotonesPeso() {
     const brutoIsLocked = hasOpenTransaction && activeTransaction.pesoBruto != null;
     const taraAlreadyExists = hasOpenTransaction && activeTransaction.pesoTara != null;
 
+    // Fail closed: if the scale is disconnected or its last reading is stale, a live
+    // read must not be possible — this is what stops a fake/absent value from ever
+    // reaching a real transaction. Manual entry (below) is a separate, deliberate
+    // escape hatch and is intentionally NOT gated by this.
+    const liveReading = getLiveScaleReading();
+    const scaleUnavailable = liveReading.source === 'disconnected' || !liveReading.isFresh;
+
     // Gross weight is immutable after its first capture. Tare can always be
     // read again and overwritten until FINALIZAR Y GUARDAR is pressed.
-    brutoButton.disabled = brutoIsLocked;
-    taraButton.disabled = false;
+    brutoButton.disabled = brutoIsLocked || scaleUnavailable;
+    taraButton.disabled = scaleUnavailable;
 
     if (manualBrutoButton) {
         manualBrutoButton.disabled = brutoIsLocked;

@@ -54,7 +54,7 @@ function normalizarCliente(record = {}) {
         unidad
     };
 }
-m
+
 function formatClientUnitPrice(value, unit) {
     return toFiniteNumber(value).toLocaleString('en-US', {
         minimumFractionDigits: unit === 'quintal' ? 1 : 2,

@@ -1,4 +1,7 @@
 const API_URL = 'https://api.basculacentral.com';
+// Must match the API_KEY environment variable set on the backend server exactly.
+// Not a cryptographic secret once this app is packaged/distributed — see MVP plan notes.
+const API_KEY = '1218d8801f6281d70339d5626b60b5ca089355fee5fb3c324954849426c83ec1';
 
 const APP_CONFIG = Object.freeze({
     lbsPerMetricTon: 2204.62262185,
@@ -13,6 +16,7 @@ let MOCK_CASUAL = createDefaultCasualClient();
 
 let currentLiveWeight = 0;
 let currentScaleStable = false;
+let currentScaleSource = '';
 let lastScaleUpdateAt = 0;
 
 let camionesEnPatio = [];
@@ -258,6 +262,7 @@ function setLiveScaleData(data) {
     const weight = Number(data?.weight);
     currentLiveWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
     currentScaleStable = Boolean(data?.stable);
+    currentScaleSource = String(data?.source || '');
     lastScaleUpdateAt = Date.now();
 }
 
@@ -265,6 +270,7 @@ function getLiveScaleReading() {
     return {
         weight: currentLiveWeight,
         stable: currentScaleStable,
+        source: currentScaleSource,
         isFresh: Date.now() - lastScaleUpdateAt <= APP_CONFIG.scaleReadingMaxAgeMs
     };
 }
