@@ -69,6 +69,7 @@ function updateReportesTab() {
                 <td class="p-4 text-right font-mono font-bold text-green-700">L ${formatMoney(transaction.total)}</td>
                 <td class="p-4 flex justify-center gap-2">
                     <button type="button" onclick="imprimirRecibo('${escapeHtml(transaction.id)}')" class="text-gray-500 hover:text-gray-900 transition-colors" aria-label="Imprimir recibo"><span class="material-icons">print</span></button>
+                    <button type="button" onclick="abrirReporteModal('${escapeHtml(transaction.id)}')" class="text-blue-500 hover:text-blue-800 transition-colors" aria-label="Editar reporte"><span class="material-icons">edit</span></button>
                     <button type="button" onclick="eliminarTransaccion('${escapeHtml(transaction.id)}')" class="text-red-400 hover:text-red-700 transition-colors" aria-label="Eliminar reporte"><span class="material-icons">delete</span></button>
                 </td>
             </tr>
@@ -98,6 +99,100 @@ function imprimirRecibo(id) {
     `;
 
     window.print();
+}
+
+function abrirReporteModal(id) {
+    const transaction = transaccionesData.find(item => sameRecordId(item.id, id));
+    if (!transaction) return mostrarNotificacion('Transacción no encontrada.', 'error');
+
+    document.getElementById('reporte-edit-id').value = transaction.id;
+    document.getElementById('reporte-fecha').value = transaction.fecha;
+    document.getElementById('reporte-hora').value = transaction.hora;
+    document.getElementById('reporte-placa').value = transaction.placa === 'S/P' ? '' : transaction.placa;
+    document.getElementById('reporte-conductor').value = transaction.conductor === 'Desconocido' ? '' : transaction.conductor;
+    document.getElementById('reporte-cliente').value = transaction.clienteNombre;
+    document.getElementById('reporte-unidad').value = transaction.unidad;
+    document.getElementById('reporte-peso-bruto').value = formatNumberForInput(transaction.pesoBruto, 0);
+    document.getElementById('reporte-peso-tara').value = formatNumberForInput(transaction.pesoTara, 0);
+    document.getElementById('reporte-precio').value = formatNumberForInput(transaction.precioAplicado, 2);
+    document.getElementById('reporte-justificacion').value = '';
+
+    calcularPreviewReporte();
+    document.getElementById('reporte-modal').classList.remove('hidden');
+}
+
+function cerrarReporteModal() {
+    document.getElementById('reporte-modal').classList.add('hidden');
+}
+
+function calcularPreviewReporte() {
+    const pesoBruto = parseFormattedNumber(document.getElementById('reporte-peso-bruto').value);
+    const pesoTara = parseFormattedNumber(document.getElementById('reporte-peso-tara').value);
+    const precio = parseFormattedNumber(document.getElementById('reporte-precio').value);
+    const unidad = document.getElementById('reporte-unidad').value;
+
+    const neto = Number.isFinite(pesoBruto) && Number.isFinite(pesoTara)
+        ? Math.abs(pesoBruto - pesoTara)
+        : 0;
+    const total = calculatePayment(neto, precio, unidad);
+
+    document.getElementById('reporte-neto-preview').textContent = `${neto.toLocaleString('en-US')} LBS`;
+    document.getElementById('reporte-total-preview').textContent = `L ${formatMoney(total)}`;
+
+    return { neto, total };
+}
+
+async function guardarReporteEdit() {
+    const id = document.getElementById('reporte-edit-id').value;
+    const payload = {
+        fecha: document.getElementById('reporte-fecha').value,
+        hora: document.getElementById('reporte-hora').value.trim(),
+        placa: document.getElementById('reporte-placa').value.trim().toUpperCase(),
+        conductor: document.getElementById('reporte-conductor').value.trim(),
+        clienteNombre: document.getElementById('reporte-cliente').value.trim(),
+        unidad: document.getElementById('reporte-unidad').value,
+        pesoBruto: parseFormattedNumber(document.getElementById('reporte-peso-bruto').value),
+        pesoTara: parseFormattedNumber(document.getElementById('reporte-peso-tara').value),
+        precioAplicado: parseFormattedNumber(document.getElementById('reporte-precio').value),
+        justificacion: document.getElementById('reporte-justificacion').value.trim()
+    };
+
+    if (!payload.fecha || !payload.hora) return mostrarNotificacion('Complete la fecha y la hora.', 'error');
+    if (!payload.clienteNombre) return mostrarNotificacion('El nombre del cliente es obligatorio.', 'error');
+    if (!Number.isFinite(payload.pesoBruto) || payload.pesoBruto <= 0) return mostrarNotificacion('Ingrese un peso bruto válido.', 'error');
+    if (!Number.isFinite(payload.pesoTara) || payload.pesoTara <= 0) return mostrarNotificacion('Ingrese un peso tara válido.', 'error');
+    if (Math.abs(payload.pesoBruto - payload.pesoTara) <= 0) return mostrarNotificacion('El peso neto debe ser mayor que cero.', 'error');
+    if (!Number.isFinite(payload.precioAplicado) || payload.precioAplicado < 0) return mostrarNotificacion('Ingrese un precio válido.', 'error');
+    if (!payload.justificacion) return mostrarNotificacion('Debe ingresar una justificación para editar la transacción.', 'error');
+
+    const saveButton = document.getElementById('reporte-save-button');
+    try {
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Guardando...';
+        }
+
+        const result = await apiRequest(`/api/transacciones/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            body: payload
+        });
+
+        const saved = normalizarTransaccion(result?.transaccion || result);
+        const index = transaccionesData.findIndex(item => sameRecordId(item.id, saved.id));
+        if (index >= 0) transaccionesData[index] = saved;
+
+        updateReportesTab();
+        cerrarReporteModal();
+        mostrarNotificacion('Transacción actualizada exitosamente.');
+    } catch (error) {
+        console.error('Error al editar la transacción:', error);
+        mostrarNotificacion(error.message || 'No se pudo actualizar la transacción.', 'error');
+    } finally {
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Guardar Cambios';
+        }
+    }
 }
 
 function eliminarTransaccion(id) {

@@ -65,6 +65,9 @@ function isValidApiKey(provided) {
 }
 
 function requireApiKey(req, res, next) {
+    // MVP: auth is off until API_KEY is set on the server. Set it (and keep the
+    // frontend's API_KEY in globals.js in sync) to turn this back on later.
+    if (!API_KEY) return next();
     if (req.method === 'OPTIONS') return next();
     if (req.path === '/api/health') return next();
     if (!isValidApiKey(req.get('X-API-Key'))) {
@@ -1113,6 +1116,41 @@ app.get('/api/transacciones', asyncHandler(async (_req, res) => {
     sendData(res, rows.map(mapTransaction));
 }));
 
+app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const justificacion = requireJustification(req.body);
+
+    const fecha = asIsoDate(req.body?.fecha, 'La fecha');
+    const hora = asText(req.body?.hora, { required: true, field: 'La hora', maxLength: 20 });
+    const placa = asText(req.body?.placa, { field: 'La placa', maxLength: 30 }) || 'S/P';
+    const conductor = asText(req.body?.conductor, { field: 'El conductor', maxLength: 150 }) || 'Desconocido';
+    const clienteNombre = asText(req.body?.clienteNombre, { required: true, field: 'El nombre del cliente', maxLength: 200 });
+    const unidad = asUnit(req.body?.unidad);
+    const pesoBruto = asNumber(req.body?.pesoBruto, { required: true, min: 0.01, field: 'El peso bruto' });
+    const pesoTara = asNumber(req.body?.pesoTara, { required: true, min: 0.01, field: 'El peso tara' });
+    const precioAplicado = asNumber(req.body?.precioAplicado, { required: true, min: 0, field: 'El precio aplicado' });
+
+    const neto = Math.abs(pesoBruto - pesoTara);
+    if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
+    const total = calculateBillableQuantity(neto, unidad) * precioAplicado;
+
+    const transaction = await withTransaction(async () => {
+        const result = await db.run(`
+            UPDATE transacciones
+            SET fecha = ?, hora = ?, placa = ?, conductor = ?, cliente_nombre = ?,
+                peso_bruto = ?, peso_tara = ?, neto = ?, precio_aplicado = ?, total = ?, unidad = ?
+            WHERE id = ?
+        `, [fecha, hora, placa, conductor, clienteNombre, pesoBruto, pesoTara, neto, precioAplicado, total, unidad, id]);
+        if (!result.changes) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
+
+        const row = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
+        await logAudit({ entity: 'transaccion', entityId: id, action: 'editar', justification: justificacion, details: mapTransaction(row) });
+        return mapTransaction(row);
+    });
+
+    sendData(res, { transaccion: transaction });
+}));
+
 app.delete('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
@@ -1677,8 +1715,9 @@ app.use((error, _req, res, _next) => {
 
 async function start() {
     if (!API_KEY) {
-        throw new Error(
-            'La variable de entorno API_KEY es obligatoria. Defina API_KEY antes de iniciar el servidor ' +
+        console.warn(
+            'ADVERTENCIA: API_KEY no está definida — el servidor arrancará sin autenticación. ' +
+            'Defina API_KEY antes de iniciar el servidor para reactivarla ' +
             '(ej. API_KEY=xxxx node server.js). Genere una con: ' +
             'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
         );

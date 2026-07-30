@@ -543,6 +543,105 @@
 
 
 
+    <!-- REPORTE (TRANSACTION) EDIT MODAL -->
+    <div id="reporte-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-[700px] max-w-full max-h-[94vh] overflow-hidden flex flex-col">
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+                <h3 class="font-bold text-lg">Editar Transacción</h3>
+                <button onclick="cerrarReporteModal()" class="hover:text-red-400 transition-colors">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div class="p-6 flex flex-col gap-4 overflow-y-auto">
+                <input type="hidden" id="reporte-edit-id">
+
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Fecha *</label>
+                        <input type="date" id="reporte-fecha"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold text-gray-700">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Hora *</label>
+                        <input type="text" id="reporte-hora" placeholder="HH:MM:SS"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-mono">
+                    </div>
+                </div>
+
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Placa</label>
+                        <input type="text" id="reporte-placa"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none uppercase">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Conductor</label>
+                        <input type="text" id="reporte-conductor"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Cliente (nombre registrado) *</label>
+                    <input type="text" id="reporte-cliente"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-semibold">
+                </div>
+
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Peso Bruto (LBS) *</label>
+                        <input type="text" id="reporte-peso-bruto" inputmode="numeric"
+                            oninput="formatIntegerThousandsInput(event); calcularPreviewReporte()"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-mono">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Peso Tara (LBS) *</label>
+                        <input type="text" id="reporte-peso-tara" inputmode="numeric"
+                            oninput="formatIntegerThousandsInput(event); calcularPreviewReporte()"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-mono">
+                    </div>
+                </div>
+
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Unidad *</label>
+                        <select id="reporte-unidad" onchange="calcularPreviewReporte()"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold">
+                            <option value="tonelada">Tonelada</option>
+                            <option value="quintal">Quintal</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Precio Aplicado (L) *</label>
+                        <input type="text" id="reporte-precio" inputmode="decimal"
+                            oninput="formatDecimalThousandsInput(event); calcularPreviewReporte()"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-mono">
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 flex justify-between items-center text-sm">
+                    <span class="font-bold text-gray-600">Peso Neto: <span id="reporte-neto-preview" class="font-mono text-gray-800">0 LBS</span></span>
+                    <span class="font-bold text-gray-600">Total: <span id="reporte-total-preview" class="font-mono text-green-700">L 0.00</span></span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Justificación (Obligatoria) *</label>
+                    <textarea id="reporte-justificacion" rows="2"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none"
+                        placeholder="Explique el motivo de la modificación"></textarea>
+                </div>
+
+                <div class="mt-2 flex justify-end gap-3">
+                    <button onclick="cerrarReporteModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+                    <button id="reporte-save-button" onclick="guardarReporteEdit()"
+                        class="px-6 py-2 bg-gray-800 text-white font-bold rounded shadow hover:bg-black">Guardar Cambios</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- GASTOS MODAL -->
 
     <div id="gastos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
