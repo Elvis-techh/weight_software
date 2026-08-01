@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    // Local-testing override: `BASCULA_API_URL=http://localhost:3000 npm start`
+    // points the app at a local backend instead of production. Unset in any
+    // packaged build, so installed apps always default to production.
+    apiUrl: process.env.BASCULA_API_URL || '',
+
     onScaleData(callback) {
         if (typeof callback !== 'function') {
             throw new TypeError('onScaleData requiere una función callback.');
