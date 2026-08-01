@@ -22,5 +22,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     setScaleSimulationPreset(preset) {
         return ipcRenderer.invoke('scale-simulation:set-preset', preset);
+    },
+
+    listScalePorts() {
+        return ipcRenderer.invoke('scale:list-ports');
+    },
+
+    getScaleSettings() {
+        return ipcRenderer.invoke('scale:get-settings');
+    },
+
+    saveScaleSettings(settings) {
+        return ipcRenderer.invoke('scale:save-settings', settings);
+    },
+
+    testScaleConnection(settings) {
+        return ipcRenderer.invoke('scale:test-connection', settings);
     }
 });

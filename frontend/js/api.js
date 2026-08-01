@@ -27,6 +27,7 @@ async function apiRequest(path, {
             method,
             headers: {
                 Accept: 'application/json',
+                'X-API-Key': API_KEY,
                 ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
                 ...headers
             },

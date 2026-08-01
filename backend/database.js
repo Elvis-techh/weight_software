@@ -315,8 +315,10 @@ async function initializeDB() {
 
     await ensureColumn(db, 'corapsa', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'file_data', 'BLOB');
+    await ensureColumn(db, 'corapsa', 'file_nuestro', "TEXT NOT NULL DEFAULT 'Sin Archivo'");
     await ensureColumn(db, 'corapsa', 'file_nuestro_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'file_nuestro_data', 'BLOB');
+    await ensureColumn(db, 'corapsa', 'pagado', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(db, 'corapsa', 'created_at', 'TEXT');
     await ensureColumn(db, 'corapsa', 'updated_at', 'TEXT');
 

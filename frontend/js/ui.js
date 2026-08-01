@@ -66,7 +66,6 @@ function actionRequiresRecordId(action) {
         'delete_cola',
         'delete_reporte',
         'delete_cliente',
-        'edit_reporte',
         'edit_corapsa',
         'delete_corapsa',
         'delete_corapsa_file',
@@ -86,7 +85,6 @@ function getActionModalCopy(action) {
     const copies = {
         manual_bruto: ['Ingreso Manual de Peso', 'Ingrese el peso (LBS):', 'Ej. 20,500'],
         manual_tara: ['Ingreso Manual de Peso', 'Ingrese el peso (LBS):', 'Ej. 8,500'],
-        edit_reporte: ['Autorización de Edición', 'Ingrese la justificación de auditoría:', 'Explique el motivo de la modificación'],
         edit_corapsa: ['Autorización de Edición', 'Ingrese la justificación de auditoría:', 'Explique el motivo de la modificación'],
         replace_corapsa_file: ['Reemplazar Archivo', 'Justificación para reemplazar el archivo:', 'Ej. Se adjuntó el recibo incorrecto'],
         delete_corapsa_file: ['Eliminar Archivo', 'Justificación para eliminar el archivo:', 'Explique por qué debe eliminarse'],
@@ -201,10 +199,6 @@ async function confirmarActionModal() {
             case 'delete_cliente':
                 await eliminarClienteServidor(id, value);
                 mostrarNotificacion('Cliente eliminado.');
-                break;
-
-            case 'edit_reporte':
-                mostrarNotificacion('La edición de reportes sigue en desarrollo.');
                 break;
 
             case 'edit_corapsa':

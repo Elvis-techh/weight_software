@@ -3,12 +3,14 @@ const { autoUpdater } = require('electron-updater');
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const scaleSettings = require('./scaleSettings');
+const scaleReader = require('./scaleReader');
 
 let mainWindow = null;
 let scaleSimulationTimer = null;
 let simulationPreset = 'loaded';
+let currentScaleSettings = null;
 
-const SCALE_SIMULATION_ENABLED = process.env.SCALE_SIMULATION !== 'false';
 const SCALE_PRESETS = Object.freeze({
     loaded: { weight: 20500, label: 'CARGADO' },
     empty: { weight: 8500, label: 'VACÍO' }
@@ -18,18 +20,52 @@ function getSimulationPreset(name = simulationPreset) {
     return SCALE_PRESETS[name] || SCALE_PRESETS.loaded;
 }
 
+function sendScaleData(data) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('scale-data', data);
+}
+
 function emitSimulatedScaleData() {
-    if (!SCALE_SIMULATION_ENABLED || !mainWindow || mainWindow.isDestroyed()) return;
+    if (!currentScaleSettings?.testModeEnabled) return;
 
     const preset = getSimulationPreset();
     const jitter = Math.floor(Math.random() * 5) - 2;
 
-    mainWindow.webContents.send('scale-data', {
+    sendScaleData({
         weight: preset.weight + jitter,
         stable: true,
         source: `simulator:${simulationPreset}`,
         preset: simulationPreset
     });
+}
+
+function startScaleSimulation() {
+    stopScaleSimulation();
+    if (!currentScaleSettings?.testModeEnabled) return;
+
+    emitSimulatedScaleData();
+    scaleSimulationTimer = setInterval(emitSimulatedScaleData, 500);
+}
+
+function stopScaleSimulation() {
+    if (!scaleSimulationTimer) return;
+    clearInterval(scaleSimulationTimer);
+    scaleSimulationTimer = null;
+}
+
+// Single entry point for "what should be feeding the scale-data channel right
+// now" — test mode drives the simulator, otherwise the real serial reader
+// owns it (and reports 'disconnected' itself if nothing is configured/working).
+function applyScaleSettings(settings) {
+    currentScaleSettings = settings;
+    stopScaleSimulation();
+    scaleReader.closeActivePort();
+
+    if (settings.testModeEnabled) {
+        startScaleSimulation();
+    } else {
+        scaleReader.startReading(settings, sendScaleData);
+    }
 }
 
 function createWindow() {
@@ -50,7 +86,7 @@ function createWindow() {
     });
 
     mainWindow.once('ready-to-show', () => mainWindow?.show());
-    mainWindow.webContents.once('did-finish-load', emitSimulatedScaleData);
+    mainWindow.webContents.once('did-finish-load', () => applyScaleSettings(currentScaleSettings));
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
     mainWindow.on('closed', () => {
@@ -58,23 +94,15 @@ function createWindow() {
     });
 }
 
-function startScaleSimulation() {
-    stopScaleSimulation();
-    if (!SCALE_SIMULATION_ENABLED) return;
-
-    emitSimulatedScaleData();
-    scaleSimulationTimer = setInterval(emitSimulatedScaleData, 500);
-}
-
-function stopScaleSimulation() {
-    if (!scaleSimulationTimer) return;
-    clearInterval(scaleSimulationTimer);
-    scaleSimulationTimer = null;
-}
-
-function registerScaleSimulationIpc() {
+function registerScaleIpc() {
     ipcMain.removeHandler('scale-simulation:set-preset');
     ipcMain.handle('scale-simulation:set-preset', (_event, presetName) => {
+        // Guarded: without this check, a stray call to this channel could inject a fake
+        // reading into the same channel real weighing depends on, even in hardware mode.
+        if (!currentScaleSettings?.testModeEnabled) {
+            throw new Error('El modo de prueba no está activo.');
+        }
+
         const requestedPreset = String(presetName || '');
         if (!Object.hasOwn(SCALE_PRESETS, requestedPreset)) {
             throw new Error('Preset de simulación inválido.');
@@ -89,12 +117,39 @@ function registerScaleSimulationIpc() {
             ...getSimulationPreset()
         };
     });
+
+    ipcMain.removeHandler('scale:list-ports');
+    ipcMain.handle('scale:list-ports', () => scaleReader.listPorts());
+
+    ipcMain.removeHandler('scale:get-settings');
+    ipcMain.handle('scale:get-settings', () => currentScaleSettings);
+
+    ipcMain.removeHandler('scale:save-settings');
+    ipcMain.handle('scale:save-settings', (_event, partial) => {
+        const saved = scaleSettings.saveSettings(app, partial);
+        applyScaleSettings(saved);
+        return saved;
+    });
+
+    ipcMain.removeHandler('scale:test-connection');
+    ipcMain.handle('scale:test-connection', async (_event, candidateSettings) => {
+        // Serial ports are exclusive-access: release the live reader first, run the
+        // test on its own throwaway port, then always resume the live (saved) settings
+        // afterward — a test never leaves the app's actual feed broken.
+        stopScaleSimulation();
+        scaleReader.closeActivePort();
+        try {
+            return await scaleReader.testConnection(candidateSettings || {});
+        } finally {
+            applyScaleSettings(currentScaleSettings);
+        }
+    });
 }
 
 app.whenReady().then(() => {
-    registerScaleSimulationIpc();
+    currentScaleSettings = scaleSettings.loadSettings(app);
+    registerScaleIpc();
     createWindow();
-    startScaleSimulation();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -126,5 +181,10 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
     stopScaleSimulation();
+    scaleReader.closeActivePort();
     ipcMain.removeHandler('scale-simulation:set-preset');
+    ipcMain.removeHandler('scale:list-ports');
+    ipcMain.removeHandler('scale:get-settings');
+    ipcMain.removeHandler('scale:save-settings');
+    ipcMain.removeHandler('scale:test-connection');
 });
