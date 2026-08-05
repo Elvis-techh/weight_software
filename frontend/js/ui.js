@@ -17,6 +17,42 @@ function startClock() {
     clockTimer = setInterval(updateClock, 1000);
 }
 
+// Sidebar tabs are grouped into collapsible dropdowns so the nav doesn't
+// overflow on smaller screens. Each key is a group id; values are the tab
+// names nested under it. Tabs not listed here (e.g. 'pesaje') sit outside
+// any group.
+const NAV_GROUPS = {
+    revision: ['overview', 'reportes'],
+    finanzas: ['corapsa', 'gastos'],
+    gestion: ['planilla', 'clientes']
+};
+
+function findNavGroupForTab(tabName) {
+    return Object.keys(NAV_GROUPS).find(group => NAV_GROUPS[group].includes(tabName)) || null;
+}
+
+// Opens `groupName`'s dropdown and closes every other one, since only one
+// group may be expanded at a time (keeps the sidebar from overflowing).
+// Pass null/undefined to collapse all groups.
+function openNavGroup(groupName) {
+    Object.keys(NAV_GROUPS).forEach(name => {
+        const items = document.getElementById(`nav-group-${name}-items`);
+        const caret = document.getElementById(`nav-group-${name}-caret`);
+        if (!items) return;
+
+        const open = name === groupName;
+        items.classList.toggle('hidden', !open);
+        items.classList.toggle('flex', open);
+        caret?.classList.toggle('rotate-180', open);
+    });
+}
+
+function toggleNavGroup(groupName) {
+    const items = document.getElementById(`nav-group-${groupName}-items`);
+    const isOpen = items?.classList.contains('flex');
+    openNavGroup(isOpen ? null : groupName);
+}
+
 function switchTab(tabName) {
     ['pesaje', 'overview', 'clientes', 'reportes', 'corapsa', 'gastos', 'planilla'].forEach(name => {
         const button = document.getElementById(`nav-${name}`);
@@ -29,6 +65,15 @@ function switchTab(tabName) {
         view.classList.toggle('hidden', !active);
         view.classList.toggle('flex', active);
     });
+
+    Object.keys(NAV_GROUPS).forEach(groupName => {
+        const header = document.getElementById(`nav-group-${groupName}`);
+        if (!header) return;
+        const active = NAV_GROUPS[groupName].includes(tabName);
+        header.classList.toggle('tab-active', active);
+        header.classList.toggle('tab-inactive', !active);
+    });
+    openNavGroup(findNavGroupForTab(tabName));
 
     const renderers = {
         overview: fetchOverview,
