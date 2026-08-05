@@ -1,3 +1,6 @@
+const { dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
+
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const scaleSettings = require('./scaleSettings');
@@ -150,6 +153,25 @@ app.whenReady().then(() => {
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+
+    // 1. Check for updates silently
+    autoUpdater.checkForUpdatesAndNotify();
+
+    // 2. When an update is ready, show a pop-up to the user
+    autoUpdater.on('update-downloaded', (info) => {
+        dialog.showMessageBox({
+            type: 'info',
+            title: 'Actualización disponible',
+            message: `La versión ${info.version} de Báscula Central está lista.`,
+            detail: '¿Deseas reiniciar la aplicación ahora para instalarla?',
+            buttons: ['Reiniciar e Instalar', 'Más tarde']
+        }).then((result) => {
+            if (result.response === 0) {
+                // If they click the first button, restart and install
+                autoUpdater.quitAndInstall();
+            }
+        });
     });
 });
 
