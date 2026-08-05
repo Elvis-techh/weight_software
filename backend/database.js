@@ -315,9 +315,11 @@ async function initializeDB() {
 
     await ensureColumn(db, 'corapsa', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'file_data', 'BLOB');
+    await ensureColumn(db, 'corapsa', 'file_key', 'TEXT');
     await ensureColumn(db, 'corapsa', 'file_nuestro', "TEXT NOT NULL DEFAULT 'Sin Archivo'");
     await ensureColumn(db, 'corapsa', 'file_nuestro_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'file_nuestro_data', 'BLOB');
+    await ensureColumn(db, 'corapsa', 'file_nuestro_key', 'TEXT');
     await ensureColumn(db, 'corapsa', 'pagado', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(db, 'corapsa', 'created_at', 'TEXT');
     await ensureColumn(db, 'corapsa', 'updated_at', 'TEXT');
@@ -327,11 +329,13 @@ async function initializeDB() {
     await ensureColumn(db, 'corapsa_pagos', 'file_name', "TEXT NOT NULL DEFAULT 'Sin Archivo'");
     await ensureColumn(db, 'corapsa_pagos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa_pagos', 'file_data', 'BLOB');
+    await ensureColumn(db, 'corapsa_pagos', 'file_key', 'TEXT');
     await ensureColumn(db, 'corapsa_pagos', 'created_at', 'TEXT');
     await ensureColumn(db, 'corapsa_pagos', 'updated_at', 'TEXT');
 
     await ensureColumn(db, 'gastos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'gastos', 'file_data', 'BLOB');
+    await ensureColumn(db, 'gastos', 'file_key', 'TEXT');
     await ensureColumn(db, 'gastos', 'created_at', 'TEXT');
     await ensureColumn(db, 'gastos', 'updated_at', 'TEXT');
 

@@ -1,7 +1,10 @@
+require('dotenv').config();
+
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const initializeDB = require('./database');
+const storage = require('./storage');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -384,6 +387,25 @@ function sendStoredAttachment(res, { fileName, mimeType, data }) {
     res.send(buffer);
 }
 
+// Uploads to Spaces when configured; otherwise falls back to storing the raw
+// bytes in SQLite (so local/dev testing keeps working without Spaces creds).
+async function storeAttachment(folder, attachment) {
+    if (!attachment) return null;
+    if (storage.isConfigured()) {
+        const key = await storage.uploadObject(folder, attachment.data, attachment.fileName, attachment.mimeType);
+        return { fileName: attachment.fileName, mimeType: attachment.mimeType, key, data: null };
+    }
+    return { fileName: attachment.fileName, mimeType: attachment.mimeType, key: null, data: attachment.data };
+}
+
+async function respondWithAttachment(res, { fileName, mimeType, data, key }) {
+    if (key) {
+        const buffer = await storage.fetchObject(key);
+        return sendStoredAttachment(res, { fileName, mimeType, data: buffer });
+    }
+    return sendStoredAttachment(res, { fileName, mimeType, data });
+}
+
 function mapClient(row) {
     const unidad = row.unidad === 'quintal' ? 'quintal' : 'tonelada';
     const precioFletePropioRaw = Number(row.precio_flete_propio || 0);
@@ -451,10 +473,10 @@ function mapCorapsa(row) {
         total: Number(row.total || 0),
         fileName: row.file_name || 'Sin Archivo',
         fileMimeType: row.file_mime_type || '',
-        hasFile: Boolean(row.has_file) || hasStoredAttachment(row.file_data),
+        hasFile: Boolean(row.has_file) || Boolean(row.file_key) || hasStoredAttachment(row.file_data),
         fileNuestro: row.file_nuestro || 'Sin Archivo',
         fileNuestroMimeType: row.file_nuestro_mime_type || '',
-        hasFileNuestro: Boolean(row.has_file_nuestro) || hasStoredAttachment(row.file_nuestro_data),
+        hasFileNuestro: Boolean(row.has_file_nuestro) || Boolean(row.file_nuestro_key) || hasStoredAttachment(row.file_nuestro_data),
         pagado: Boolean(row.pagado),
         updatedAt: row.updated_at || row.created_at || ''
     };
@@ -472,7 +494,7 @@ function mapCorapsaPayment(row) {
         notas: row.notas || '',
         fileName: row.file_name || 'Sin Archivo',
         fileMimeType: row.file_mime_type || '',
-        hasFile: Boolean(row.has_file) || hasStoredAttachment(row.file_data),
+        hasFile: Boolean(row.has_file) || Boolean(row.file_key) || hasStoredAttachment(row.file_data),
         updatedAt: row.updated_at || row.created_at || ''
     };
 }
@@ -486,7 +508,7 @@ function mapExpense(row) {
         justificacion: row.justificacion || '',
         fileName: row.file_name || 'Sin Archivo',
         fileMimeType: row.file_mime_type || '',
-        hasFile: Boolean(row.has_file) || hasStoredAttachment(row.file_data),
+        hasFile: Boolean(row.has_file) || Boolean(row.file_key) || hasStoredAttachment(row.file_data),
         updatedAt: row.updated_at || row.created_at || ''
     };
 }
@@ -619,7 +641,7 @@ async function buildOverviewSummary(start, end) {
     const statementRows = await db.all(`
         SELECT id, fecha_pago, periodo_inicio, periodo_fin, referencia,
                toneladas, monto, notas, file_name, file_mime_type,
-               LENGTH(file_data) > 0 AS has_file, created_at, updated_at
+               (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file, created_at, updated_at
         FROM corapsa_pagos
         WHERE periodo_inicio >= ? AND periodo_fin <= ?
         ORDER BY periodo_inicio DESC, periodo_fin DESC, id DESC
@@ -1166,22 +1188,22 @@ app.delete('/api/transacciones/:id', asyncHandler(async (req, res) => {
 app.get('/api/corapsa/:id/archivo/:type', asyncHandler(async (req, res) => {
     const type = req.params.type === 'nuestro' ? 'nuestro' : 'cliente';
     const row = await db.get(`
-        SELECT file_name, file_mime_type, file_data,
-               file_nuestro, file_nuestro_mime_type, file_nuestro_data
+        SELECT file_name, file_mime_type, file_data, file_key,
+               file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key
         FROM corapsa WHERE id = ?
     `, [req.params.id]);
     if (!row) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
 
-    sendStoredAttachment(res, type === 'nuestro'
-        ? { fileName: row.file_nuestro, mimeType: row.file_nuestro_mime_type, data: row.file_nuestro_data }
-        : { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data });
+    await respondWithAttachment(res, type === 'nuestro'
+        ? { fileName: row.file_nuestro, mimeType: row.file_nuestro_mime_type, data: row.file_nuestro_data, key: row.file_nuestro_key }
+        : { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data, key: row.file_key });
 }));
 
 app.get('/api/corapsa', asyncHandler(async (_req, res) => {
     const rows = await db.all(`
         SELECT id, fecha, recibo_in, recibo_out, cliente, toneladas, precio, total,
-               file_name, file_mime_type, LENGTH(file_data) > 0 AS has_file,
-               file_nuestro, file_nuestro_mime_type, LENGTH(file_nuestro_data) > 0 AS has_file_nuestro,
+               file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
+               file_nuestro, file_nuestro_mime_type, (file_nuestro_key IS NOT NULL OR LENGTH(file_nuestro_data) > 0) AS has_file_nuestro,
                pagado, created_at, updated_at
         FROM corapsa
         ORDER BY fecha DESC, id DESC
@@ -1196,20 +1218,26 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
     const total = toneladas * precio;
-    const archivoCliente = parseAttachmentPayload(req.body?.archivoCliente, 'El archivo del cliente');
-    const archivoNuestro = parseAttachmentPayload(req.body?.archivoNuestro, 'El archivo nuestro');
+    const archivoCliente = await storeAttachment(
+        'corapsa-cliente',
+        parseAttachmentPayload(req.body?.archivoCliente, 'El archivo del cliente')
+    );
+    const archivoNuestro = await storeAttachment(
+        'corapsa-nuestro',
+        parseAttachmentPayload(req.body?.archivoNuestro, 'El archivo nuestro')
+    );
 
     const corapsa = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO corapsa (
                 fecha, recibo_in, cliente, toneladas, precio, total,
-                file_name, file_mime_type, file_data,
-                file_nuestro, file_nuestro_mime_type, file_nuestro_data, pagado
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                file_name, file_mime_type, file_data, file_key,
+                file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             fecha, reciboIn, cliente, toneladas, precio, total,
-            archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null,
-            archivoNuestro?.fileName || 'Sin Archivo', archivoNuestro?.mimeType || '', archivoNuestro?.data || null,
+            archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null, archivoCliente?.key || null,
+            archivoNuestro?.fileName || 'Sin Archivo', archivoNuestro?.mimeType || '', archivoNuestro?.data || null, archivoNuestro?.key || null,
             asBoolean(req.body?.pagado ?? false) ? 1 : 0
         ]);
 
@@ -1238,18 +1266,18 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const hasClienteUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente');
     const hasNuestroUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro');
     const archivoCliente = hasClienteUpload
-        ? parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente')
+        ? await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente'))
         : null;
     const archivoNuestro = hasNuestroUpload
-        ? parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro')
+        ? await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro'))
         : null;
 
     const corapsa = await withTransaction(async () => {
         await db.run(`
             UPDATE corapsa
             SET fecha = ?, recibo_in = ?, cliente = ?, toneladas = ?, precio = ?, total = ?,
-                file_name = ?, file_mime_type = ?, file_data = ?,
-                file_nuestro = ?, file_nuestro_mime_type = ?, file_nuestro_data = ?,
+                file_name = ?, file_mime_type = ?, file_data = ?, file_key = ?,
+                file_nuestro = ?, file_nuestro_mime_type = ?, file_nuestro_data = ?, file_nuestro_key = ?,
                 pagado = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
@@ -1257,9 +1285,11 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
             hasClienteUpload ? archivoCliente.fileName : current.file_name,
             hasClienteUpload ? archivoCliente.mimeType : current.file_mime_type,
             hasClienteUpload ? archivoCliente.data : current.file_data,
+            hasClienteUpload ? archivoCliente.key : current.file_key,
             hasNuestroUpload ? archivoNuestro.fileName : current.file_nuestro,
             hasNuestroUpload ? archivoNuestro.mimeType : current.file_nuestro_mime_type,
             hasNuestroUpload ? archivoNuestro.data : current.file_nuestro_data,
+            hasNuestroUpload ? archivoNuestro.key : current.file_nuestro_key,
             Object.prototype.hasOwnProperty.call(req.body || {}, 'pagado') ? (asBoolean(req.body.pagado) ? 1 : 0) : current.pagado,
             id
         ]);
@@ -1268,33 +1298,46 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
         await logAudit({ entity: 'corapsa', entityId: id, action: 'editar', justification: justificacion, details: mapCorapsa(row) });
         return mapCorapsa(row);
     });
+
+    if (hasClienteUpload && current.file_key) await storage.deleteObject(current.file_key);
+    if (hasNuestroUpload && current.file_nuestro_key) await storage.deleteObject(current.file_nuestro_key);
+
     sendData(res, { corapsa });
 }));
 
 app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
+    const current = await db.get('SELECT file_key, file_nuestro_key FROM corapsa WHERE id = ?', [id]);
+    if (!current) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
+
     const updates = [];
     const values = [];
+    let oldClienteKeyToRemove = null;
+    let oldNuestroKeyToRemove = null;
 
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'pagado')) {
         updates.push('pagado = ?');
         values.push(asBoolean(req.body.pagado) ? 1 : 0);
     }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente')) {
-        const attachment = parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente');
-        updates.push('file_name = ?', 'file_mime_type = ?', 'file_data = ?');
-        values.push(attachment.fileName, attachment.mimeType, attachment.data);
+        const attachment = await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente'));
+        updates.push('file_name = ?', 'file_mime_type = ?', 'file_data = ?', 'file_key = ?');
+        values.push(attachment.fileName, attachment.mimeType, attachment.data, attachment.key);
+        oldClienteKeyToRemove = current.file_key;
     }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro')) {
-        const attachment = parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro');
-        updates.push('file_nuestro = ?', 'file_nuestro_mime_type = ?', 'file_nuestro_data = ?');
-        values.push(attachment.fileName, attachment.mimeType, attachment.data);
+        const attachment = await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro'));
+        updates.push('file_nuestro = ?', 'file_nuestro_mime_type = ?', 'file_nuestro_data = ?', 'file_nuestro_key = ?');
+        values.push(attachment.fileName, attachment.mimeType, attachment.data, attachment.key);
+        oldNuestroKeyToRemove = current.file_nuestro_key;
     }
     if (req.body?.eliminarArchivoCliente === true || req.body?.fileName === 'Sin Archivo') {
-        updates.push("file_name = 'Sin Archivo'", "file_mime_type = ''", 'file_data = NULL');
+        updates.push("file_name = 'Sin Archivo'", "file_mime_type = ''", 'file_data = NULL', 'file_key = NULL');
+        oldClienteKeyToRemove = current.file_key;
     }
     if (req.body?.eliminarArchivoNuestro === true || req.body?.fileNuestro === 'Sin Archivo') {
-        updates.push("file_nuestro = 'Sin Archivo'", "file_nuestro_mime_type = ''", 'file_nuestro_data = NULL');
+        updates.push("file_nuestro = 'Sin Archivo'", "file_nuestro_mime_type = ''", 'file_nuestro_data = NULL', 'file_nuestro_key = NULL');
+        oldNuestroKeyToRemove = current.file_nuestro_key;
     }
     if (updates.length === 0) throw new HttpError(400, 'No hay campos válidos para actualizar.', 'VALIDATION_ERROR');
 
@@ -1316,31 +1359,38 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         });
         return mapCorapsa(row);
     });
+
+    if (oldClienteKeyToRemove) await storage.deleteObject(oldClienteKeyToRemove);
+    if (oldNuestroKeyToRemove) await storage.deleteObject(oldNuestroKeyToRemove);
+
     sendData(res, { corapsa });
 }));
 
 app.delete('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
+    const current = await db.get('SELECT file_key, file_nuestro_key FROM corapsa WHERE id = ?', [id]);
     await withTransaction(async () => {
         const result = await db.run('DELETE FROM corapsa WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
         await logAudit({ entity: 'corapsa', entityId: id, action: 'eliminar', justification: justificacion });
     });
+    if (current?.file_key) await storage.deleteObject(current.file_key);
+    if (current?.file_nuestro_key) await storage.deleteObject(current.file_nuestro_key);
     sendData(res, { id });
 }));
 
 // GASTOS
 app.get('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
-    const row = await db.get('SELECT file_name, file_mime_type, file_data FROM gastos WHERE id = ?', [req.params.id]);
+    const row = await db.get('SELECT file_name, file_mime_type, file_data, file_key FROM gastos WHERE id = ?', [req.params.id]);
     if (!row) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
-    sendStoredAttachment(res, { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data });
+    await respondWithAttachment(res, { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data, key: row.file_key });
 }));
 
 app.get('/api/gastos', asyncHandler(async (_req, res) => {
     const rows = await db.all(`
         SELECT id, fecha, monto, concepto, justificacion,
-               file_name, file_mime_type, LENGTH(file_data) > 0 AS has_file,
+               file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                created_at, updated_at
         FROM gastos
         ORDER BY fecha DESC, id DESC
@@ -1355,14 +1405,14 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
         justificacion: asText(req.body?.justificacion, { maxLength: 1000 })
     };
-    const attachment = parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto');
+    const attachment = await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
     const gasto = await withTransaction(async () => {
         const result = await db.run(`
-            INSERT INTO gastos (fecha, monto, concepto, justificacion, file_name, file_mime_type, file_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO gastos (fecha, monto, concepto, justificacion, file_name, file_mime_type, file_data, file_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             expense.fecha, expense.monto, expense.concepto, expense.justificacion,
-            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null
+            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null
         ]);
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [result.lastID]);
         await logAudit({ entity: 'gasto', entityId: result.lastID, action: 'crear', details: mapExpense(row) });
@@ -1383,67 +1433,78 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
         justificacion: asText(req.body?.justificacion, { maxLength: 1000 })
     };
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
-    const attachment = hasUpload ? parseAttachmentPayload(req.body.archivo, 'El recibo del gasto') : null;
+    const attachment = hasUpload ? await storeAttachment('gastos', parseAttachmentPayload(req.body.archivo, 'El recibo del gasto')) : null;
 
     const gasto = await withTransaction(async () => {
         await db.run(`
             UPDATE gastos
             SET fecha = ?, monto = ?, concepto = ?, justificacion = ?,
-                file_name = ?, file_mime_type = ?, file_data = ?, updated_at = CURRENT_TIMESTAMP
+                file_name = ?, file_mime_type = ?, file_data = ?, file_key = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
             expense.fecha, expense.monto, expense.concepto, expense.justificacion,
             hasUpload ? attachment.fileName : current.file_name,
             hasUpload ? attachment.mimeType : current.file_mime_type,
             hasUpload ? attachment.data : current.file_data,
+            hasUpload ? attachment.key : current.file_key,
             id
         ]);
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
         await logAudit({ entity: 'gasto', entityId: id, action: 'editar', details: mapExpense(row) });
         return mapExpense(row);
     });
+
+    if (hasUpload && current.file_key) await storage.deleteObject(current.file_key);
+
     sendData(res, { gasto });
 }));
 
 app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
+    const current = await db.get('SELECT file_key FROM gastos WHERE id = ?', [id]);
+    if (!current) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
+
+    const eliminar = req.body?.eliminarArchivo === true;
+    const attachment = eliminar
+        ? null
+        : await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
+    if (!eliminar && !attachment) throw new HttpError(400, 'Seleccione un archivo.', 'VALIDATION_ERROR');
 
     const gasto = await withTransaction(async () => {
-        let result;
-
-        if (req.body?.eliminarArchivo === true) {
-            result = await db.run(`
+        const result = eliminar
+            ? await db.run(`
                 UPDATE gastos
-                SET file_name = 'Sin Archivo', file_mime_type = '', file_data = NULL, updated_at = CURRENT_TIMESTAMP
+                SET file_name = 'Sin Archivo', file_mime_type = '', file_data = NULL, file_key = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            `, [id]);
-        } else {
-            const attachment = parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto');
-            if (!attachment) throw new HttpError(400, 'Seleccione un archivo.', 'VALIDATION_ERROR');
-            result = await db.run(`
+            `, [id])
+            : await db.run(`
                 UPDATE gastos
-                SET file_name = ?, file_mime_type = ?, file_data = ?, updated_at = CURRENT_TIMESTAMP
+                SET file_name = ?, file_mime_type = ?, file_data = ?, file_key = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            `, [attachment.fileName, attachment.mimeType, attachment.data, id]);
-        }
+            `, [attachment.fileName, attachment.mimeType, attachment.data, attachment.key, id]);
 
         if (!result.changes) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
         await logAudit({ entity: 'gasto', entityId: id, action: 'actualizar_archivo', justification: justificacion, details: mapExpense(row) });
         return mapExpense(row);
     });
+
+    if (current.file_key) await storage.deleteObject(current.file_key);
+
     sendData(res, { gasto });
 }));
 
 app.delete('/api/gastos/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
+    const current = await db.get('SELECT file_key FROM gastos WHERE id = ?', [id]);
     await withTransaction(async () => {
         const result = await db.run('DELETE FROM gastos WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
         await logAudit({ entity: 'gasto', entityId: id, action: 'eliminar', justification: justificacion });
     });
+    if (current?.file_key) await storage.deleteObject(current.file_key);
     sendData(res, { id });
 }));
 
@@ -1455,27 +1516,27 @@ app.get('/api/overview', asyncHandler(async (req, res) => {
 
 app.get('/api/corapsa-pagos/:id/archivo', asyncHandler(async (req, res) => {
     const row = await db.get(
-        'SELECT file_name, file_mime_type, file_data FROM corapsa_pagos WHERE id = ?',
+        'SELECT file_name, file_mime_type, file_data, file_key FROM corapsa_pagos WHERE id = ?',
         [req.params.id]
     );
     if (!row) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
-    sendStoredAttachment(res, { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data });
+    await respondWithAttachment(res, { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data, key: row.file_key });
 }));
 
 app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
     const payment = validateCorapsaPaymentBody(req.body);
-    const attachment = parseAttachmentPayload(req.body?.archivo, 'El estado de cuenta de Corapsa');
+    const attachment = await storeAttachment('corapsa-pagos', parseAttachmentPayload(req.body?.archivo, 'El estado de cuenta de Corapsa'));
 
     const pago = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO corapsa_pagos (
                 fecha_pago, periodo_inicio, periodo_fin, referencia, toneladas,
-                monto, notas, file_name, file_mime_type, file_data
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                monto, notas, file_name, file_mime_type, file_data, file_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             payment.fechaPago, payment.periodoInicio, payment.periodoFin,
             payment.referencia, payment.toneladas, payment.monto, payment.notas,
-            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null
+            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null
         ]);
 
         const row = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [result.lastID]);
@@ -1493,7 +1554,7 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
     const payment = validateCorapsaPaymentBody(req.body, { editing: true });
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
     const attachment = hasUpload
-        ? parseAttachmentPayload(req.body.archivo, 'El estado de cuenta de Corapsa')
+        ? await storeAttachment('corapsa-pagos', parseAttachmentPayload(req.body.archivo, 'El estado de cuenta de Corapsa'))
         : null;
 
     const pago = await withTransaction(async () => {
@@ -1501,7 +1562,7 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
             UPDATE corapsa_pagos
             SET fecha_pago = ?, periodo_inicio = ?, periodo_fin = ?, referencia = ?,
                 toneladas = ?, monto = ?, notas = ?, file_name = ?, file_mime_type = ?,
-                file_data = ?, updated_at = CURRENT_TIMESTAMP
+                file_data = ?, file_key = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
             payment.fechaPago, payment.periodoInicio, payment.periodoFin,
@@ -1509,6 +1570,7 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
             hasUpload ? attachment.fileName : current.file_name,
             hasUpload ? attachment.mimeType : current.file_mime_type,
             hasUpload ? attachment.data : current.file_data,
+            hasUpload ? attachment.key : current.file_key,
             id
         ]);
 
@@ -1519,17 +1581,22 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
         });
         return mapCorapsaPayment(row);
     });
+
+    if (hasUpload && current.file_key) await storage.deleteObject(current.file_key);
+
     sendData(res, { pago });
 }));
 
 app.delete('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
+    const current = await db.get('SELECT file_key FROM corapsa_pagos WHERE id = ?', [id]);
     await withTransaction(async () => {
         const result = await db.run('DELETE FROM corapsa_pagos WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
         await logAudit({ entity: 'pago_corapsa', entityId: id, action: 'eliminar', justification: justificacion });
     });
+    if (current?.file_key) await storage.deleteObject(current.file_key);
     sendData(res, { id });
 }));
 
