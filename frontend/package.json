@@ -27,7 +27,8 @@
             {
                 "provider": "github",
                 "owner": "Elvis-techh",
-                "repo": "weight_software"
+                "repo": "weight_software",
+                "draft": false
             }
         ],
         "appId": "com.basculacentral.desktop",
