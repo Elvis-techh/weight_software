@@ -3,8 +3,23 @@ const { autoUpdater } = require('electron-updater');
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const scaleSettings = require('./scaleSettings');
 const scaleReader = require('./scaleReader');
+
+// Packaged apps have no attached console, so without this, autoUpdater
+// failures (no internet, blocked firewall, bad manifest, etc.) are
+// completely invisible — nothing logs and no dialog appears. This gives
+// us a file to check after the fact instead of guessing blind.
+function logUpdate(message) {
+    const line = `[${new Date().toISOString()}] ${message}`;
+    console.log(line);
+    try {
+        fs.appendFileSync(path.join(app.getPath('userData'), 'update.log'), line + '\n', 'utf8');
+    } catch (_) {
+        // Best-effort logging only — never let a logging failure affect the update flow.
+    }
+}
 
 let mainWindow = null;
 let scaleSimulationTimer = null;
@@ -156,7 +171,11 @@ app.whenReady().then(() => {
     });
 
     // 1. Check for updates silently
-    autoUpdater.checkForUpdatesAndNotify();
+    logUpdate(`App started, version ${app.getVersion()}. Checking for updates...`);
+    autoUpdater.on('error', error => logUpdate(`Update error: ${error?.message || error}`));
+    autoUpdater.on('update-available', info => logUpdate(`Update available: ${info.version}`));
+    autoUpdater.on('update-not-available', info => logUpdate(`No update available (latest published: ${info?.version || 'unknown'})`));
+    autoUpdater.checkForUpdatesAndNotify().catch(error => logUpdate(`checkForUpdatesAndNotify failed: ${error?.message || error}`));
 
     // 2. When an update is ready, show a pop-up to the user
     autoUpdater.on('update-downloaded', (info) => {
