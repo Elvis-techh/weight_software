@@ -10,7 +10,8 @@ function createEmptyOverviewData() {
         gastos: { registros: 0, monto: 0 },
         planilla: { monto: 0, basePorAsistencia: 0, extras: 0 },
         resultado: { costosOperativos: 0, utilidadNeta: 0 },
-        pagosCorapsa: []
+        pagosCorapsa: [],
+        porDestino: []
     };
 }
 
@@ -21,6 +22,7 @@ function normalizarPagoCorapsa(record = {}) {
         periodoInicio: String(record.periodoInicio ?? record.periodo_inicio ?? ''),
         periodoFin: String(record.periodoFin ?? record.periodo_fin ?? ''),
         referencia: String(record.referencia || ''),
+        destino: String(record.destino || ''),
         toneladas: toFiniteNumber(record.toneladas),
         monto: toFiniteNumber(record.monto),
         notas: String(record.notas || ''),
@@ -124,7 +126,7 @@ function renderOverviewPaymentsTable() {
     if (!tbody) return;
 
     if (corapsaPagosData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-gray-400">No hay pagos de Corapsa cuyo período esté completamente dentro de las fechas seleccionadas.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">No hay ventas/pagos cuyo período esté completamente dentro de las fechas seleccionadas.</td></tr>';
         return;
     }
 
@@ -132,6 +134,7 @@ function renderOverviewPaymentsTable() {
         <tr class="border-b hover:bg-indigo-50/50">
             <td class="p-3 font-mono text-xs text-gray-600">${escapeHtml(formatDateForDisplay(record.periodoInicio))}<br><span class="text-gray-400">a</span> ${escapeHtml(formatDateForDisplay(record.periodoFin))}</td>
             <td class="p-3 font-mono text-xs">${escapeHtml(formatDateForDisplay(record.fechaPago))}</td>
+            <td class="p-3"><span class="inline-flex items-center bg-indigo-100 text-indigo-900 border border-indigo-200 px-2 py-1 rounded font-bold text-xs uppercase">${escapeHtml(record.destino || '-')}</span></td>
             <td class="p-3 font-bold text-gray-800">${escapeHtml(record.referencia || 'Sin referencia')}</td>
             <td class="p-3 text-right font-mono font-bold text-indigo-800">${record.toneladas.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td class="p-3 text-right font-mono font-black text-emerald-700">L ${formatMoney(record.monto)}</td>
@@ -143,6 +146,32 @@ function renderOverviewPaymentsTable() {
             </td>
         </tr>
     `).join('');
+}
+
+function renderOverviewByDestino() {
+    const tbody = document.getElementById('overview-destino-body');
+    if (!tbody) return;
+
+    const rows = Array.isArray(overviewData?.porDestino) ? overviewData.porDestino : [];
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400">Sin recibos ni ventas registradas en el período seleccionado.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(row => {
+        const diferencia = toFiniteNumber(row.diferenciaToneladasDirecto);
+        const margen = toFiniteNumber(row.margenDirecto);
+        return `
+            <tr class="border-b hover:bg-slate-50">
+                <td class="p-3"><span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-1 rounded font-bold text-xs uppercase">${escapeHtml(row.destino)}</span></td>
+                <td class="p-3 text-right font-mono">${toFiniteNumber(row.compraDirecto?.toneladas).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 text-right font-mono">L ${formatMoney(row.compraDirecto?.monto)}</td>
+                <td class="p-3 text-right font-mono">${toFiniteNumber(row.venta?.toneladas).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 text-right font-mono">L ${formatMoney(row.venta?.monto)}</td>
+                <td class="p-3 text-right font-mono font-bold ${diferencia >= 0 ? 'text-emerald-700' : 'text-red-700'}">${diferencia > 0 ? '+' : ''}${diferencia.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="p-3 text-right font-mono font-bold ${margen >= 0 ? 'text-emerald-700' : 'text-red-700'}">L ${formatMoney(margen)}</td>
+            </tr>`;
+    }).join('');
 }
 
 function renderOverview() {
@@ -173,7 +202,7 @@ function renderOverview() {
         const absoluteDifference = Math.abs(tonDifference);
         const matched = absoluteDifference <= 0.01;
         status.className = `rounded-xl border px-4 py-3 flex items-start gap-3 ${matched ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-900'}`;
-        status.innerHTML = `<span class="material-icons">${matched ? 'verified' : 'warning_amber'}</span><div><p class="font-black">${matched ? 'Toneladas conciliadas' : 'Existe una diferencia de toneladas'}</p><p class="text-xs mt-1">Corapsa pagó ${formatOverviewTons(data.corapsaPagado?.toneladas)} y el sistema rastrea ${formatOverviewTons(data.productoRastreado?.toneladas)}. Diferencia: ${formatSignedOverviewTons(tonDifference)}.</p></div>`;
+        status.innerHTML = `<span class="material-icons">${matched ? 'verified' : 'warning_amber'}</span><div><p class="font-black">${matched ? 'Básculas conciliadas' : 'Existe una diferencia de básculas'}</p><p class="text-xs mt-1">Venta Total de Palma: ${formatOverviewTons(data.corapsaPagado?.toneladas)}. Compra Total de Palma: ${formatOverviewTons(data.productoRastreado?.toneladas)}. Diferencia: ${formatSignedOverviewTons(tonDifference)}.</p></div>`;
     }
 
     setOverviewText('overview-formula-suppliers', `${formatOverviewMoney(data.comprasInternas?.monto)} + ${formatOverviewMoney(data.comprasDirectas?.monto)} = ${formatOverviewMoney(data.productoRastreado?.montoPagadoProveedores)}`);
@@ -181,6 +210,7 @@ function renderOverview() {
     setOverviewText('overview-formula-profit', `${formatOverviewMoney(data.conciliacion?.margenBruto)} − ${formatOverviewMoney(data.gastos?.monto)} − ${formatOverviewMoney(data.planilla?.monto)} = ${formatOverviewMoney(data.resultado?.utilidadNeta)}`);
 
     renderOverviewPaymentsTable();
+    renderOverviewByDestino();
 }
 
 function irMesActualOverview() {
@@ -202,15 +232,16 @@ function updateOverviewCurrentFile(record) {
 
 function abrirPagoCorapsaModal(id = null) {
     const record = id == null ? null : corapsaPagosData.find(item => sameRecordId(item.id, id));
-    if (id != null && !record) return mostrarNotificacion('Pago de Corapsa no encontrado.', 'error');
+    if (id != null && !record) return mostrarNotificacion('Pago no encontrado.', 'error');
 
-    document.getElementById('overview-payment-modal-title').textContent = record ? 'Editar Pago de Corapsa' : 'Registrar Pago de Corapsa';
+    document.getElementById('overview-payment-modal-title').textContent = record ? 'Editar Venta / Pago Recibido' : 'Registrar Venta / Pago Recibido';
     document.getElementById('overview-payment-id').value = record?.id ?? '';
     const selectedRange = getOverviewSelectedRange();
     const currentMonth = getCurrentMonthRange();
     document.getElementById('overview-payment-period-start').value = record?.periodoInicio || selectedRange?.start || currentMonth.start;
     document.getElementById('overview-payment-period-end').value = record?.periodoFin || selectedRange?.end || currentMonth.end;
     document.getElementById('overview-payment-date').value = record?.fechaPago || getLocalIsoDate();
+    document.getElementById('overview-payment-destino').value = record?.destino || '';
     document.getElementById('overview-payment-reference').value = record?.referencia || '';
     document.getElementById('overview-payment-tons').value = record ? formatNumberForInput(record.toneladas, 2) : '';
     document.getElementById('overview-payment-amount').value = record ? formatNumberForInput(record.monto, 2) : '';
@@ -233,6 +264,7 @@ async function guardarPagoCorapsa() {
         periodoInicio: document.getElementById('overview-payment-period-start').value,
         periodoFin: document.getElementById('overview-payment-period-end').value,
         fechaPago: document.getElementById('overview-payment-date').value,
+        destino: document.getElementById('overview-payment-destino').value.trim(),
         referencia: document.getElementById('overview-payment-reference').value.trim(),
         toneladas: parseFormattedNumber(document.getElementById('overview-payment-tons').value),
         monto: parseFormattedNumber(document.getElementById('overview-payment-amount').value),
@@ -241,6 +273,7 @@ async function guardarPagoCorapsa() {
     };
 
     if (!payload.periodoInicio || !payload.periodoFin || !payload.fechaPago) return mostrarNotificacion('Complete las fechas del pago.', 'error');
+    if (!payload.destino) return mostrarNotificacion('Seleccione el destino.', 'error');
     if (payload.periodoInicio > payload.periodoFin) return mostrarNotificacion('El inicio del período no puede ser posterior al final.', 'error');
     if (!Number.isFinite(payload.toneladas) || payload.toneladas <= 0) return mostrarNotificacion('Ingrese toneladas válidas.', 'error');
     if (!Number.isFinite(payload.monto) || payload.monto <= 0) return mostrarNotificacion('Ingrese un monto válido.', 'error');
@@ -258,7 +291,7 @@ async function guardarPagoCorapsa() {
         });
         cerrarPagoCorapsaModal();
         await fetchOverview();
-        mostrarNotificacion(id ? 'Pago de Corapsa actualizado.' : 'Pago de Corapsa registrado.');
+        mostrarNotificacion(id ? 'Venta / pago actualizado.' : 'Venta / pago registrado.');
     } catch (error) {
         console.error('No se pudo guardar el pago de Corapsa:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar el pago.', 'error');

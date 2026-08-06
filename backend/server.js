@@ -11,6 +11,9 @@ const HOST = process.env.HOST || '0.0.0.0';
 const API_KEY = process.env.API_KEY || '';
 const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
+// Companies that can receive fruit tracked via Recibos Externos. Extending this
+// list requires adding the option to the frontend dropdown (index.html) too.
+const VALID_DESTINOS = new Set(['CORAPSA', 'AGROTOR', 'DINANT']);
 const LBS_PER_METRIC_TON = 2204.62262185;
 const LBS_PER_QUINTAL = 100;
 const QUINTALES_PER_TON = 22.04;
@@ -300,6 +303,12 @@ function asFreightType(value) {
     return type;
 }
 
+function asDestino(value) {
+    const destino = String(value || '').trim().toUpperCase();
+    if (!VALID_DESTINOS.has(destino)) throw new HttpError(400, 'El destino no es válido.', 'VALIDATION_ERROR');
+    return destino;
+}
+
 function requireJustification(body) {
     return asText(body?.justificacion ?? body?.razon, {
         required: true,
@@ -468,6 +477,8 @@ function mapCorapsa(row) {
         reciboIn: row.recibo_in,
         reciboOut: row.recibo_out,
         cliente: row.cliente,
+        destino: row.destino || '',
+        aNombreDe: row.a_nombre_de || '',
         toneladas: Number(row.toneladas || 0),
         precio: Number(row.precio || 0),
         total: Number(row.total || 0),
@@ -489,6 +500,7 @@ function mapCorapsaPayment(row) {
         periodoInicio: row.periodo_inicio,
         periodoFin: row.periodo_fin,
         referencia: row.referencia || '',
+        destino: row.destino || '',
         toneladas: Number(row.toneladas || 0),
         monto: Number(row.monto || 0),
         notas: row.notas || '',
@@ -598,6 +610,47 @@ async function buildPayrollSummary(start, end, workerId = null) {
     };
 }
 
+// Merges Compra Directo (Recibos Externos) and Venta (estados de cuenta) totals by
+// destino company. Compra Acopio isn't included here because in-house scale
+// transactions aren't attributed to a specific destination company.
+function buildDestinoBreakdown(directRows, ventaRows) {
+    const byDestino = new Map();
+    const ensureEntry = destinoValue => {
+        const key = destinoValue || 'SIN DESTINO';
+        if (!byDestino.has(key)) {
+            byDestino.set(key, {
+                destino: key,
+                compraDirecto: { registros: 0, toneladas: 0, monto: 0 },
+                venta: { registros: 0, toneladas: 0, monto: 0 }
+            });
+        }
+        return byDestino.get(key);
+    };
+
+    for (const row of directRows) {
+        ensureEntry(row.destino).compraDirecto = {
+            registros: Number(row.registros || 0),
+            toneladas: roundToCurrency(row.toneladas || 0),
+            monto: roundToCurrency(row.monto || 0)
+        };
+    }
+    for (const row of ventaRows) {
+        ensureEntry(row.destino).venta = {
+            registros: Number(row.registros || 0),
+            toneladas: roundToCurrency(row.toneladas || 0),
+            monto: roundToCurrency(row.monto || 0)
+        };
+    }
+
+    return Array.from(byDestino.values())
+        .map(entry => ({
+            ...entry,
+            diferenciaToneladasDirecto: roundToCurrency(entry.venta.toneladas - entry.compraDirecto.toneladas),
+            margenDirecto: roundToCurrency(entry.venta.monto - entry.compraDirecto.monto)
+        }))
+        .sort((a, b) => a.destino.localeCompare(b.destino));
+}
+
 async function buildOverviewSummary(start, end) {
     const inHouse = await db.get(`
         SELECT COUNT(*) AS registros,
@@ -639,12 +692,30 @@ async function buildOverviewSummary(start, end) {
     `, [start, end]);
 
     const statementRows = await db.all(`
-        SELECT id, fecha_pago, periodo_inicio, periodo_fin, referencia,
+        SELECT id, fecha_pago, periodo_inicio, periodo_fin, referencia, destino,
                toneladas, monto, notas, file_name, file_mime_type,
                (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file, created_at, updated_at
         FROM corapsa_pagos
         WHERE periodo_inicio >= ? AND periodo_fin <= ?
         ORDER BY periodo_inicio DESC, periodo_fin DESC, id DESC
+    `, [start, end]);
+
+    const directByDestino = await db.all(`
+        SELECT destino, COUNT(*) AS registros,
+               COALESCE(SUM(toneladas), 0) AS toneladas,
+               COALESCE(SUM(total), 0) AS monto
+        FROM corapsa
+        WHERE fecha BETWEEN ? AND ?
+        GROUP BY destino
+    `, [start, end]);
+
+    const ventaByDestino = await db.all(`
+        SELECT destino, COUNT(*) AS registros,
+               COALESCE(SUM(toneladas), 0) AS toneladas,
+               COALESCE(SUM(monto), 0) AS monto
+        FROM corapsa_pagos
+        WHERE periodo_inicio >= ? AND periodo_fin <= ?
+        GROUP BY destino
     `, [start, end]);
 
     const inHouseLbs = Number(inHouse?.libras || 0);
@@ -710,7 +781,8 @@ async function buildOverviewSummary(start, end) {
             costosOperativos: operatingCosts,
             utilidadNeta: netProfit
         },
-        pagosCorapsa: statements
+        pagosCorapsa: statements,
+        porDestino: buildDestinoBreakdown(directByDestino, ventaByDestino)
     };
 }
 
@@ -726,6 +798,7 @@ function validateCorapsaPaymentBody(body, { editing = false } = {}) {
         periodoInicio,
         periodoFin,
         referencia: asText(body?.referencia, { maxLength: 150 }),
+        destino: asDestino(body?.destino),
         toneladas: asNumber(body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas pagadas' }),
         monto: asNumber(body?.monto, { required: true, min: 0.01, field: 'El monto pagado por Corapsa' }),
         notas: asText(body?.notas, { maxLength: 1000 }),
@@ -1201,7 +1274,7 @@ app.get('/api/corapsa/:id/archivo/:type', asyncHandler(async (req, res) => {
 
 app.get('/api/corapsa', asyncHandler(async (_req, res) => {
     const rows = await db.all(`
-        SELECT id, fecha, recibo_in, recibo_out, cliente, toneladas, precio, total,
+        SELECT id, fecha, recibo_in, recibo_out, cliente, destino, a_nombre_de, toneladas, precio, total,
                file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                file_nuestro, file_nuestro_mime_type, (file_nuestro_key IS NOT NULL OR LENGTH(file_nuestro_data) > 0) AS has_file_nuestro,
                pagado, created_at, updated_at
@@ -1215,6 +1288,8 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const fecha = asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 });
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
+    const destino = asDestino(req.body?.destino);
+    const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
     const total = toneladas * precio;
@@ -1230,12 +1305,12 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const corapsa = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO corapsa (
-                fecha, recibo_in, cliente, toneladas, precio, total,
+                fecha, recibo_in, cliente, destino, a_nombre_de, toneladas, precio, total,
                 file_name, file_mime_type, file_data, file_key,
                 file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
-            fecha, reciboIn, cliente, toneladas, precio, total,
+            fecha, reciboIn, cliente, destino, aNombreDe, toneladas, precio, total,
             archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null, archivoCliente?.key || null,
             archivoNuestro?.fileName || 'Sin Archivo', archivoNuestro?.mimeType || '', archivoNuestro?.data || null, archivoNuestro?.key || null,
             asBoolean(req.body?.pagado ?? false) ? 1 : 0
@@ -1259,6 +1334,8 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const fecha = asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 });
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
+    const destino = asDestino(req.body?.destino);
+    const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
     const total = toneladas * precio;
@@ -1275,13 +1352,13 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const corapsa = await withTransaction(async () => {
         await db.run(`
             UPDATE corapsa
-            SET fecha = ?, recibo_in = ?, cliente = ?, toneladas = ?, precio = ?, total = ?,
+            SET fecha = ?, recibo_in = ?, cliente = ?, destino = ?, a_nombre_de = ?, toneladas = ?, precio = ?, total = ?,
                 file_name = ?, file_mime_type = ?, file_data = ?, file_key = ?,
                 file_nuestro = ?, file_nuestro_mime_type = ?, file_nuestro_data = ?, file_nuestro_key = ?,
                 pagado = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
-            fecha, reciboIn, cliente, toneladas, precio, total,
+            fecha, reciboIn, cliente, destino, aNombreDe, toneladas, precio, total,
             hasClienteUpload ? archivoCliente.fileName : current.file_name,
             hasClienteUpload ? archivoCliente.mimeType : current.file_mime_type,
             hasClienteUpload ? archivoCliente.data : current.file_data,
@@ -1530,12 +1607,12 @@ app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
     const pago = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO corapsa_pagos (
-                fecha_pago, periodo_inicio, periodo_fin, referencia, toneladas,
+                fecha_pago, periodo_inicio, periodo_fin, referencia, destino, toneladas,
                 monto, notas, file_name, file_mime_type, file_data, file_key
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             payment.fechaPago, payment.periodoInicio, payment.periodoFin,
-            payment.referencia, payment.toneladas, payment.monto, payment.notas,
+            payment.referencia, payment.destino, payment.toneladas, payment.monto, payment.notas,
             attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null
         ]);
 
@@ -1560,13 +1637,13 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
     const pago = await withTransaction(async () => {
         await db.run(`
             UPDATE corapsa_pagos
-            SET fecha_pago = ?, periodo_inicio = ?, periodo_fin = ?, referencia = ?,
+            SET fecha_pago = ?, periodo_inicio = ?, periodo_fin = ?, referencia = ?, destino = ?,
                 toneladas = ?, monto = ?, notas = ?, file_name = ?, file_mime_type = ?,
                 file_data = ?, file_key = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
             payment.fechaPago, payment.periodoInicio, payment.periodoFin,
-            payment.referencia, payment.toneladas, payment.monto, payment.notas,
+            payment.referencia, payment.destino, payment.toneladas, payment.monto, payment.notas,
             hasUpload ? attachment.fileName : current.file_name,
             hasUpload ? attachment.mimeType : current.file_mime_type,
             hasUpload ? attachment.data : current.file_data,

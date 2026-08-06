@@ -194,6 +194,8 @@ async function initializeDB() {
             recibo_in TEXT NOT NULL,
             recibo_out TEXT NOT NULL DEFAULT '',
             cliente TEXT NOT NULL,
+            destino TEXT NOT NULL DEFAULT 'CORAPSA',
+            a_nombre_de TEXT NOT NULL DEFAULT '',
             toneladas REAL NOT NULL,
             precio REAL NOT NULL,
             total REAL NOT NULL,
@@ -216,6 +218,7 @@ async function initializeDB() {
             periodo_inicio TEXT NOT NULL,
             periodo_fin TEXT NOT NULL,
             referencia TEXT NOT NULL DEFAULT '',
+            destino TEXT NOT NULL DEFAULT 'CORAPSA',
             toneladas REAL NOT NULL,
             monto REAL NOT NULL,
             notas TEXT NOT NULL DEFAULT '',
@@ -313,6 +316,8 @@ async function initializeDB() {
     await ensureColumn(db, 'transacciones', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'transacciones', 'created_at', 'TEXT');
 
+    await ensureColumn(db, 'corapsa', 'destino', "TEXT NOT NULL DEFAULT 'CORAPSA'");
+    await ensureColumn(db, 'corapsa', 'a_nombre_de', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'file_data', 'BLOB');
     await ensureColumn(db, 'corapsa', 'file_key', 'TEXT');
@@ -325,6 +330,7 @@ async function initializeDB() {
     await ensureColumn(db, 'corapsa', 'updated_at', 'TEXT');
 
     await ensureColumn(db, 'corapsa_pagos', 'referencia', "TEXT NOT NULL DEFAULT ''");
+    await ensureColumn(db, 'corapsa_pagos', 'destino', "TEXT NOT NULL DEFAULT 'CORAPSA'");
     await ensureColumn(db, 'corapsa_pagos', 'notas', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa_pagos', 'file_name', "TEXT NOT NULL DEFAULT 'Sin Archivo'");
     await ensureColumn(db, 'corapsa_pagos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");

@@ -323,6 +323,34 @@
 
                     <div class="flex-1">
 
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Destino *</label>
+
+                        <select id="corapsa-destino"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700">
+                            <option value="">Seleccione...</option>
+                            <option value="CORAPSA">CORAPSA</option>
+                            <option value="AGROTOR">AGROTOR</option>
+                            <option value="DINANT">DINANT</option>
+                        </select>
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">A Nombre De (opcional)</label>
+
+                        <input type="text" id="corapsa-a-nombre-de"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold"
+                            placeholder="Ej. BETY">
+
+                    </div>
+
+                </div>
+
+                <div class="flex gap-4">
+
+                    <div class="flex-1">
+
                         <label class="block text-xs font-bold text-gray-600 mb-1">Toneladas *</label>
 
                         <input type="number" id="corapsa-toneladas" step="0.01" oninput="calcularTotalCorapsa()"
@@ -963,9 +991,9 @@
         <div class="bg-white rounded-2xl shadow-2xl w-[720px] max-w-full max-h-[92vh] overflow-y-auto">
             <div class="bg-indigo-900 px-6 py-4 flex justify-between items-center text-white">
                 <div>
-                    <h3 id="overview-payment-modal-title" class="font-bold text-lg">Registrar Pago de Corapsa</h3>
-                    <p class="text-xs text-indigo-200">Registre las toneladas y el dinero que Corapsa pagó por un
-                        período.</p>
+                    <h3 id="overview-payment-modal-title" class="font-bold text-lg">Registrar Venta / Pago Recibido</h3>
+                    <p class="text-xs text-indigo-200">Registre las toneladas reconocidas y el dinero que la empresa
+                        destino pagó por un período (Venta Total de Palma).</p>
                 </div>
                 <button type="button" onclick="cerrarPagoCorapsaModal()"><span
                         class="material-icons">close</span></button>
@@ -983,7 +1011,16 @@
                             type="date" id="overview-payment-date"
                             class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"></div>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div><label class="block text-xs font-bold text-gray-600 mb-1">Destino *</label>
+                        <select id="overview-payment-destino"
+                            class="w-full border rounded-lg p-2 font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="">Seleccione...</option>
+                            <option value="CORAPSA">CORAPSA</option>
+                            <option value="AGROTOR">AGROTOR</option>
+                            <option value="DINANT">DINANT</option>
+                        </select>
+                    </div>
                     <div><label class="block text-xs font-bold text-gray-600 mb-1">Referencia / Estado #</label><input
                             type="text" id="overview-payment-reference"
                             class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -1550,7 +1587,7 @@
                             actual</button>
                         <button type="button" onclick="abrirPagoCorapsaModal()"
                             class="h-10 px-4 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow flex items-center gap-2"><span
-                                class="material-icons text-[19px]">add_card</span> Registrar pago Corapsa</button>
+                                class="material-icons text-[19px]">add_card</span> Registrar Venta / Pago Recibido</button>
                     </div>
                 </div>
 
@@ -1559,44 +1596,44 @@
 
                 <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <article class="bg-white border rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-blue-700">Compras en báscula</p>
+                        <p class="text-[11px] uppercase font-black text-blue-700">Compra Acopio</p>
                         <p id="overview-inhouse-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
                         </p>
                         <p id="overview-inhouse-money" class="mt-1 font-mono font-bold text-blue-700">L 0.00</p>
                     </article>
                     <article class="bg-white border rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-violet-700">Compras directas a Corapsa</p>
+                        <p class="text-[11px] uppercase font-black text-violet-700">Compra Directo</p>
                         <p id="overview-direct-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
                         </p>
                         <p id="overview-direct-money" class="mt-1 font-mono font-bold text-violet-700">L 0.00</p>
                     </article>
                     <article class="bg-white border-2 border-slate-300 rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-slate-700">Producto total rastreado</p>
+                        <p class="text-[11px] uppercase font-black text-slate-700">Compra Total de Palma</p>
                         <p id="overview-tracked-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
                         </p>
                         <p id="overview-supplier-cost" class="mt-1 font-mono font-bold text-slate-700">L 0.00</p>
                     </article>
                     <article class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-indigo-700">Corapsa nos pagó</p>
+                        <p class="text-[11px] uppercase font-black text-indigo-700">Venta Total de Palma</p>
                         <p id="overview-corapsa-tons" class="mt-2 text-2xl font-mono font-black text-indigo-950">0.00
                             TON</p>
                         <p id="overview-corapsa-money" class="mt-1 font-mono font-bold text-emerald-700">L 0.00</p>
                     </article>
                     <article class="bg-white border rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-gray-600">Diferencia de toneladas</p>
+                        <p class="text-[11px] uppercase font-black text-gray-600">Diferencia de Básculas</p>
                         <p id="overview-ton-difference" class="mt-2 text-2xl font-mono font-black">0.00 TON</p>
-                        <p class="mt-1 text-[10px] text-gray-500">Corapsa − producto rastreado</p>
+                        <p class="mt-1 text-[10px] text-gray-500">Venta Total de Palma − Compra Total de Palma</p>
                     </article>
                 </section>
 
                 <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <article class="bg-white border rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-emerald-700">Margen bruto</p>
+                        <p class="text-[11px] uppercase font-black text-emerald-700">Ganancia Bruta</p>
                         <p id="overview-gross-margin" class="mt-2 text-xl font-mono font-black">L 0.00</p>
-                        <p class="text-[10px] text-gray-500 mt-1">Ingresos Corapsa − compras</p>
+                        <p class="text-[10px] text-gray-500 mt-1">Venta Total de Palma − Compra Total de Palma</p>
                     </article>
                     <article class="bg-white border rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-red-700">Gastos operativos</p>
+                        <p class="text-[11px] uppercase font-black text-red-700">Gastos</p>
                         <p id="overview-expenses" class="mt-2 text-xl font-mono font-black text-red-700">L 0.00</p>
                     </article>
                     <article class="bg-white border rounded-2xl p-4">
@@ -1604,13 +1641,13 @@
                         <p id="overview-payroll" class="mt-2 text-xl font-mono font-black text-orange-700">L 0.00</p>
                     </article>
                     <article class="bg-white border rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-slate-700">Costos operativos</p>
+                        <p class="text-[11px] uppercase font-black text-slate-700">Gastos Operativos</p>
                         <p id="overview-operating-costs" class="mt-2 text-xl font-mono font-black text-slate-800">L 0.00
                         </p>
-                        <p class="text-[10px] text-gray-500 mt-1">Gastos + planilla</p>
+                        <p class="text-[10px] text-gray-500 mt-1">Planilla + Gastos</p>
                     </article>
                     <article class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-emerald-800">Utilidad neta estimada</p>
+                        <p class="text-[11px] uppercase font-black text-emerald-800">Resultado del Período</p>
                         <p id="overview-net-profit" class="mt-2 text-2xl font-mono font-black">L 0.00</p>
                     </article>
                 </section>
@@ -1620,18 +1657,18 @@
                         <h3 class="font-black text-slate-900">Fórmulas utilizadas</h3>
                         <div class="mt-4 space-y-4 text-sm">
                             <div>
-                                <p class="font-bold text-gray-700">1. Total pagado a proveedores</p>
-                                <p class="text-xs text-gray-500">Compras en báscula + compras directas</p>
+                                <p class="font-bold text-gray-700">1. Compra Total de Palma</p>
+                                <p class="text-xs text-gray-500">Compra Acopio + Compra Directo</p>
                                 <p id="overview-formula-suppliers" class="font-mono font-bold mt-1">L 0.00</p>
                             </div>
                             <div>
-                                <p class="font-bold text-gray-700">2. Margen bruto</p>
-                                <p class="text-xs text-gray-500">Corapsa nos pagó − total pagado a proveedores</p>
+                                <p class="font-bold text-gray-700">2. Ganancia Bruta</p>
+                                <p class="text-xs text-gray-500">Venta Total de Palma − Compra Total de Palma</p>
                                 <p id="overview-formula-margin" class="font-mono font-bold mt-1">L 0.00</p>
                             </div>
                             <div>
-                                <p class="font-bold text-gray-700">3. Utilidad neta estimada</p>
-                                <p class="text-xs text-gray-500">Margen bruto − gastos − planilla</p>
+                                <p class="font-bold text-gray-700">3. Resultado del Período (Resultado de la Semana)</p>
+                                <p class="text-xs text-gray-500">Ganancia Bruta − Gastos Operativos</p>
                                 <p id="overview-formula-profit" class="font-mono font-bold mt-1">L 0.00</p>
                             </div>
                         </div>
@@ -1641,7 +1678,7 @@
                     </div>
                     <div class="bg-white rounded-2xl border overflow-hidden xl:col-span-2 min-h-[310px]">
                         <div class="px-5 py-4 border-b bg-indigo-50">
-                            <h3 class="font-black text-indigo-950">Pagos / Estados de Cuenta de Corapsa</h3>
+                            <h3 class="font-black text-indigo-950">Ventas / Estados de Cuenta (Venta Total de Palma)</h3>
                             <p class="text-xs text-indigo-700 mt-1">Solo se suman registros cuyo período completo está
                                 dentro de las fechas seleccionadas.</p>
                         </div>
@@ -1652,6 +1689,7 @@
                                     <tr>
                                         <th class="p-3 text-left">Período</th>
                                         <th class="p-3 text-left">Fecha pago</th>
+                                        <th class="p-3 text-left">Destino</th>
                                         <th class="p-3 text-left">Referencia</th>
                                         <th class="p-3 text-right">Toneladas</th>
                                         <th class="p-3 text-right">Monto</th>
@@ -1663,6 +1701,31 @@
                                 <tbody id="overview-payments-body"></tbody>
                             </table>
                         </div>
+                    </div>
+                </section>
+
+                <section class="bg-white rounded-2xl border overflow-hidden">
+                    <div class="px-5 py-4 border-b bg-slate-50">
+                        <h3 class="font-black text-slate-900">Desglose por Empresa Destino</h3>
+                        <p class="text-xs text-slate-600 mt-1">Compara, por empresa, lo que le entregamos vía Recibos
+                            Externos contra lo que nos reconoció y pagó. No incluye Compra Acopio, porque el peso en
+                            báscula propia todavía no está asignado a ninguna empresa destino.</p>
+                    </div>
+                    <div class="overflow-auto">
+                        <table class="w-full min-w-[900px] text-sm">
+                            <thead class="bg-slate-100 text-slate-700 text-[10px] uppercase tracking-wide">
+                                <tr>
+                                    <th class="p-3 text-left">Destino</th>
+                                    <th class="p-3 text-right">Compra Directo (Ton)</th>
+                                    <th class="p-3 text-right">Compra Directo (L)</th>
+                                    <th class="p-3 text-right">Venta (Ton)</th>
+                                    <th class="p-3 text-right">Venta (L)</th>
+                                    <th class="p-3 text-right">Diferencia (Ton)</th>
+                                    <th class="p-3 text-right">Margen (L)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="overview-destino-body"></tbody>
+                        </table>
                     </div>
                 </section>
             </main>
@@ -1946,6 +2009,14 @@
                                 placeholder="Filtrar Cliente o Recibo #..."
                                 class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none w-64">
 
+                            <select id="corapsa-filter-destino" onchange="renderCorapsaTab()"
+                                class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none">
+                                <option value="">Todos los destinos</option>
+                                <option value="CORAPSA">CORAPSA</option>
+                                <option value="AGROTOR">AGROTOR</option>
+                                <option value="DINANT">DINANT</option>
+                            </select>
+
                         </div>
 
                     </div>
@@ -1975,6 +2046,8 @@
 
                                     <th class="p-3 font-semibold">Cliente</th>
 
+                                    <th class="p-3 font-semibold">Destino</th>
+
                                     <th class="p-3 font-semibold">Recibo #</th>
 
                                     <th class="p-3 font-semibold text-right">Precio/Unidad</th>
@@ -1997,7 +2070,7 @@
 
                                 <tr>
 
-                                    <td colspan="9" class="p-8 text-center text-gray-400">Sin recibos registrados.</td>
+                                    <td colspan="10" class="p-8 text-center text-gray-400">Sin recibos registrados.</td>
 
                                 </tr>
 
@@ -2007,7 +2080,7 @@
 
                                 <tr>
 
-                                    <td colspan="4" class="p-4 font-bold text-right text-blue-900 uppercase">TOTALES:
+                                    <td colspan="5" class="p-4 font-bold text-right text-blue-900 uppercase">TOTALES:
 
                                     </td>
 

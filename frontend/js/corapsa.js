@@ -5,6 +5,8 @@ function normalizarCorapsa(record = {}) {
         reciboIn: String(record.reciboIn ?? record.recibo_in ?? ''),
         reciboOut: String(record.reciboOut ?? record.recibo_out ?? ''),
         cliente: String(record.cliente || ''),
+        destino: String(record.destino || ''),
+        aNombreDe: String(record.aNombreDe ?? record.a_nombre_de ?? ''),
         toneladas: toFiniteNumber(record.toneladas),
         precio: toFiniteNumber(record.precio),
         total: toFiniteNumber(record.total),
@@ -74,6 +76,8 @@ function abrirCorapsaModal(id = null, justificacion = '') {
     document.getElementById('corapsa-fecha').value = record?.fecha || getLocalIsoDate();
     document.getElementById('corapsa-recibo-in').value = record?.reciboIn || '';
     document.getElementById('corapsa-cliente').value = record?.cliente || '';
+    document.getElementById('corapsa-destino').value = record?.destino || '';
+    document.getElementById('corapsa-a-nombre-de').value = record?.aNombreDe || '';
     document.getElementById('corapsa-toneladas').value = record?.toneladas || '';
     document.getElementById('corapsa-precio').value = record ? formatNumberForInput(record.precio, 2) : '';
     document.getElementById('corapsa-recibo-out').value = record?.reciboOut || 'Se generará automáticamente';
@@ -119,13 +123,15 @@ async function guardarCorapsa() {
         fecha: document.getElementById('corapsa-fecha').value,
         reciboIn: document.getElementById('corapsa-recibo-in').value.trim(),
         cliente: document.getElementById('corapsa-cliente').value.trim(),
+        destino: document.getElementById('corapsa-destino').value.trim(),
+        aNombreDe: document.getElementById('corapsa-a-nombre-de').value.trim(),
         toneladas: parseFormattedNumber(document.getElementById('corapsa-toneladas').value),
         precio: parseFormattedNumber(document.getElementById('corapsa-precio').value),
         pagado: existing?.pagado || false,
         justificacion: activeCorapsaEditJustification
     };
 
-    if (!payload.fecha || !payload.reciboIn || !payload.cliente) {
+    if (!payload.fecha || !payload.reciboIn || !payload.cliente || !payload.destino) {
         return mostrarNotificacion('Complete todos los campos obligatorios.', 'error');
     }
     if (!Number.isFinite(payload.toneladas) || payload.toneladas <= 0) {
@@ -356,11 +362,13 @@ function renderCorapsaTab() {
     const startDate = document.getElementById('corapsa-filter-start')?.value || '';
     const endDate = document.getElementById('corapsa-filter-end')?.value || '';
     const search = (document.getElementById('corapsa-filter-client')?.value || '').trim().toLocaleLowerCase('es');
+    const destinoFilter = document.getElementById('corapsa-filter-destino')?.value || '';
 
     const filtered = corapsaData.filter(record => {
         if (startDate && record.fecha < startDate) return false;
         if (endDate && record.fecha > endDate) return false;
-        const searchable = `${record.cliente} ${record.reciboIn} ${record.reciboOut}`.toLocaleLowerCase('es');
+        if (destinoFilter && record.destino !== destinoFilter) return false;
+        const searchable = `${record.cliente} ${record.aNombreDe} ${record.reciboIn} ${record.reciboOut}`.toLocaleLowerCase('es');
         return !search || searchable.includes(search);
     });
 
@@ -370,7 +378,7 @@ function renderCorapsaTab() {
     document.getElementById('corapsa-total-dinero').textContent = formatMoney(sumTotal);
 
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
         return;
     }
 
@@ -382,7 +390,8 @@ function renderCorapsaTab() {
         return `
             <tr class="hover:bg-blue-50">
                 <td class="p-3 text-sm font-mono text-gray-600 font-bold">${escapeHtml(formatDateForDisplay(record.fecha))}</td>
-                <td class="p-3 font-bold text-gray-800">${escapeHtml(record.cliente)}</td>
+                <td class="p-3 font-bold text-gray-800">${escapeHtml(record.cliente)}${record.aNombreDe ? `<br><span class="text-[11px] font-semibold text-gray-400">A nombre de: ${escapeHtml(record.aNombreDe)}</span>` : ''}</td>
+                <td class="p-3"><span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-1 rounded font-bold text-xs uppercase">${escapeHtml(record.destino || '-')}</span></td>
                 <td class="p-3"><span class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-1 rounded font-mono font-bold text-xs"><span class="material-icons text-[14px]">receipt_long</span>${escapeHtml(record.reciboIn)}</span></td>
                 <td class="p-3 text-right text-xs text-gray-500">L ${formatMoney(record.precio)}</td>
                 <td class="p-3 text-right font-mono font-bold text-gray-600">${record.toneladas.toFixed(2)}</td>
