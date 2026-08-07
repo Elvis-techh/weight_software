@@ -17,6 +17,7 @@ function normalizarCorapsa(record = {}) {
         fileNuestroMimeType: String(record.fileNuestroMimeType ?? record.file_nuestro_mime_type ?? ''),
         hasFileNuestro: record.hasFileNuestro === true,
         pagado: record.pagado === true || Number(record.pagado) === 1,
+        esProductoPropio: record.esProductoPropio === true || Number(record.esProductoPropio ?? record.es_producto_propio) === 1,
         updatedAt: String(record.updatedAt ?? record.updated_at ?? '')
     };
 }
@@ -78,6 +79,7 @@ function abrirCorapsaModal(id = null, justificacion = '') {
     document.getElementById('corapsa-cliente').value = record?.cliente || '';
     document.getElementById('corapsa-destino').value = record?.destino || '';
     document.getElementById('corapsa-a-nombre-de').value = record?.aNombreDe || '';
+    document.getElementById('corapsa-es-producto-propio').checked = Boolean(record?.esProductoPropio);
     document.getElementById('corapsa-toneladas').value = record?.toneladas || '';
     document.getElementById('corapsa-precio').value = record ? formatNumberForInput(record.precio, 2) : '';
     document.getElementById('corapsa-recibo-out').value = record?.reciboOut || 'Se generará automáticamente';
@@ -105,6 +107,15 @@ function handleCorapsaClientInput() {
     }
 }
 
+// Defaults the price (and therefore total) to 0 when the receipt is flagged
+// as own-Acopio product, since it was already paid for at our scale. Users
+// can still override the price afterward if they need to record it.
+function handleProductoPropioToggle() {
+    if (!document.getElementById('corapsa-es-producto-propio').checked) return;
+    document.getElementById('corapsa-precio').value = formatNumberForInput(0, 2);
+    calcularTotalCorapsa();
+}
+
 function calcularTotalCorapsa() {
     const toneladas = toFiniteNumber(document.getElementById('corapsa-toneladas').value);
     const precio = toFiniteNumber(document.getElementById('corapsa-precio').value);
@@ -125,6 +136,7 @@ async function guardarCorapsa() {
         cliente: document.getElementById('corapsa-cliente').value.trim(),
         destino: document.getElementById('corapsa-destino').value.trim(),
         aNombreDe: document.getElementById('corapsa-a-nombre-de').value.trim(),
+        esProductoPropio: document.getElementById('corapsa-es-producto-propio').checked,
         toneladas: parseFormattedNumber(document.getElementById('corapsa-toneladas').value),
         precio: parseFormattedNumber(document.getElementById('corapsa-precio').value),
         pagado: existing?.pagado || false,
@@ -378,7 +390,7 @@ function renderCorapsaTab() {
     document.getElementById('corapsa-total-dinero').textContent = formatMoney(sumTotal);
 
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
         return;
     }
 
@@ -392,6 +404,9 @@ function renderCorapsaTab() {
                 <td class="p-3 text-sm font-mono text-gray-600 font-bold">${escapeHtml(formatDateForDisplay(record.fecha))}</td>
                 <td class="p-3 font-bold text-gray-800">${escapeHtml(record.cliente)}${record.aNombreDe ? `<br><span class="text-[11px] font-semibold text-gray-400">A nombre de: ${escapeHtml(record.aNombreDe)}</span>` : ''}</td>
                 <td class="p-3"><span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-1 rounded font-bold text-xs uppercase">${escapeHtml(record.destino || '-')}</span></td>
+                <td class="p-3">${record.esProductoPropio
+                    ? '<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded font-bold text-[10px] uppercase" title="Ya pagado en báscula propia; excluido de Compra Directo"><span class="material-icons text-[12px]">warehouse</span>Acopio</span>'
+                    : '<span class="inline-flex items-center bg-slate-50 text-slate-500 border border-slate-200 px-2 py-1 rounded font-bold text-[10px] uppercase">Directo</span>'}</td>
                 <td class="p-3"><span class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-1 rounded font-mono font-bold text-xs"><span class="material-icons text-[14px]">receipt_long</span>${escapeHtml(record.reciboIn)}</span></td>
                 <td class="p-3 text-right text-xs text-gray-500">L ${formatMoney(record.precio)}</td>
                 <td class="p-3 text-right font-mono font-bold text-gray-600">${record.toneladas.toFixed(2)}</td>

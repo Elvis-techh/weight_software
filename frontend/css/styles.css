@@ -36,6 +36,14 @@ body {
     background-color: #065f46;
 }
 
+.nav-parent.tab-inactive {
+    background-color: #006444;
+}
+
+.nav-parent.tab-inactive:hover {
+    background-color: #0d8a60;
+}
+
 @media print {
     body * {
         visibility: hidden;

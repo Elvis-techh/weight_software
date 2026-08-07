@@ -326,6 +326,10 @@ async function initializeDB() {
     await ensureColumn(db, 'corapsa', 'file_nuestro_data', 'BLOB');
     await ensureColumn(db, 'corapsa', 'file_nuestro_key', 'TEXT');
     await ensureColumn(db, 'corapsa', 'pagado', 'INTEGER NOT NULL DEFAULT 0');
+    // True when the receipt is paperwork for fruit already weighed/paid at our
+    // own Acopio scale (transacciones). Excluded from Compra Directo in the
+    // Overview so it isn't counted twice toward Compra Total de Palma.
+    await ensureColumn(db, 'corapsa', 'es_producto_propio', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(db, 'corapsa', 'created_at', 'TEXT');
     await ensureColumn(db, 'corapsa', 'updated_at', 'TEXT');
 

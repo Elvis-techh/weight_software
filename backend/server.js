@@ -489,6 +489,7 @@ function mapCorapsa(row) {
         fileNuestroMimeType: row.file_nuestro_mime_type || '',
         hasFileNuestro: Boolean(row.has_file_nuestro) || Boolean(row.file_nuestro_key) || hasStoredAttachment(row.file_nuestro_data),
         pagado: Boolean(row.pagado),
+        esProductoPropio: Boolean(row.es_producto_propio),
         updatedAt: row.updated_at || row.created_at || ''
     };
 }
@@ -660,12 +661,15 @@ async function buildOverviewSummary(start, end) {
         WHERE fecha BETWEEN ? AND ?
     `, [start, end]);
 
+    // Excludes es_producto_propio receipts: those are paperwork for fruit
+    // already weighed/paid at our own Acopio scale (transacciones), so
+    // counting them here too would double-count Compra Total de Palma.
     const direct = await db.get(`
         SELECT COUNT(*) AS registros,
                COALESCE(SUM(toneladas), 0) AS toneladas,
                COALESCE(SUM(total), 0) AS monto
         FROM corapsa
-        WHERE fecha BETWEEN ? AND ?
+        WHERE fecha BETWEEN ? AND ? AND es_producto_propio = 0
     `, [start, end]);
 
     const expenses = await db.get(`
@@ -705,7 +709,7 @@ async function buildOverviewSummary(start, end) {
                COALESCE(SUM(toneladas), 0) AS toneladas,
                COALESCE(SUM(total), 0) AS monto
         FROM corapsa
-        WHERE fecha BETWEEN ? AND ?
+        WHERE fecha BETWEEN ? AND ? AND es_producto_propio = 0
         GROUP BY destino
     `, [start, end]);
 
@@ -1277,7 +1281,7 @@ app.get('/api/corapsa', asyncHandler(async (_req, res) => {
         SELECT id, fecha, recibo_in, recibo_out, cliente, destino, a_nombre_de, toneladas, precio, total,
                file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                file_nuestro, file_nuestro_mime_type, (file_nuestro_key IS NOT NULL OR LENGTH(file_nuestro_data) > 0) AS has_file_nuestro,
-               pagado, created_at, updated_at
+               pagado, es_producto_propio, created_at, updated_at
         FROM corapsa
         ORDER BY fecha DESC, id DESC
     `);
@@ -1293,6 +1297,7 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
     const total = toneladas * precio;
+    const esProductoPropio = asBoolean(req.body?.esProductoPropio ?? false);
     const archivoCliente = await storeAttachment(
         'corapsa-cliente',
         parseAttachmentPayload(req.body?.archivoCliente, 'El archivo del cliente')
@@ -1307,13 +1312,14 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
             INSERT INTO corapsa (
                 fecha, recibo_in, cliente, destino, a_nombre_de, toneladas, precio, total,
                 file_name, file_mime_type, file_data, file_key,
-                file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado, es_producto_propio
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             fecha, reciboIn, cliente, destino, aNombreDe, toneladas, precio, total,
             archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null, archivoCliente?.key || null,
             archivoNuestro?.fileName || 'Sin Archivo', archivoNuestro?.mimeType || '', archivoNuestro?.data || null, archivoNuestro?.key || null,
-            asBoolean(req.body?.pagado ?? false) ? 1 : 0
+            asBoolean(req.body?.pagado ?? false) ? 1 : 0,
+            esProductoPropio ? 1 : 0
         ]);
 
         const reciboOut = `CRX-${String(result.lastID).padStart(6, '0')}`;
@@ -1355,7 +1361,7 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
             SET fecha = ?, recibo_in = ?, cliente = ?, destino = ?, a_nombre_de = ?, toneladas = ?, precio = ?, total = ?,
                 file_name = ?, file_mime_type = ?, file_data = ?, file_key = ?,
                 file_nuestro = ?, file_nuestro_mime_type = ?, file_nuestro_data = ?, file_nuestro_key = ?,
-                pagado = ?, updated_at = CURRENT_TIMESTAMP
+                pagado = ?, es_producto_propio = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
             fecha, reciboIn, cliente, destino, aNombreDe, toneladas, precio, total,
@@ -1368,6 +1374,7 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
             hasNuestroUpload ? archivoNuestro.data : current.file_nuestro_data,
             hasNuestroUpload ? archivoNuestro.key : current.file_nuestro_key,
             Object.prototype.hasOwnProperty.call(req.body || {}, 'pagado') ? (asBoolean(req.body.pagado) ? 1 : 0) : current.pagado,
+            Object.prototype.hasOwnProperty.call(req.body || {}, 'esProductoPropio') ? (asBoolean(req.body.esProductoPropio) ? 1 : 0) : current.es_producto_propio,
             id
         ]);
 
