@@ -3,11 +3,13 @@
     "version": "1.0.3",
     "description": "Weight tracking and administration system",
     "main": "main.js",
+    "author": "Báscula Central Team",
     "scripts": {
         "postinstall": "electron-builder install-app-deps",
         "build:css": "tailwindcss -i ./css/tailwind-source.css -o ./css/tailwind.css --minify",
         "prestart": "npm run build:css",
         "predist": "npm run build:css",
+        "predist:publish": "npm run build:css",
         "start": "electron .",
         "dist": "electron-builder --win nsis",
         "dist:publish": "electron-builder --win nsis --publish always"
@@ -28,7 +30,7 @@
                 "provider": "github",
                 "owner": "Elvis-techh",
                 "repo": "weight_software",
-                "draft": false
+                "releaseType": "release"
             }
         ],
         "appId": "com.basculacentral.desktop",
