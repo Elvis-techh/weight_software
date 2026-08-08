@@ -1,0 +1,228 @@
+/* ==========================================================================
+   Sidebar navigation — Báscula Central
+   Colors are derived from the existing Tailwind `brand` scale (tailwind.config.js)
+   so this component matches the rest of the app; only the layout/structure is new.
+   ========================================================================== */
+
+:root {
+  --sb-bg: #064e3b;          /* brand-900 */
+  --sb-active: #047857;      /* brand-700 */
+  --sb-hover: #065f46;       /* brand-800 */
+  --sb-border: #065f46;      /* brand-800 */
+  --sb-connector: #059669;   /* brand-600 */
+  --sb-text: #ffffff;
+  --sb-text-muted: #a7f3d0;  /* brand-200 */
+  --sb-icon-muted: #6ee7b7;  /* brand-300 */
+  --sb-label: #10b981;       /* brand-500 */
+  --sb-width: 250px;
+}
+
+.sidebar {
+  width: var(--sb-width);
+  background: var(--sb-bg);
+  padding: 14px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-sizing: border-box;
+  height: 100%;
+}
+
+/* ---- Brand header ---- */
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 16px;
+  border-bottom: 1px solid var(--sb-border);
+  margin-bottom: 6px;
+}
+
+.sidebar__brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--sb-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebar__brand-mark svg {
+  width: 18px;
+  height: 18px;
+  stroke: #fff;
+}
+
+.sidebar__brand-name {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sb-text);
+}
+
+.sidebar__brand-sub {
+  margin: 0;
+  font-size: 11px;
+  color: var(--sb-icon-muted);
+}
+
+/* ---- Section captions ---- */
+.sidebar__label {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--sb-label);
+  padding: 14px 12px 4px;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+/* ---- Top-level rows (both plain items and group headers) ---- */
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--sb-text-muted);
+  font-size: 13.5px;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.nav-row:hover {
+  background: var(--sb-hover);
+}
+
+.nav-row:focus-visible {
+  outline: 2px solid var(--sb-active);
+  outline-offset: -2px;
+}
+
+.nav-row .nav-icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  color: var(--sb-icon-muted);
+  transition: color 0.15s;
+}
+
+/* Active leaf item — the single clear "you are here" state */
+.nav-row.is-active {
+  background: var(--sb-active);
+  color: var(--sb-text);
+  font-weight: 500;
+}
+
+.nav-row.is-active .nav-icon {
+  color: var(--sb-text);
+}
+
+/* Chevron on group headers */
+.nav-row .chev {
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  color: var(--sb-icon-muted);
+  transition: transform 0.18s;
+  flex-shrink: 0;
+}
+
+/* Open group: header stays subtly lit + chevron flips. */
+.nav-group.is-open > .nav-row {
+  background: var(--sb-hover);
+  color: var(--sb-text);
+}
+
+.nav-group.is-open > .nav-row .chev {
+  transform: rotate(180deg);
+}
+
+/* ---- Sub-items ---- */
+.sub-wrap {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+  margin-left: 23px;
+  border-left: 1px solid var(--sb-connector);
+  border-radius: 0;
+}
+
+.nav-group.is-open .sub-wrap {
+  max-height: 240px;
+}
+
+.sub-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 14px;
+  font-size: 13px;
+  color: var(--sb-text-muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  border-radius: 0 8px 8px 0;
+  transition: background 0.15s;
+}
+
+.sub-row:hover {
+  background: var(--sb-hover);
+}
+
+.sub-row:focus-visible {
+  outline: 2px solid var(--sb-active);
+  outline-offset: -2px;
+}
+
+.sub-row.is-active {
+  background: var(--sb-active);
+  color: var(--sb-text);
+  font-weight: 500;
+}
+
+/* ---- Footer / operator info ---- */
+.sidebar__footer {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--sb-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+}
+
+.sidebar__avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--sb-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.sidebar__footer-name {
+  margin: 0;
+  font-size: 12px;
+  color: #fff;
+}
+
+.sidebar__footer-role {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--sb-icon-muted);
+}

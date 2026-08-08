@@ -23,27 +23,6 @@ body {
     background: #94a3b8;
 }
 
-.tab-active {
-    background-color: #047857;
-    border-left: 4px solid #10b981;
-}
-
-.tab-inactive {
-    border-left: 4px solid transparent;
-}
-
-.tab-inactive:hover {
-    background-color: #065f46;
-}
-
-.nav-parent.tab-inactive {
-    background-color: #006444;
-}
-
-.nav-parent.tab-inactive:hover {
-    background-color: #0d8a60;
-}
-
 @media print {
     body * {
         visibility: hidden;

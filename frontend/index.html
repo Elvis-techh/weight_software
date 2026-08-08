@@ -15,6 +15,8 @@
     <link rel="stylesheet" href="css/tailwind.css">
 
     <link rel="stylesheet" href="css/styles.css">
+
+    <link rel="stylesheet" href="css/sidebar.css">
 </head>
 
 
@@ -1084,139 +1086,74 @@
 
     <!-- SIDEBAR NAVIGATION -->
 
-    <nav class="w-20 bg-brand-900 text-white flex flex-col items-center py-6 shadow-2xl z-20 shrink-0 overflow-y-auto">
+    <nav class="sidebar shrink-0 overflow-y-auto shadow-2xl z-20">
 
-        <div class="mb-10 text-brand-500 shrink-0">
-
-            <span class="material-icons text-4xl">monitor_weight</span>
-
+        <div class="sidebar__brand">
+            <div class="sidebar__brand-mark">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 4h16v4H4z"/><path d="M6 8v10a2 2 0 002 2h8a2 2 0 002-2V8"/>
+                </svg>
+            </div>
+            <div>
+                <p class="sidebar__brand-name">Báscula Central</p>
+                <p class="sidebar__brand-sub">Terminal de Pesaje</p>
+            </div>
         </div>
 
-        <div class="flex flex-col w-full gap-2">
+        <button type="button" class="nav-row is-active" data-leaf="pesaje">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3M20 17h2v-3.34a4 4 0 00-1.17-2.83L19 9h-5"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+            Pesaje
+        </button>
 
-            <button onclick="switchTab('pesaje')" id="nav-pesaje"
-                class="w-full py-4 flex flex-col items-center gap-1 nav-parent tab-active transition-colors">
+        <p class="sidebar__label">Operaciones</p>
 
-                <span class="material-icons">local_shipping</span>
-
-                <span class="text-[10px] font-bold tracking-wider">PESAJE</span>
-
+        <!-- GROUP: REVISIÓN (Overview + Reportes) -->
+        <div class="nav-group" data-group="revision">
+            <button type="button" class="nav-row" data-toggle>
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-3"/><path d="M9 14l2 2 4-4"/></svg>
+                Revisión
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-
-            <!-- GROUP: REVISIÓN (Overview + Reportes) -->
-            <div class="w-full border-t border-brand-800 mt-2 pt-2">
-
-                <button onclick="toggleNavGroup('revision')" id="nav-group-revision"
-                    class="w-full py-3 flex flex-col items-center gap-1 nav-parent tab-inactive transition-colors">
-
-                    <span class="material-icons">fact_check</span>
-
-                    <span class="text-[10px] font-bold tracking-wider">REVISIÓN</span>
-
-                    <span id="nav-group-revision-caret"
-                        class="material-icons text-sm transition-transform">expand_more</span>
-
-                </button>
-
-                <div id="nav-group-revision-items" class="hidden flex-col w-full">
-
-                    <button onclick="switchTab('overview')" id="nav-overview"
-                        class="w-full py-3 flex flex-col items-center gap-1 tab-inactive transition-colors">
-                        <span class="material-icons text-lg">dashboard</span>
-                        <span class="text-[10px] font-bold tracking-wider">OVERVIEW</span>
-                    </button>
-
-                    <button onclick="switchTab('reportes')" id="nav-reportes"
-                        class="w-full py-3 flex flex-col items-center gap-1 tab-inactive transition-colors">
-
-                        <span class="material-icons text-lg">insert_chart</span>
-
-                        <span class="text-[10px] font-bold tracking-wider">REPORTES</span>
-
-                    </button>
-
-                </div>
-
+            <div class="sub-wrap">
+                <button type="button" class="sub-row" data-leaf="overview">Reportes</button>
+                <button type="button" class="sub-row" data-leaf="reportes">Historial de Pesajes</button>
             </div>
+        </div>
 
-            <!-- GROUP: FINANZAS (Recibos externos + Gastos) -->
-            <div class="w-full border-t border-brand-800 pt-2">
+        <p class="sidebar__label">Administración</p>
 
-                <button onclick="toggleNavGroup('finanzas')" id="nav-group-finanzas"
-                    class="w-full py-3 flex flex-col items-center gap-1 nav-parent tab-inactive transition-colors">
-
-                    <span class="material-icons">account_balance_wallet</span>
-
-                    <span class="text-[10px] font-bold tracking-wider">FINANZAS</span>
-
-                    <span id="nav-group-finanzas-caret"
-                        class="material-icons text-sm transition-transform">expand_more</span>
-
-                </button>
-
-                <div id="nav-group-finanzas-items" class="hidden flex-col w-full">
-
-                    <button onclick="switchTab('corapsa')" id="nav-corapsa"
-                        class="w-full py-3 flex flex-col items-center gap-1 tab-inactive transition-colors">
-
-                        <span class="material-icons text-lg">receipt_long</span>
-
-                        <span class="text-[10px] font-bold tracking-wider text-center">RECIBOS<br>EXTERNOS</span>
-
-                    </button>
-
-                    <button onclick="switchTab('gastos')" id="nav-gastos"
-                        class="w-full py-3 flex flex-col items-center gap-1 tab-inactive transition-colors">
-
-                        <span class="material-icons text-lg">account_balance</span>
-
-                        <span class="text-[10px] font-bold tracking-wider">GASTOS</span>
-
-                    </button>
-
-                </div>
-
+        <!-- GROUP: FINANZAS (Recibos externos + Gastos) -->
+        <div class="nav-group" data-group="finanzas">
+            <button type="button" class="nav-row" data-toggle>
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1.4 1.3-2.5 3-2.5s3 1.1 3 2.5-1.3 2-3 2.5-3 1.1-3 2.5 1.3 2.5 3 2.5 3-1.1 3-2.5"/></svg>
+                Finanzas
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="sub-wrap">
+                <button type="button" class="sub-row" data-leaf="corapsa">Recibos externos</button>
+                <button type="button" class="sub-row" data-leaf="gastos">Gastos</button>
             </div>
+        </div>
 
-            <!-- GROUP: GESTIÓN (Planilla + Clientes) -->
-            <div class="w-full border-t border-brand-800 pt-2">
-
-                <button onclick="toggleNavGroup('gestion')" id="nav-group-gestion"
-                    class="w-full py-3 flex flex-col items-center gap-1 nav-parent tab-inactive transition-colors">
-
-                    <span class="material-icons">folder_shared</span>
-
-                    <span class="text-[10px] font-bold tracking-wider">GESTIÓN</span>
-
-                    <span id="nav-group-gestion-caret"
-                        class="material-icons text-sm transition-transform">expand_more</span>
-
-                </button>
-
-                <div id="nav-group-gestion-items" class="hidden flex-col w-full">
-
-                    <button onclick="switchTab('planilla')" id="nav-planilla"
-                        class="w-full py-3 flex flex-col items-center gap-1 tab-inactive transition-colors">
-
-                        <span class="material-icons text-lg">engineering</span>
-
-                        <span class="text-[10px] font-bold tracking-wider">PLANILLA</span>
-
-                    </button>
-
-                    <button onclick="switchTab('clientes')" id="nav-clientes"
-                        class="w-full py-3 flex flex-col items-center gap-1 tab-inactive transition-colors">
-
-                        <span class="material-icons text-lg">people</span>
-
-                        <span class="text-[10px] font-bold tracking-wider">CLIENTES</span>
-
-                    </button>
-
-                </div>
-
+        <!-- GROUP: GESTIÓN (Planilla + Clientes) -->
+        <div class="nav-group" data-group="gestion">
+            <button type="button" class="nav-row" data-toggle>
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1h.1a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+                Gestión
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="sub-wrap">
+                <button type="button" class="sub-row" data-leaf="planilla">Planilla</button>
+                <button type="button" class="sub-row" data-leaf="clientes">Clientes</button>
             </div>
+        </div>
 
+        <div class="sidebar__footer">
+            <div class="sidebar__avatar">TP</div>
+            <div>
+                <p class="sidebar__footer-name">Turno Principal</p>
+                <p class="sidebar__footer-role">Operador</p>
+            </div>
         </div>
 
     </nav>
@@ -1235,8 +1172,6 @@
             <div>
 
                 <h1 class="text-xl font-bold text-gray-800 tracking-tight" id="header-title">Terminal de Pesaje</h1>
-
-                <p class="text-xs text-gray-500">Operador: Turno Principal</p>
 
             </div>
 
@@ -2356,6 +2291,7 @@
     <script src="js/globals.js" defer></script>
     <script src="js/api.js" defer></script>
     <script src="js/ui.js" defer></script>
+    <script src="js/sidebar.js" defer></script>
     <script src="js/clientes.js" defer></script>
     <script src="js/pesaje.js" defer></script>
     <script src="js/reportes.js" defer></script>
