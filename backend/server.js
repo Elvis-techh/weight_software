@@ -425,6 +425,7 @@ function mapClient(row) {
         apellido: row.apellido || '',
         telefono: row.telefono || '',
         ubicacion: row.ubicacion || '',
+        identidad: row.identidad || '',
         precioFletePropio: unidad === 'quintal'
             ? roundToNearestWhole(precioFletePropioRaw)
             : precioFletePropioRaw,
@@ -449,7 +450,10 @@ function mapTruck(row) {
         pesoTara: row.peso_tara == null ? null : Number(row.peso_tara),
         precioAplicado: Number(row.precio_aplicado || 0),
         unidad: row.unidad === 'quintal' ? 'quintal' : 'tonelada',
-        casualSnapshot: safeJsonParse(row.casual_snapshot)
+        casualSnapshot: safeJsonParse(row.casual_snapshot),
+        fechaEntrada: row.fecha_entrada || '',
+        horaEntrada: row.hora_entrada || '',
+        identidadSnapshot: row.identidad_snapshot || ''
     };
 }
 
@@ -458,9 +462,13 @@ function mapTransaction(row) {
         id: row.id,
         fecha: row.fecha,
         hora: row.hora,
+        fechaEntrada: row.fecha_entrada || '',
+        horaEntrada: row.hora_entrada || '',
         placa: row.placa,
         conductor: row.conductor,
         clienteNombre: row.cliente_nombre,
+        identidad: row.identidad || '',
+        numeroBoleta: row.numero_boleta == null ? null : Number(row.numero_boleta),
         pesoBruto: Number(row.peso_bruto || 0),
         pesoTara: Number(row.peso_tara || 0),
         neto: Number(row.neto || 0),
@@ -930,11 +938,13 @@ app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
 app.post('/api/clientes', asyncHandler(async (req, res) => {
     const unidad = asUnit(req.body?.unidad);
     const pricing = buildClientPricing(req.body, unidad);
+    const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
     const client = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { field: 'El apellido', maxLength: 120 }),
         telefono: asText(req.body?.telefono, { field: 'El teléfono', maxLength: 40 }),
         ubicacion: asText(req.body?.ubicacion, { field: 'La ubicación', maxLength: 200 }),
+        identidad: asText(req.body?.identidad, { field: 'La identidad', maxLength: 40 }),
         unidad,
         ...pricing
     };
@@ -942,17 +952,18 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
     const cliente = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO clientes (
-                nombre, apellido, telefono, ubicacion,
+                nombre, apellido, telefono, ubicacion, identidad,
                 precio_flete_propio, precio_flete_cliente,
                 precio_tonelada_propio, precio_tonelada_cliente,
                 unidad
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             client.nombre,
             client.apellido,
             client.telefono,
             client.ubicacion,
+            client.identidad,
             client.precioFletePropio,
             client.precioFleteCliente,
             client.precioToneladaPropio,
@@ -960,7 +971,7 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
             client.unidad
         ]);
         const row = await db.get('SELECT * FROM clientes WHERE id = ?', [result.lastID]);
-        await logAudit({ entity: 'cliente', entityId: result.lastID, action: 'crear', details: client });
+        await logAudit({ entity: 'cliente', entityId: result.lastID, action: 'crear', justification: justificacion, details: client });
         return mapClient(row);
     });
     sendData(res, { cliente }, 201);
@@ -976,6 +987,7 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
         apellido: asText(req.body?.apellido, { field: 'El apellido', maxLength: 120 }),
         telefono: asText(req.body?.telefono, { field: 'El teléfono', maxLength: 40 }),
         ubicacion: asText(req.body?.ubicacion, { field: 'La ubicación', maxLength: 200 }),
+        identidad: asText(req.body?.identidad, { field: 'La identidad', maxLength: 40 }),
         unidad,
         ...pricing
     };
@@ -983,7 +995,7 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
     const cliente = await withTransaction(async () => {
         const result = await db.run(`
             UPDATE clientes
-            SET nombre = ?, apellido = ?, telefono = ?, ubicacion = ?,
+            SET nombre = ?, apellido = ?, telefono = ?, ubicacion = ?, identidad = ?,
                 precio_flete_propio = ?, precio_flete_cliente = ?,
                 precio_tonelada_propio = ?, precio_tonelada_cliente = ?,
                 unidad = ?, updated_at = CURRENT_TIMESTAMP
@@ -993,6 +1005,7 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
             client.apellido,
             client.telefono,
             client.ubicacion,
+            client.identidad,
             client.precioFletePropio,
             client.precioFleteCliente,
             client.precioToneladaPropio,
@@ -1043,8 +1056,15 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
         throw new HttpError(400, 'Debe registrar al menos un peso.', 'VALIDATION_ERROR');
     }
 
+    // Captured client-side (same getLocalIsoDate()/getLocalTimeString() pair
+    // used at finalize) so entrada and salida timestamps are both local time,
+    // rather than mixing in SQLite's UTC-based CURRENT_TIMESTAMP.
+    const fechaEntrada = asIsoDate(req.body?.fecha, 'La fecha');
+    const horaEntrada = asText(req.body?.hora, { required: true, field: 'La hora', maxLength: 20 });
+
     let clienteId;
     let clienteNombreSnapshot;
+    let identidadSnapshot;
     let casualSnapshot = null;
     let precioAplicado;
     let unidad;
@@ -1053,6 +1073,7 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
         const snapshot = req.body?.casualSnapshot || {};
         clienteId = 'casual';
         clienteNombreSnapshot = asText(snapshot.nombre, { required: true, field: 'El nombre casual', maxLength: 200 });
+        identidadSnapshot = asText(snapshot.identidad, { field: 'La identidad casual', maxLength: 40 });
         unidad = asUnit(snapshot.unidad);
         const ownPrice = asNumber(snapshot.precioFletePropio, { required: true, min: 0, field: 'El precio casual' });
         const clientPrice = asNumber(snapshot.precioFleteCliente, { required: true, min: 0, field: 'El precio casual' });
@@ -1072,6 +1093,7 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
         if (!clientRow) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
         const client = mapClient(clientRow);
         clienteNombreSnapshot = `${client.nombre} ${client.apellido}`.trim();
+        identidadSnapshot = client.identidad;
         unidad = client.unidad;
         precioAplicado = flete === 'Propio' ? client.precioFletePropio : client.precioFleteCliente;
     }
@@ -1084,8 +1106,9 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
         await db.run(`
             INSERT INTO camiones_en_patio (
                 id, cliente_id, cliente_nombre_snapshot, placa, conductor, flete,
-                peso_bruto, peso_tara, precio_aplicado, unidad, casual_snapshot
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                peso_bruto, peso_tara, precio_aplicado, unidad, casual_snapshot,
+                fecha_entrada, hora_entrada, identidad_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             id,
             String(clienteId),
@@ -1097,7 +1120,10 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
             pesoTara,
             precioAplicado,
             unidad,
-            casualSnapshot ? JSON.stringify(casualSnapshot) : null
+            casualSnapshot ? JSON.stringify(casualSnapshot) : null,
+            fechaEntrada,
+            horaEntrada,
+            identidadSnapshot
         ]);
 
         const row = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
@@ -1179,14 +1205,20 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         const cantidadFacturable = calculateBillableQuantity(neto, unidad);
         const total = cantidadFacturable * Number(truck.precio_aplicado || 0);
 
+        const nextBoletaRow = await db.get('SELECT COALESCE(MAX(numero_boleta), 0) + 1 AS next FROM transacciones');
+        const numeroBoleta = Number(nextBoletaRow.next);
+
         const insertResult = await db.run(`
             INSERT INTO transacciones (
-                fecha, hora, placa, conductor, cliente_nombre,
-                peso_bruto, peso_tara, neto, precio_aplicado, total, unidad
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fecha, hora, fecha_entrada, hora_entrada, placa, conductor, cliente_nombre, identidad,
+                numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
-            fecha, hora, truck.placa, truck.conductor,
+            fecha, hora, truck.fecha_entrada || fecha, truck.hora_entrada || hora,
+            truck.placa, truck.conductor,
             truck.cliente_nombre_snapshot || 'Cliente no disponible',
+            truck.identidad_snapshot || '',
+            numeroBoleta,
             truck.peso_bruto, truck.peso_tara, neto, truck.precio_aplicado, total, unidad
         ]);
         const transactionId = insertResult.lastID;
@@ -1228,6 +1260,8 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const pesoBruto = asNumber(req.body?.pesoBruto, { required: true, min: 0.01, field: 'El peso bruto' });
     const pesoTara = asNumber(req.body?.pesoTara, { required: true, min: 0.01, field: 'El peso tara' });
     const precioAplicado = asNumber(req.body?.precioAplicado, { required: true, min: 0, field: 'El precio aplicado' });
+    const numeroBoletaRaw = asNumber(req.body?.numeroBoleta, { required: true, min: 1, field: 'El número de boleta' });
+    if (!Number.isInteger(numeroBoletaRaw)) throw new HttpError(400, 'El número de boleta no es válido.', 'VALIDATION_ERROR');
 
     const neto = Math.abs(pesoBruto - pesoTara);
     if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
@@ -1237,9 +1271,10 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
         const result = await db.run(`
             UPDATE transacciones
             SET fecha = ?, hora = ?, placa = ?, conductor = ?, cliente_nombre = ?,
-                peso_bruto = ?, peso_tara = ?, neto = ?, precio_aplicado = ?, total = ?, unidad = ?
+                peso_bruto = ?, peso_tara = ?, neto = ?, precio_aplicado = ?, total = ?, unidad = ?,
+                numero_boleta = ?
             WHERE id = ?
-        `, [fecha, hora, placa, conductor, clienteNombre, pesoBruto, pesoTara, neto, precioAplicado, total, unidad, id]);
+        `, [fecha, hora, placa, conductor, clienteNombre, pesoBruto, pesoTara, neto, precioAplicado, total, unidad, numeroBoletaRaw, id]);
         if (!result.changes) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
 
         const row = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);

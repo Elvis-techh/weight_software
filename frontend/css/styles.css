@@ -23,24 +23,6 @@ body {
     background: #94a3b8;
 }
 
-@media print {
-    body * {
-        visibility: hidden;
-    }
-
-    #print-section,
-    #print-section * {
-        visibility: visible;
-    }
-
-    #print-section {
-        display: block !important;
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-    }
-}
 button[data-busy="true"] {
     opacity: 0.65;
     cursor: wait;

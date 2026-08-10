@@ -67,6 +67,11 @@
                         <input type="text" id="modal-ubicacion"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
                     </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Identidad (Opcional)</label>
+                        <input type="text" id="modal-identidad"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none">
+                    </div>
                     <div class="col-span-2 sm:col-span-1">
                         <label class="block text-xs font-bold text-gray-700 mb-1">Unidad de Medida *</label>
 
@@ -114,22 +119,35 @@
 
                 <div class="flex gap-4 p-4 bg-gray-50 border border-gray-200 rounded-lg mt-2">
                     <div class="flex-1">
-                        <label id="modal-precio-propio-label" class="block text-xs font-bold text-gray-600 mb-1">Flete
-                            NUESTRO (HNL / Ton) *</label>
+                        <div class="flex items-center justify-between mb-1">
+                            <label id="modal-precio-propio-label" class="block text-xs font-bold text-gray-600">Flete
+                                NUESTRO (HNL / Ton) *</label>
+                            <button type="button" id="modal-precio-propio-override-btn"
+                                onclick="toggleQuintalPriceOverride('propio')"
+                                class="hidden text-[10px] font-bold text-blue-600 hover:text-blue-800 items-center gap-1">
+                                <span class="material-icons text-[13px]">edit</span>Editar manualmente</button>
+                        </div>
                         <input type="text" id="modal-precio-propio" oninput="formatDecimalThousandsInput(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
                             required>
                     </div>
                     <div class="flex-1">
-                        <label id="modal-precio-cliente-label" class="block text-xs font-bold text-gray-600 mb-1">Flete
-                            CLIENTE (HNL / Ton) *</label>
+                        <div class="flex items-center justify-between mb-1">
+                            <label id="modal-precio-cliente-label" class="block text-xs font-bold text-gray-600">Flete
+                                CLIENTE (HNL / Ton) *</label>
+                            <button type="button" id="modal-precio-cliente-override-btn"
+                                onclick="toggleQuintalPriceOverride('cliente')"
+                                class="hidden text-[10px] font-bold text-blue-600 hover:text-blue-800 items-center gap-1">
+                                <span class="material-icons text-[13px]">edit</span>Editar manualmente</button>
+                        </div>
                         <input type="text" id="modal-precio-cliente" oninput="formatDecimalThousandsInput(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
                             required>
                     </div>
                 </div>
 
-                <!-- NEW: Justification box (Hidden by default, shown only when editing) -->
+                <!-- Justification box: shown when editing an existing client, or when a calculated
+                     quintal price above was overridden manually -->
                 <div id="modal-justificacion-container"
                     class="hidden flex-col gap-1 mt-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <label class="text-xs font-bold text-yellow-800">Justificación del Cambio *</label>
@@ -619,6 +637,11 @@
                         <label class="block text-xs font-bold text-gray-600 mb-1">Conductor</label>
                         <input type="text" id="reporte-conductor"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">No. Boleta *</label>
+                        <input type="text" id="reporte-numero-boleta" inputmode="numeric"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-mono">
                     </div>
                 </div>
 
@@ -1511,168 +1534,11 @@
 
 
             <!-- VIEW 2: OVERVIEW / RECONCILIACIÓN -->
-            <main id="view-overview" class="absolute inset-0 p-6 hidden flex-col gap-5 overflow-auto bg-slate-50">
-                <div class="flex flex-wrap justify-between items-end gap-4 shrink-0">
-                    <div>
-                        <h2 class="text-2xl font-black text-slate-900">Overview Financiero y Conciliación</h2>
-                        <p class="text-sm text-slate-600">Compare producto comprado, pagos de Corapsa, gastos y
-                            planilla.</p>
-                    </div>
-                    <div class="flex flex-wrap items-end gap-3 bg-white border rounded-xl p-3 shadow-sm">
-                        <div><label class="block text-[10px] uppercase font-bold text-gray-500 mb-1">Desde</label><input
-                                type="date" id="overview-filter-start" onchange="fetchOverview()"
-                                class="border rounded-lg px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-400 outline-none">
-                        </div>
-                        <div><label class="block text-[10px] uppercase font-bold text-gray-500 mb-1">Hasta</label><input
-                                type="date" id="overview-filter-end" onchange="fetchOverview()"
-                                class="border rounded-lg px-3 py-2 font-bold focus:ring-2 focus:ring-indigo-400 outline-none">
-                        </div>
-                        <button type="button" onclick="irMesActualOverview()"
-                            class="h-10 px-4 rounded-lg bg-slate-100 text-slate-700 font-bold hover:bg-slate-200">Mes
-                            actual</button>
-                        <button type="button" onclick="abrirPagoCorapsaModal()"
-                            class="h-10 px-4 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow flex items-center gap-2"><span
-                                class="material-icons text-[19px]">add_card</span> Registrar Venta / Pago Recibido</button>
-                    </div>
-                </div>
-
-                <div id="overview-reconciliation-status"
-                    class="rounded-xl border bg-amber-50 border-amber-200 text-amber-900 px-4 py-3"></div>
-
-                <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-                    <article class="bg-white border rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-blue-700">Compra Acopio</p>
-                        <p id="overview-inhouse-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
-                        </p>
-                        <p id="overview-inhouse-money" class="mt-1 font-mono font-bold text-blue-700">L 0.00</p>
-                    </article>
-                    <article class="bg-white border rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-violet-700">Compra Directo</p>
-                        <p id="overview-direct-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
-                        </p>
-                        <p id="overview-direct-money" class="mt-1 font-mono font-bold text-violet-700">L 0.00</p>
-                    </article>
-                    <article class="bg-white border-2 border-slate-300 rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-slate-700">Compra Total de Palma</p>
-                        <p id="overview-tracked-tons" class="mt-2 text-2xl font-mono font-black text-slate-900">0.00 TON
-                        </p>
-                        <p id="overview-supplier-cost" class="mt-1 font-mono font-bold text-slate-700">L 0.00</p>
-                    </article>
-                    <article class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-indigo-700">Venta Total de Palma</p>
-                        <p id="overview-corapsa-tons" class="mt-2 text-2xl font-mono font-black text-indigo-950">0.00
-                            TON</p>
-                        <p id="overview-corapsa-money" class="mt-1 font-mono font-bold text-emerald-700">L 0.00</p>
-                    </article>
-                    <article class="bg-white border rounded-2xl p-4 shadow-sm">
-                        <p class="text-[11px] uppercase font-black text-gray-600">Diferencia de Básculas</p>
-                        <p id="overview-ton-difference" class="mt-2 text-2xl font-mono font-black">0.00 TON</p>
-                        <p class="mt-1 text-[10px] text-gray-500">Venta Total de Palma − Compra Total de Palma</p>
-                    </article>
-                </section>
-
-                <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-                    <article class="bg-white border rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-emerald-700">Ganancia Bruta</p>
-                        <p id="overview-gross-margin" class="mt-2 text-xl font-mono font-black">L 0.00</p>
-                        <p class="text-[10px] text-gray-500 mt-1">Venta Total de Palma − Compra Total de Palma</p>
-                    </article>
-                    <article class="bg-white border rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-red-700">Gastos</p>
-                        <p id="overview-expenses" class="mt-2 text-xl font-mono font-black text-red-700">L 0.00</p>
-                    </article>
-                    <article class="bg-white border rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-orange-700">Planilla</p>
-                        <p id="overview-payroll" class="mt-2 text-xl font-mono font-black text-orange-700">L 0.00</p>
-                    </article>
-                    <article class="bg-white border rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-slate-700">Gastos Operativos</p>
-                        <p id="overview-operating-costs" class="mt-2 text-xl font-mono font-black text-slate-800">L 0.00
-                        </p>
-                        <p class="text-[10px] text-gray-500 mt-1">Planilla + Gastos</p>
-                    </article>
-                    <article class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4">
-                        <p class="text-[11px] uppercase font-black text-emerald-800">Resultado del Período</p>
-                        <p id="overview-net-profit" class="mt-2 text-2xl font-mono font-black">L 0.00</p>
-                    </article>
-                </section>
-
-                <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                    <div class="bg-white rounded-2xl border p-5 xl:col-span-1">
-                        <h3 class="font-black text-slate-900">Fórmulas utilizadas</h3>
-                        <div class="mt-4 space-y-4 text-sm">
-                            <div>
-                                <p class="font-bold text-gray-700">1. Compra Total de Palma</p>
-                                <p class="text-xs text-gray-500">Compra Acopio + Compra Directo</p>
-                                <p id="overview-formula-suppliers" class="font-mono font-bold mt-1">L 0.00</p>
-                            </div>
-                            <div>
-                                <p class="font-bold text-gray-700">2. Ganancia Bruta</p>
-                                <p class="text-xs text-gray-500">Venta Total de Palma − Compra Total de Palma</p>
-                                <p id="overview-formula-margin" class="font-mono font-bold mt-1">L 0.00</p>
-                            </div>
-                            <div>
-                                <p class="font-bold text-gray-700">3. Resultado del Período (Resultado de la Semana)</p>
-                                <p class="text-xs text-gray-500">Ganancia Bruta − Gastos Operativos</p>
-                                <p id="overview-formula-profit" class="font-mono font-bold mt-1">L 0.00</p>
-                            </div>
-                        </div>
-                        <p class="mt-5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                            Esta es la primera versión de la lógica financiera. Las fórmulas quedan centralizadas para
-                            poder ajustarlas cuando confirme el proceso contable real.</p>
-                    </div>
-                    <div class="bg-white rounded-2xl border overflow-hidden xl:col-span-2 min-h-[310px]">
-                        <div class="px-5 py-4 border-b bg-indigo-50">
-                            <h3 class="font-black text-indigo-950">Ventas / Estados de Cuenta (Venta Total de Palma)</h3>
-                            <p class="text-xs text-indigo-700 mt-1">Solo se suman registros cuyo período completo está
-                                dentro de las fechas seleccionadas.</p>
-                        </div>
-                        <div class="overflow-auto max-h-[360px]">
-                            <table class="w-full min-w-[1050px] text-sm">
-                                <thead
-                                    class="sticky top-0 bg-indigo-100 text-indigo-950 text-[10px] uppercase tracking-wide z-10">
-                                    <tr>
-                                        <th class="p-3 text-left">Período</th>
-                                        <th class="p-3 text-left">Fecha pago</th>
-                                        <th class="p-3 text-left">Destino</th>
-                                        <th class="p-3 text-left">Referencia</th>
-                                        <th class="p-3 text-right">Toneladas</th>
-                                        <th class="p-3 text-right">Monto</th>
-                                        <th class="p-3 text-left">Notas</th>
-                                        <th class="p-3 text-center">Archivo</th>
-                                        <th class="p-3 text-center">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="overview-payments-body"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="bg-white rounded-2xl border overflow-hidden shrink-0">
-                    <div class="px-5 py-4 border-b bg-slate-50">
-                        <h3 class="font-black text-slate-900">Desglose por Empresa Destino</h3>
-                        <p class="text-xs text-slate-600 mt-1">Compara, por empresa, lo que le entregamos vía Recibos
-                            Externos contra lo que nos reconoció y pagó. No incluye Compra Acopio, porque el peso en
-                            báscula propia todavía no está asignado a ninguna empresa destino.</p>
-                    </div>
-                    <div class="overflow-auto">
-                        <table class="w-full min-w-[900px] text-sm">
-                            <thead class="bg-slate-100 text-slate-700 text-[10px] uppercase tracking-wide">
-                                <tr>
-                                    <th class="p-3 text-left">Destino</th>
-                                    <th class="p-3 text-right">Compra Directo (Ton)</th>
-                                    <th class="p-3 text-right">Compra Directo (L)</th>
-                                    <th class="p-3 text-right">Venta (Ton)</th>
-                                    <th class="p-3 text-right">Venta (L)</th>
-                                    <th class="p-3 text-right">Diferencia (Ton)</th>
-                                    <th class="p-3 text-right">Margen (L)</th>
-                                </tr>
-                            </thead>
-                            <tbody id="overview-destino-body"></tbody>
-                        </table>
-                    </div>
-                </section>
+            <main id="view-overview" class="absolute inset-0 p-6 hidden flex-col items-center justify-center gap-4 overflow-auto bg-slate-50">
+                <span class="material-icons text-6xl text-slate-300">build_circle</span>
+                <h2 class="text-2xl font-black text-slate-700">Bajo Mantenimiento</h2>
+                <p class="text-sm text-slate-500 max-w-md text-center">Esta sección está temporalmente deshabilitada
+                    mientras se revisan las cifras. Vuelva a intentarlo más adelante.</p>
             </main>
 
             <!-- VIEW 3: CLIENTES -->
@@ -2276,16 +2142,6 @@
     </div>
 
 
-
-    <!-- INVISIBLE PRINT SECTION -->
-
-    <div id="print-section" class="hidden p-8 bg-white text-black font-sans">
-
-        <h2 class="text-2xl font-bold border-b-2 pb-2 mb-4">RECIBO DE BÁSCULA</h2>
-
-        <div id="print-content" class="text-lg flex flex-col gap-2"></div>
-
-    </div>
 
     <!-- EXTERNAL JS MODULES -->
     <script src="js/globals.js" defer></script>

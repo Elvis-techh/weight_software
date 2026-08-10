@@ -1,11 +1,16 @@
 function normalizarTransaccion(record = {}) {
+    const numeroBoleta = record.numeroBoleta ?? record.numero_boleta;
     return {
         id: record.id,
         fecha: String(record.fecha || ''),
         hora: String(record.hora || ''),
+        fechaEntrada: String(record.fechaEntrada ?? record.fecha_entrada ?? ''),
+        horaEntrada: String(record.horaEntrada ?? record.hora_entrada ?? ''),
         placa: String(record.placa || 'S/P'),
         conductor: String(record.conductor || 'Desconocido'),
         clienteNombre: String(record.clienteNombre ?? record.cliente_nombre ?? ''),
+        identidad: String(record.identidad || ''),
+        numeroBoleta: numeroBoleta == null ? null : Number(numeroBoleta),
         pesoBruto: toFiniteNumber(record.pesoBruto ?? record.peso_bruto),
         pesoTara: toFiniteNumber(record.pesoTara ?? record.peso_tara),
         neto: toFiniteNumber(record.neto),
@@ -77,28 +82,57 @@ function updateReportesTab() {
     }).join('');
 }
 
-function imprimirRecibo(id) {
+function formatFechaHoraForReceipt(fecha, hora) {
+    const datePart = fecha ? formatDateForDisplay(fecha) : '';
+    const timePart = String(hora || '').trim();
+    return [datePart, timePart].filter(Boolean).join(' ');
+}
+
+async function imprimirRecibo(id) {
     const transaction = transaccionesData.find(item => sameRecordId(item.id, id));
     if (!transaction) return mostrarNotificacion('Transacción no encontrada.', 'error');
 
-    const unitLabel = transaction.unidad === 'quintal' ? 'Quintal' : 'Tonelada';
-    const quantity = calculateBillableQuantity(transaction.neto, transaction.unidad);
+    if (typeof window.electronAPI?.printReceipt !== 'function') {
+        return mostrarNotificacion(
+            'La impresión de boletas solo está disponible dentro de la aplicación de escritorio.',
+            'error'
+        );
+    }
 
-    document.getElementById('print-content').innerHTML = `
-        <p><strong>Fecha/Hora:</strong> ${escapeHtml(formatDateForDisplay(transaction.fecha))} ${escapeHtml(transaction.hora)}</p>
-        <p><strong>Productor:</strong> ${escapeHtml(transaction.clienteNombre)}</p>
-        <p><strong>Vehículo/Chofer:</strong> ${escapeHtml(transaction.placa)} / ${escapeHtml(transaction.conductor)}</p>
-        <hr class="my-2">
-        <p><strong>Peso Bruto:</strong> ${transaction.pesoBruto.toLocaleString('en-US')} LBS</p>
-        <p><strong>Peso Tara:</strong> ${transaction.pesoTara.toLocaleString('en-US')} LBS</p>
-        <p><strong>Peso Neto:</strong> ${transaction.neto.toLocaleString('en-US')} LBS</p>
-        <p><strong>${unitLabel}s:</strong> ${quantity.toFixed(2)}</p>
-        <hr class="my-2">
-        <p><strong>Precio Aplicado:</strong> L ${formatMoney(transaction.precioAplicado)} / ${unitLabel}</p>
-        <p class="text-xl"><strong>Total Pagado:</strong> L ${formatMoney(transaction.total)}</p>
-    `;
+    const tm = calculateMetricTons(transaction.neto, { truncate: true });
+    // The printed ticket always bills per metric ton (its "Precio / TM" column isn't
+    // unit-aware), so the rate is derived from the actual total instead of reusing
+    // precioAplicado directly, which is only a per-TM figure when unidad === 'tonelada'.
+    const precioPorTM = tm > 0 ? transaction.total / tm : 0;
 
-    window.print();
+    const payload = {
+        numero: transaction.numeroBoleta ?? '',
+        fechaDocumento: formatDateForDisplay(transaction.fecha),
+        nombre: transaction.conductor,
+        identidad: transaction.identidad,
+        placa: transaction.placa,
+        fechaEntrada: formatFechaHoraForReceipt(transaction.fechaEntrada, transaction.horaEntrada),
+        fechaSalida: formatFechaHoraForReceipt(transaction.fecha, transaction.hora),
+        cliente: transaction.clienteNombre,
+        bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb`,
+        tara: `${transaction.pesoTara.toLocaleString('en-US')} lb`,
+        neto: `${transaction.neto.toLocaleString('en-US')} lb`,
+        tm: `${tm.toFixed(2)} TM`,
+        precioTM: `${formatMoney(precioPorTM)} Lps`,
+        totalLps: `${formatMoney(transaction.total)} Lps`
+    };
+
+    try {
+        const result = await window.electronAPI.printReceipt(payload);
+        // No printer was available, so main.js saved the receipt as a PDF instead
+        // of printing it — let the operator know where to find it.
+        if (result?.mode === 'pdf') {
+            mostrarNotificacion(`No se encontró una impresora. Boleta guardada como PDF en: ${result.path}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error al imprimir la boleta:', error);
+        mostrarNotificacion(error.message || 'No se pudo imprimir la boleta.', 'error');
+    }
 }
 
 function abrirReporteModal(id) {
@@ -110,6 +144,7 @@ function abrirReporteModal(id) {
     document.getElementById('reporte-hora').value = transaction.hora;
     document.getElementById('reporte-placa').value = transaction.placa === 'S/P' ? '' : transaction.placa;
     document.getElementById('reporte-conductor').value = transaction.conductor === 'Desconocido' ? '' : transaction.conductor;
+    document.getElementById('reporte-numero-boleta').value = transaction.numeroBoleta ?? '';
     document.getElementById('reporte-cliente').value = transaction.clienteNombre;
     document.getElementById('reporte-unidad').value = transaction.unidad;
     document.getElementById('reporte-peso-bruto').value = formatNumberForInput(transaction.pesoBruto, 0);
@@ -149,6 +184,7 @@ async function guardarReporteEdit() {
         hora: document.getElementById('reporte-hora').value.trim(),
         placa: document.getElementById('reporte-placa').value.trim().toUpperCase(),
         conductor: document.getElementById('reporte-conductor').value.trim(),
+        numeroBoleta: parseFormattedNumber(document.getElementById('reporte-numero-boleta').value),
         clienteNombre: document.getElementById('reporte-cliente').value.trim(),
         unidad: document.getElementById('reporte-unidad').value,
         pesoBruto: parseFormattedNumber(document.getElementById('reporte-peso-bruto').value),
@@ -159,6 +195,7 @@ async function guardarReporteEdit() {
 
     if (!payload.fecha || !payload.hora) return mostrarNotificacion('Complete la fecha y la hora.', 'error');
     if (!payload.clienteNombre) return mostrarNotificacion('El nombre del cliente es obligatorio.', 'error');
+    if (!Number.isInteger(payload.numeroBoleta) || payload.numeroBoleta <= 0) return mostrarNotificacion('Ingrese un número de boleta válido.', 'error');
     if (!Number.isFinite(payload.pesoBruto) || payload.pesoBruto <= 0) return mostrarNotificacion('Ingrese un peso bruto válido.', 'error');
     if (!Number.isFinite(payload.pesoTara) || payload.pesoTara <= 0) return mostrarNotificacion('Ingrese un peso tara válido.', 'error');
     if (Math.abs(payload.pesoBruto - payload.pesoTara) <= 0) return mostrarNotificacion('El peso neto debe ser mayor que cero.', 'error');

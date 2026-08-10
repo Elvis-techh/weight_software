@@ -33,7 +33,10 @@ function normalizarCamionPatio(record = {}) {
         pesoTara: rawPesoTara == null ? null : toFiniteNumber(rawPesoTara),
         precioAplicado: toFiniteNumber(record.precioAplicado ?? record.precio_aplicado),
         unidad: record.unidad === 'quintal' ? 'quintal' : 'tonelada',
-        casualSnapshot
+        casualSnapshot,
+        fechaEntrada: String(record.fechaEntrada ?? record.fecha_entrada ?? ''),
+        horaEntrada: String(record.horaEntrada ?? record.hora_entrada ?? ''),
+        identidadSnapshot: String(record.identidadSnapshot ?? record.identidad_snapshot ?? '')
     };
 }
 
@@ -232,7 +235,9 @@ async function crearNuevaTransaccion(tipoPeso, pesoValue) {
         placa: document.getElementById('placa-input').value.trim().toUpperCase() || 'S/P',
         conductor: document.getElementById('conductor-input').value.trim() || 'Desconocido',
         pesoBruto: tipoPeso === 'bruto' ? pesoValue : null,
-        pesoTara: tipoPeso === 'tara' ? pesoValue : null
+        pesoTara: tipoPeso === 'tara' ? pesoValue : null,
+        fecha: getLocalIsoDate(),
+        hora: getLocalTimeString()
     };
 
     try {

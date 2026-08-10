@@ -306,15 +306,27 @@ async function initializeDB() {
     await ensureColumn(db, 'clientes', 'precio_tonelada_cliente', 'REAL');
     await ensureColumn(db, 'clientes', 'created_at', 'TEXT');
     await ensureColumn(db, 'clientes', 'updated_at', 'TEXT');
+    await ensureColumn(db, 'clientes', 'identidad', "TEXT NOT NULL DEFAULT ''");
 
     await ensureColumn(db, 'camiones_en_patio', 'cliente_nombre_snapshot', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'camiones_en_patio', 'precio_aplicado', 'REAL NOT NULL DEFAULT 0');
     await ensureColumn(db, 'camiones_en_patio', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'camiones_en_patio', 'casual_snapshot', 'TEXT');
     await ensureColumn(db, 'camiones_en_patio', 'created_at', 'TEXT');
+    // Captured when the truck joins the weigh-in queue, so the printed receipt
+    // can show both Fecha Entrada and Fecha Salida (the latter is set at finalize).
+    await ensureColumn(db, 'camiones_en_patio', 'fecha_entrada', 'TEXT');
+    await ensureColumn(db, 'camiones_en_patio', 'hora_entrada', 'TEXT');
+    await ensureColumn(db, 'camiones_en_patio', 'identidad_snapshot', "TEXT NOT NULL DEFAULT ''");
 
     await ensureColumn(db, 'transacciones', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'transacciones', 'created_at', 'TEXT');
+    await ensureColumn(db, 'transacciones', 'fecha_entrada', 'TEXT');
+    await ensureColumn(db, 'transacciones', 'hora_entrada', 'TEXT');
+    await ensureColumn(db, 'transacciones', 'identidad', "TEXT NOT NULL DEFAULT ''");
+    // Printed ticket number, independent of the internal auto-increment id so it
+    // can be corrected/seeded to match a physical ticket book if needed.
+    await ensureColumn(db, 'transacciones', 'numero_boleta', 'INTEGER');
 
     await ensureColumn(db, 'corapsa', 'destino', "TEXT NOT NULL DEFAULT 'CORAPSA'");
     await ensureColumn(db, 'corapsa', 'a_nombre_de', "TEXT NOT NULL DEFAULT ''");

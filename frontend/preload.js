@@ -43,5 +43,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     testScaleConnection(settings) {
         return ipcRenderer.invoke('scale:test-connection', settings);
+    },
+
+    printReceipt(data) {
+        return ipcRenderer.invoke('receipt:print', data);
     }
 });

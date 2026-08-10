@@ -1,4 +1,4 @@
-const { dialog } = require('electron');
+const { dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
 const { app, BrowserWindow, ipcMain } = require('electron');
@@ -109,6 +109,96 @@ function createWindow() {
     });
 }
 
+function waitForLoad(win) {
+    return new Promise((resolve, reject) => {
+        win.webContents.once('did-finish-load', () => resolve());
+        win.webContents.once('did-fail-load', (_event, _errorCode, errorDescription) => {
+            reject(new Error(errorDescription || 'No se pudo cargar la boleta para imprimir.'));
+        });
+    });
+}
+
+// Resolves once the print dialog is dismissed, whether the user actually
+// printed or just closed it — a cancel isn't a failure worth surfacing.
+// Rejects only when printing itself can't happen (e.g. no printer/CUPS
+// destination configured), so the caller can fall back to a saved PDF.
+function printViaDialog(win) {
+    return new Promise((resolve, reject) => {
+        win.webContents.print(
+            { silent: false, printBackground: true, pageSize: 'A5' },
+            (success, failureReason) => {
+                if (success || failureReason === 'cancelled') {
+                    resolve();
+                } else {
+                    reject(new Error(failureReason || 'No se pudo imprimir la boleta.'));
+                }
+            }
+        );
+    });
+}
+
+// Used when there's no printer available to print to (common on a fresh Linux
+// dev box with no CUPS destination configured, but can happen anywhere) so the
+// operator still gets the receipt instead of a hard failure.
+async function exportReceiptAsPdf(win, data) {
+    const pdfBuffer = await win.webContents.printToPDF({ pageSize: 'A5', printBackground: true });
+    const numero = String(data?.numero || '').trim().replace(/[^a-zA-Z0-9-]/g, '') || Date.now();
+    const dir = path.join(app.getPath('documents'), 'Boletas Bascula Central');
+    const filePath = path.join(dir, `boleta-${numero}.pdf`);
+
+    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.writeFile(filePath, pdfBuffer);
+    shell.openPath(filePath);
+
+    return filePath;
+}
+
+// Loads receipt/receipt.html into an offscreen window, feeds it the transaction
+// data via the same window.setReceiptData() hook the standalone template exposes,
+// then prints that window and tears it down. Keeps the receipt's mm-precise layout
+// fully isolated from the main app's Tailwind styles instead of hiding/showing a
+// shared print section.
+async function printReceipt(data) {
+    const receiptWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true
+        }
+    });
+
+    try {
+        const loaded = waitForLoad(receiptWindow);
+        receiptWindow.loadFile(path.join(__dirname, 'receipt', 'receipt.html'));
+        await loaded;
+
+        // JSON is valid JS expression syntax, but U+2028/U+2029 are legal in JSON
+        // strings and historically broke JS string literals, so they're escaped
+        // defensively before being handed to executeJavaScript as source text.
+        const payload = JSON.stringify(data ?? {})
+            .split(String.fromCharCode(0x2028)).join('\\u2028')
+            .split(String.fromCharCode(0x2029)).join('\\u2029');
+        await receiptWindow.webContents.executeJavaScript(`window.setReceiptData(${payload})`);
+
+        try {
+            await printViaDialog(receiptWindow);
+            return { ok: true, mode: 'print' };
+        } catch (printError) {
+            logUpdate(`Impresión de boleta falló, exportando a PDF en su lugar: ${printError.message}`);
+            const filePath = await exportReceiptAsPdf(receiptWindow, data);
+            return { ok: true, mode: 'pdf', path: filePath };
+        }
+    } finally {
+        if (!receiptWindow.isDestroyed()) receiptWindow.destroy();
+    }
+}
+
+function registerReceiptIpc() {
+    ipcMain.removeHandler('receipt:print');
+    ipcMain.handle('receipt:print', (_event, data) => printReceipt(data));
+}
+
 function registerScaleIpc() {
     ipcMain.removeHandler('scale-simulation:set-preset');
     ipcMain.handle('scale-simulation:set-preset', (_event, presetName) => {
@@ -164,6 +254,7 @@ function registerScaleIpc() {
 app.whenReady().then(() => {
     currentScaleSettings = scaleSettings.loadSettings(app);
     registerScaleIpc();
+    registerReceiptIpc();
     createWindow();
 
     app.on('activate', () => {
@@ -206,4 +297,5 @@ app.on('before-quit', () => {
     ipcMain.removeHandler('scale:get-settings');
     ipcMain.removeHandler('scale:save-settings');
     ipcMain.removeHandler('scale:test-connection');
+    ipcMain.removeHandler('receipt:print');
 });

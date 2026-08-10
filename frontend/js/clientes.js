@@ -43,6 +43,7 @@ function normalizarCliente(record = {}) {
         apellido: String(record.apellido || '').trim(),
         telefono: String(record.telefono || '').trim(),
         ubicacion: String(record.ubicacion || '').trim(),
+        identidad: String(record.identidad || '').trim(),
         precioFletePropio,
         precioFleteCliente,
         precioToneladaPropio: Number.isFinite(tonPropioRaw)
@@ -250,15 +251,65 @@ function recalculateQuintalPrices() {
     ];
 
     pairs.forEach(([tonInputId, quintalInputId]) => {
-        const priceInTon = parseFormattedNumber(document.getElementById(tonInputId)?.value);
         const target = document.getElementById(quintalInputId);
-        if (!target) return;
+        if (!target || target.dataset.overridden === 'true') return;
 
+        const priceInTon = parseFormattedNumber(document.getElementById(tonInputId)?.value);
         const calculated = pricePerQuintalFromTon(priceInTon);
         target.value = Number.isFinite(calculated)
             ? formatNumberForInput(calculated, 1)
             : '';
     });
+}
+
+function isManualQuintalPriceOverrideActive() {
+    if (document.getElementById('modal-unidad')?.value !== 'quintal') return false;
+    return document.getElementById('modal-precio-propio')?.dataset.overridden === 'true'
+        || document.getElementById('modal-precio-cliente')?.dataset.overridden === 'true';
+}
+
+function refreshJustificationVisibility() {
+    const container = document.getElementById('modal-justificacion-container');
+    if (!container) return;
+
+    const isEditing = !!document.getElementById('modal-client-id')?.value;
+    const show = isEditing || isManualQuintalPriceOverrideActive();
+    container.classList.toggle('hidden', !show);
+    container.classList.toggle('flex', show);
+}
+
+function setQuintalPriceOverrideState(which, overridden) {
+    const input = document.getElementById(`modal-precio-${which}`);
+    const button = document.getElementById(`modal-precio-${which}-override-btn`);
+    if (!input || !button) return;
+
+    const isQuintal = document.getElementById('modal-unidad')?.value === 'quintal';
+    input.dataset.overridden = overridden ? 'true' : 'false';
+    setDerivedPriceInputState(input, isQuintal && !overridden);
+    input.classList.toggle('border-amber-400', overridden);
+    input.classList.toggle('ring-2', overridden);
+    input.classList.toggle('ring-amber-200', overridden);
+
+    button.innerHTML = overridden
+        ? '<span class="material-icons text-[13px]">calculate</span>Recalcular automático'
+        : '<span class="material-icons text-[13px]">edit</span>Editar manualmente';
+}
+
+function toggleQuintalPriceOverride(which) {
+    const input = document.getElementById(`modal-precio-${which}`);
+    if (!input) return;
+
+    const overriding = input.dataset.overridden !== 'true';
+    setQuintalPriceOverrideState(which, overriding);
+
+    if (overriding) {
+        input.focus();
+        input.select();
+    } else {
+        recalculateQuintalPrices();
+    }
+
+    refreshJustificationVisibility();
 }
 
 function applyClientUnitFieldState() {
@@ -270,6 +321,8 @@ function applyClientUnitFieldState() {
     const clientTonInput = document.getElementById('modal-precio-ton-cliente');
     const ownLabel = document.getElementById('modal-precio-propio-label');
     const clientLabel = document.getElementById('modal-precio-cliente-label');
+    const ownOverrideBtn = document.getElementById('modal-precio-propio-override-btn');
+    const clientOverrideBtn = document.getElementById('modal-precio-cliente-override-btn');
 
     if (!unitSelect || !tonContainer || !ownPriceInput || !clientPriceInput || !ownTonInput || !clientTonInput) return;
 
@@ -277,13 +330,23 @@ function applyClientUnitFieldState() {
     tonContainer.classList.toggle('hidden', !isQuintal);
     ownTonInput.required = isQuintal;
     clientTonInput.required = isQuintal;
-    setDerivedPriceInputState(ownPriceInput, isQuintal);
-    setDerivedPriceInputState(clientPriceInput, isQuintal);
+
+    setQuintalPriceOverrideState('propio', isQuintal && ownPriceInput.dataset.overridden === 'true');
+    setQuintalPriceOverrideState('cliente', isQuintal && clientPriceInput.dataset.overridden === 'true');
+    if (ownOverrideBtn) {
+        ownOverrideBtn.classList.toggle('hidden', !isQuintal);
+        ownOverrideBtn.classList.toggle('inline-flex', isQuintal);
+    }
+    if (clientOverrideBtn) {
+        clientOverrideBtn.classList.toggle('hidden', !isQuintal);
+        clientOverrideBtn.classList.toggle('inline-flex', isQuintal);
+    }
 
     if (ownLabel) ownLabel.textContent = isQuintal ? 'Flete NUESTRO calculado (HNL / QQ) *' : 'Flete NUESTRO (HNL / Ton) *';
     if (clientLabel) clientLabel.textContent = isQuintal ? 'Flete CLIENTE calculado (HNL / QQ) *' : 'Flete CLIENTE (HNL / Ton) *';
 
     if (isQuintal) recalculateQuintalPrices();
+    refreshJustificationVisibility();
 }
 
 function handleClientUnitChange() {
@@ -312,7 +375,6 @@ function handleClientUnitChange() {
 function abrirModalCliente(id = null) {
     const modal = document.getElementById('client-modal');
     const form = document.getElementById('client-form');
-    const justificationContainer = document.getElementById('modal-justificacion-container');
     const unitSelect = document.getElementById('modal-unidad');
 
     form.reset();
@@ -327,6 +389,7 @@ function abrirModalCliente(id = null) {
         document.getElementById('modal-apellido').value = cliente.apellido;
         document.getElementById('modal-telefono').value = cliente.telefono;
         document.getElementById('modal-ubicacion').value = cliente.ubicacion;
+        document.getElementById('modal-identidad').value = cliente.identidad;
         unitSelect.value = cliente.unidad;
         unitSelect.dataset.previousUnit = cliente.unidad;
         document.getElementById('modal-precio-propio').value = formatNumberForInput(cliente.precioFletePropio, cliente.unidad === 'quintal' ? 1 : 2);
@@ -334,15 +397,22 @@ function abrirModalCliente(id = null) {
         document.getElementById('modal-precio-ton-propio').value = formatNumberForInput(cliente.precioToneladaPropio, 2);
         document.getElementById('modal-precio-ton-cliente').value = formatNumberForInput(cliente.precioToneladaCliente, 2);
         document.getElementById('modal-justificacion').value = '';
-        justificationContainer.classList.remove('hidden');
-        justificationContainer.classList.add('flex');
+
+        // A previously saved quintal price that doesn't match the auto-calculated
+        // suggestion means it was manually overridden last time it was saved.
+        const propioOverridden = cliente.unidad === 'quintal'
+            && cliente.precioFletePropio !== pricePerQuintalFromTon(cliente.precioToneladaPropio);
+        const clienteOverridden = cliente.unidad === 'quintal'
+            && cliente.precioFleteCliente !== pricePerQuintalFromTon(cliente.precioToneladaCliente);
+        document.getElementById('modal-precio-propio').dataset.overridden = propioOverridden ? 'true' : 'false';
+        document.getElementById('modal-precio-cliente').dataset.overridden = clienteOverridden ? 'true' : 'false';
     } else {
         document.getElementById('modal-title').textContent = 'Nuevo Cliente';
         document.getElementById('modal-client-id').value = '';
         unitSelect.value = 'tonelada';
         unitSelect.dataset.previousUnit = 'tonelada';
-        justificationContainer.classList.add('hidden');
-        justificationContainer.classList.remove('flex');
+        document.getElementById('modal-precio-propio').dataset.overridden = 'false';
+        document.getElementById('modal-precio-cliente').dataset.overridden = 'false';
     }
 
     applyClientUnitFieldState();
@@ -371,16 +441,25 @@ async function guardarCliente(event) {
     const justificacion = getRequiredElement('modal-justificacion').value.trim();
     const unidad = getRequiredElement('modal-unidad').value;
 
-    let precioFletePropio = parseFormattedNumber(getRequiredElement('modal-precio-propio').value);
-    let precioFleteCliente = parseFormattedNumber(getRequiredElement('modal-precio-cliente').value);
+    const propioInput = getRequiredElement('modal-precio-propio');
+    const clienteInput = getRequiredElement('modal-precio-cliente');
+    const propioOverridden = propioInput.dataset.overridden === 'true';
+    const clienteOverridden = clienteInput.dataset.overridden === 'true';
+
+    let precioFletePropio = parseFormattedNumber(propioInput.value);
+    let precioFleteCliente = parseFormattedNumber(clienteInput.value);
     let precioToneladaPropio = precioFletePropio;
     let precioToneladaCliente = precioFleteCliente;
 
     if (unidad === 'quintal') {
         precioToneladaPropio = parseFormattedNumber(getRequiredElement('modal-precio-ton-propio').value);
         precioToneladaCliente = parseFormattedNumber(getRequiredElement('modal-precio-ton-cliente').value);
-        precioFletePropio = pricePerQuintalFromTon(precioToneladaPropio);
-        precioFleteCliente = pricePerQuintalFromTon(precioToneladaCliente);
+        precioFletePropio = propioOverridden
+            ? parseFormattedNumber(propioInput.value)
+            : pricePerQuintalFromTon(precioToneladaPropio);
+        precioFleteCliente = clienteOverridden
+            ? parseFormattedNumber(clienteInput.value)
+            : pricePerQuintalFromTon(precioToneladaCliente);
     }
 
     const clienteData = {
@@ -388,6 +467,7 @@ async function guardarCliente(event) {
         apellido: getRequiredElement('modal-apellido').value.trim().replace(/\s+/g, ' '),
         telefono: getRequiredElement('modal-telefono').value.trim(),
         ubicacion: getRequiredElement('modal-ubicacion').value.trim(),
+        identidad: getRequiredElement('modal-identidad').value.trim(),
         precioFletePropio,
         precioFleteCliente,
         precioToneladaPropio,
@@ -414,6 +494,9 @@ async function guardarCliente(event) {
     }
     if (clientId && !justificacion) {
         return mostrarNotificacion('Debe ingresar una justificación para editar el cliente.', 'error');
+    }
+    if (!clientId && unidad === 'quintal' && (propioOverridden || clienteOverridden) && !justificacion) {
+        return mostrarNotificacion('Debe ingresar una justificación para modificar manualmente el precio calculado.', 'error');
     }
 
     try {
