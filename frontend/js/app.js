@@ -111,6 +111,10 @@ function renderScaleReading(data) {
 
     if (disconnectedBanner) disconnectedBanner.classList.toggle('hidden', !disconnected);
 
+    // Mirror the live weight into whichever of the bruto/tara boxes is still
+    // unlocked, so the clerk watches the same number BRUTO/TARA would capture.
+    if (typeof updateLiveWeightPreview === 'function') updateLiveWeightPreview();
+
     // Re-evaluate weight-button gating on every reading so a disconnect (or
     // recovery) reflects in the UI immediately, not just on transaction load.
     if (typeof actualizarEstadoBotonesPeso === 'function') actualizarEstadoBotonesPeso();

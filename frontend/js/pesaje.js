@@ -109,6 +109,16 @@ function manualWeight(tipo) {
         return;
     }
 
+    // Tare can never start a transaction on its own — it only applies to a
+    // truck whose gross weight was already captured via BRUTO.
+    if (normalizedType === 'tara' && (!activeTransaction.id || activeTransaction.pesoBruto == null)) {
+        mostrarNotificacion(
+            'Debe registrar primero el peso bruto antes de capturar la tara.',
+            'error'
+        );
+        return;
+    }
+
     abrirActionModal(`manual_${normalizedType}`);
 }
 
@@ -136,7 +146,37 @@ function setWeightButtonsBusy(busy) {
 
 function updateWeightDisplay(type, weight) {
     const display = document.getElementById(type === 'bruto' ? 'bruto-display' : 'tara-display');
-    if (display) display.textContent = `${toFiniteNumber(weight).toLocaleString('en-US')}\u00A0LBS`;
+    if (!display) return;
+    display.textContent = `${toFiniteNumber(weight).toLocaleString('en-US')}\u00A0LBS`;
+    display.classList.remove('text-gray-400');
+    display.classList.add('text-gray-800');
+}
+
+// Mirrors the live scale reading into whichever of the bruto/tara boxes is
+// still unlocked, so the clerk watches the same number that BRUTO/TARA would
+// capture instead of a static placeholder. Locked boxes are left untouched.
+function updateLiveWeightPreview() {
+    const brutoDisplay = document.getElementById('bruto-display');
+    const taraDisplay = document.getElementById('tara-display');
+    if (!brutoDisplay || !taraDisplay) return;
+
+    const liveReading = getLiveScaleReading();
+    const scaleUnavailable = liveReading.source === 'disconnected' || !liveReading.isFresh;
+    const liveText = scaleUnavailable
+        ? '----- LBS'
+        : `${toFiniteNumber(liveReading.weight).toLocaleString('en-US')}\u00A0LBS`;
+
+    if (activeTransaction.pesoBruto == null) {
+        brutoDisplay.textContent = liveText;
+        brutoDisplay.classList.toggle('text-gray-400', !scaleUnavailable);
+        brutoDisplay.classList.toggle('text-gray-800', scaleUnavailable);
+    }
+
+    if (activeTransaction.pesoTara == null) {
+        taraDisplay.textContent = liveText;
+        taraDisplay.classList.toggle('text-gray-400', !scaleUnavailable);
+        taraDisplay.classList.toggle('text-gray-800', scaleUnavailable);
+    }
 }
 
 async function saveWeight(type, manualWeight = null) {
@@ -154,6 +194,16 @@ async function saveWeight(type, manualWeight = null) {
     ) {
         mostrarNotificacion(
             'El peso bruto ya está registrado y no puede modificarse. Actualice la tara o finalice la transacción.',
+            'error'
+        );
+        return false;
+    }
+
+    // Tare can never start a transaction on its own — it only applies to a
+    // truck whose gross weight was already captured via BRUTO.
+    if (type === 'tara' && (!activeTransaction.id || activeTransaction.pesoBruto == null)) {
+        mostrarNotificacion(
+            'Debe registrar primero el peso bruto antes de capturar la tara.',
             'error'
         );
         return false;
@@ -373,12 +423,11 @@ function cargarDeCola(truckId) {
 }
 
 function updateWeightDisplayFromTransaction() {
-    document.getElementById('bruto-display').textContent = activeTransaction.pesoBruto != null
-        ? `${activeTransaction.pesoBruto.toLocaleString('en-US')}\u00A0LBS`
-        : '----- LBS';
-    document.getElementById('tara-display').textContent = activeTransaction.pesoTara != null
-        ? `${activeTransaction.pesoTara.toLocaleString('en-US')}\u00A0LBS`
-        : '----- LBS';
+    if (activeTransaction.pesoBruto != null) updateWeightDisplay('bruto', activeTransaction.pesoBruto);
+    if (activeTransaction.pesoTara != null) updateWeightDisplay('tara', activeTransaction.pesoTara);
+    // Any field still unlocked (null) is left to the live scale ticker so it
+    // keeps tracking the indicator instead of freezing on a placeholder.
+    updateLiveWeightPreview();
 }
 
 function actualizarEstadoBotonesPeso() {
@@ -391,6 +440,9 @@ function actualizarEstadoBotonesPeso() {
     const hasOpenTransaction = Boolean(activeTransaction.id);
     const brutoIsLocked = hasOpenTransaction && activeTransaction.pesoBruto != null;
     const taraAlreadyExists = hasOpenTransaction && activeTransaction.pesoTara != null;
+    // Tare can only be captured for a truck whose gross weight is already
+    // registered — it must never be the one that opens a new transaction.
+    const taraIsLocked = !hasOpenTransaction || activeTransaction.pesoBruto == null;
 
     // Fail closed: if the scale is disconnected or its last reading is stale, a live
     // read must not be possible — this is what stops a fake/absent value from ever
@@ -400,9 +452,10 @@ function actualizarEstadoBotonesPeso() {
     const scaleUnavailable = liveReading.source === 'disconnected' || !liveReading.isFresh;
 
     // Gross weight is immutable after its first capture. Tare can always be
-    // read again and overwritten until FINALIZAR Y GUARDAR is pressed.
+    // read again and overwritten until FINALIZAR Y GUARDAR is pressed, but it
+    // cannot be the first weight captured for a transaction.
     brutoButton.disabled = brutoIsLocked || scaleUnavailable;
-    taraButton.disabled = scaleUnavailable;
+    taraButton.disabled = taraIsLocked || scaleUnavailable;
 
     if (manualBrutoButton) {
         manualBrutoButton.disabled = brutoIsLocked;
@@ -414,10 +467,14 @@ function actualizarEstadoBotonesPeso() {
     }
 
     if (manualTaraButton) {
-        manualTaraButton.disabled = false;
-        manualTaraButton.title = taraAlreadyExists
-            ? 'Reemplazar la tara registrada usando ingreso manual'
-            : 'Registrar tara manualmente';
+        manualTaraButton.disabled = taraIsLocked;
+        manualTaraButton.classList.toggle('opacity-40', taraIsLocked);
+        manualTaraButton.classList.toggle('cursor-not-allowed', taraIsLocked);
+        manualTaraButton.title = taraIsLocked
+            ? 'Registre primero el peso bruto para habilitar la tara.'
+            : taraAlreadyExists
+                ? 'Reemplazar la tara registrada usando ingreso manual'
+                : 'Registrar tara manualmente';
     }
 
     brutoButton.classList.toggle('bg-gray-300', brutoButton.disabled);
@@ -427,12 +484,14 @@ function actualizarEstadoBotonesPeso() {
         ? 'El peso bruto queda bloqueado después de registrarse.'
         : 'Leer y registrar el peso bruto actual';
 
-    taraButton.classList.remove('bg-gray-300');
-    taraButton.classList.add('bg-gray-800');
-    taraButton.classList.remove('cursor-not-allowed');
-    taraButton.title = taraAlreadyExists
-        ? 'Leer nuevamente la báscula y reemplazar la tara actual'
-        : 'Leer y registrar la tara actual';
+    taraButton.classList.toggle('bg-gray-300', taraButton.disabled);
+    taraButton.classList.toggle('bg-gray-800', !taraButton.disabled);
+    taraButton.classList.toggle('cursor-not-allowed', taraButton.disabled);
+    taraButton.title = taraIsLocked
+        ? 'Registre primero el peso bruto para habilitar la tara.'
+        : taraAlreadyExists
+            ? 'Leer nuevamente la báscula y reemplazar la tara actual'
+            : 'Leer y registrar la tara actual';
     taraButton.innerHTML = taraAlreadyExists
         ? '<span class="material-icons text-[18px]">sync</span> ACTUALIZAR TARA'
         : '<span class="material-icons text-[18px]">upload</span> TARA';
@@ -512,8 +571,7 @@ function limpiarFormulario() {
     document.getElementById('flete-select').value = 'Propio';
     document.getElementById('client-price-box').classList.add('hidden');
 
-    document.getElementById('bruto-display').textContent = '----- LBS';
-    document.getElementById('tara-display').textContent = '----- LBS';
+    updateLiveWeightPreview();
     document.getElementById('neto-display').textContent = '0 LBS';
     document.getElementById('total-pago-display').textContent = '0.00';
     document.getElementById('btn-guardar').disabled = true;
