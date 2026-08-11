@@ -1117,24 +1117,30 @@
                     <path d="M4 4h16v4H4z"/><path d="M6 8v10a2 2 0 002 2h8a2 2 0 002-2V8"/>
                 </svg>
             </div>
-            <div>
+            <div class="sidebar__brand-text">
                 <p class="sidebar__brand-name">Báscula Central</p>
                 <p class="sidebar__brand-sub">Terminal de Pesaje</p>
             </div>
         </div>
 
-        <button type="button" class="nav-row is-active" data-leaf="pesaje">
+        <button type="button" id="sidebar-collapse-toggle" class="nav-row sidebar__collapse-btn"
+            title="Colapsar barra lateral" aria-label="Colapsar barra lateral">
+            <svg class="nav-icon" id="sidebar-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+            <span class="nav-label">Colapsar</span>
+        </button>
+
+        <button type="button" class="nav-row is-active" data-leaf="pesaje" title="Pesaje">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3M20 17h2v-3.34a4 4 0 00-1.17-2.83L19 9h-5"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
-            Pesaje
+            <span class="nav-label">Pesaje</span>
         </button>
 
         <p class="sidebar__label">Operaciones</p>
 
         <!-- GROUP: REVISIÓN (Overview + Reportes) -->
         <div class="nav-group" data-group="revision">
-            <button type="button" class="nav-row" data-toggle>
+            <button type="button" class="nav-row" data-toggle title="Revisión">
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-3"/><path d="M9 14l2 2 4-4"/></svg>
-                Revisión
+                <span class="nav-label">Revisión</span>
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
             <div class="sub-wrap">
@@ -1147,9 +1153,9 @@
 
         <!-- GROUP: FINANZAS (Recibos externos + Gastos) -->
         <div class="nav-group" data-group="finanzas">
-            <button type="button" class="nav-row" data-toggle>
+            <button type="button" class="nav-row" data-toggle title="Finanzas">
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1.4 1.3-2.5 3-2.5s3 1.1 3 2.5-1.3 2-3 2.5-3 1.1-3 2.5 1.3 2.5 3 2.5 3-1.1 3-2.5"/></svg>
-                Finanzas
+                <span class="nav-label">Finanzas</span>
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
             <div class="sub-wrap">
@@ -1160,9 +1166,9 @@
 
         <!-- GROUP: GESTIÓN (Planilla + Clientes) -->
         <div class="nav-group" data-group="gestion">
-            <button type="button" class="nav-row" data-toggle>
+            <button type="button" class="nav-row" data-toggle title="Gestión">
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1h.1a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
-                Gestión
+                <span class="nav-label">Gestión</span>
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
             <div class="sub-wrap">
@@ -1173,7 +1179,7 @@
 
         <div class="sidebar__footer">
             <div class="sidebar__avatar">TP</div>
-            <div>
+            <div class="sidebar__footer-text">
                 <p class="sidebar__footer-name">Turno Principal</p>
                 <p class="sidebar__footer-role">Operador</p>
             </div>

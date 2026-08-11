@@ -15,6 +15,7 @@
   --sb-icon-muted: #6ee7b7;  /* brand-300 */
   --sb-label: #10b981;       /* brand-500 */
   --sb-width: 250px;
+  --sb-width-collapsed: 68px;
 }
 
 .sidebar {
@@ -26,6 +27,37 @@
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   box-sizing: border-box;
   height: 100%;
+  transition: width 0.18s ease;
+}
+
+/* ---- Collapsed (icon-only) state ---- */
+.sidebar.is-collapsed {
+  width: var(--sb-width-collapsed);
+}
+
+.sidebar.is-collapsed .nav-label,
+.sidebar.is-collapsed .sidebar__brand-text,
+.sidebar.is-collapsed .sidebar__label,
+.sidebar.is-collapsed .chev,
+.sidebar.is-collapsed .sub-wrap,
+.sidebar.is-collapsed .sidebar__footer-text {
+  display: none;
+}
+
+.sidebar.is-collapsed .sidebar__brand,
+.sidebar.is-collapsed .nav-row,
+.sidebar.is-collapsed .sidebar__footer {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sidebar__collapse-btn svg {
+  transition: transform 0.18s ease;
+}
+
+.sidebar.is-collapsed .sidebar__collapse-btn svg {
+  transform: rotate(180deg);
 }
 
 /* ---- Brand header ---- */
