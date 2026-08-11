@@ -7,108 +7,222 @@
   <link rel="stylesheet" href="receipt.css" />
 </head>
 <body>
-  <main class="receipt" id="receipt">
-    <!-- Decorative palm watermark from the original receipt. -->
-    <div class="receipt-watermark" aria-hidden="true"></div>
+  <!--
+    A4 portrait sheet holding the SAME boleta twice, stacked top/bottom
+    (one for the bascula, one for the client) — the clerk cuts the sheet
+    in half along the dashed line to separate the two copies. Both copies
+    share the same [data-field] names, so window.setReceiptData() fills
+    every field in both halves at once; nothing in receipt.js changes.
+  -->
+  <main class="page" id="page">
+    <section class="receipt-copy receipt-copy--top" aria-label="Copia bascula">
+      <div class="receipt-watermark" aria-hidden="true"></div>
 
-    <header class="receipt-header">
-      <div class="header-center">
-        <div class="company-name">ACOPIO RIVERA</div>
-        <div class="company-address">Aldea Zoilabe, Tela Atlántida, Honduras</div>
-        <div class="company-rtn">RTN. <span data-field="rtn"></span></div>
-        <h1>BOLETA DE PESO</h1>
-      </div>
+      <header class="receipt-header">
+        <div class="header-center">
+          <div class="company-name">ACOPIO RIVERA</div>
+          <div class="company-address">Aldea Zoilabe, Tela Atlántida, Honduras</div>
+          <div class="company-rtn">RTN. <span data-field="rtn"></span></div>
+          <h1>BOLETA DE PESO</h1>
+        </div>
 
-      <aside class="receipt-number-block">
-        <div class="receipt-number">No. <span data-field="numero"></span></div>
-        <div class="receipt-date" data-field="fechaDocumento"></div>
-        <div class="copy-type">
-          <div>ORIGINAL</div>
-          <div>CLIENTE</div>
-        </div>
-      </aside>
-    </header>
+        <aside class="receipt-number-block">
+          <div class="receipt-number">No. <span data-field="numero"></span></div>
+          <div class="receipt-date" data-field="fechaDocumento"></div>
+          <div class="copy-type">
+            <div>ORIGINAL</div>
+            <div>CLIENTE</div>
+          </div>
+        </aside>
+      </header>
 
-    <section class="details-grid" aria-label="Datos de la boleta">
-      <div class="details-column details-left">
-        <div class="detail-row">
-          <span class="detail-label">Nombre:</span>
-          <span class="detail-value" data-field="nombre"></span>
+      <section class="details-grid" aria-label="Datos de la boleta">
+        <div class="details-column details-left">
+          <div class="detail-row">
+            <span class="detail-label">Nombre:</span>
+            <span class="detail-value" data-field="nombre"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Identidad:</span>
+            <span class="detail-value" data-field="identidad"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Placa:</span>
+            <span class="detail-value" data-field="placa"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Fecha Entrada:</span>
+            <span class="detail-value" data-field="fechaEntrada"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Fecha Salida:</span>
+            <span class="detail-value" data-field="fechaSalida"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Cliente:</span>
+            <span class="detail-value" data-field="cliente"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Producto:</span>
+            <span class="detail-value" data-field="producto"></span>
+          </div>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">Identidad:</span>
-          <span class="detail-value" data-field="identidad"></span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Placa:</span>
-          <span class="detail-value" data-field="placa"></span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Fecha Entrada:</span>
-          <span class="detail-value" data-field="fechaEntrada"></span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Fecha Salida:</span>
-          <span class="detail-value" data-field="fechaSalida"></span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Cliente:</span>
-          <span class="detail-value" data-field="cliente"></span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Producto:</span>
-          <span class="detail-value" data-field="producto"></span>
-        </div>
-      </div>
 
-      <div class="details-column details-right">
-        <div class="detail-row">
-          <span class="detail-label">Transac.:</span>
-          <span class="detail-value" data-field="transaccion"></span>
+        <div class="details-column details-right">
+          <div class="detail-row">
+            <span class="detail-label">Transac.:</span>
+            <span class="detail-value" data-field="transaccion"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Origen:</span>
+            <span class="detail-value" data-field="origen"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Destino:</span>
+            <span class="detail-value" data-field="destino"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Finca:</span>
+            <span class="detail-value" data-field="finca"></span>
+          </div>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">Origen:</span>
-          <span class="detail-value" data-field="origen"></span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Destino:</span>
-          <span class="detail-value" data-field="destino"></span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Finca:</span>
-          <span class="detail-value" data-field="finca"></span>
-        </div>
-      </div>
+      </section>
+
+      <section class="weights-section" aria-label="Detalle de peso">
+        <table class="weights-table">
+          <thead>
+            <tr>
+              <th>Bruto</th>
+              <th>Tara</th>
+              <th>Neto</th>
+              <th>TM</th>
+              <th>Precio / TM</th>
+              <th>Total LPS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-field="bruto"></td>
+              <td data-field="tara"></td>
+              <td data-field="neto"></td>
+              <td data-field="tm"></td>
+              <td data-field="precioTM"></td>
+              <td data-field="totalLps"></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="signature-section" aria-label="Firma del operador">
+        <div class="signature-line"></div>
+        <div class="signature-text">FIRMA OPERADOR BASCULA</div>
+      </section>
     </section>
 
-    <section class="weights-section">
-      <table class="weights-table" aria-label="Detalle de peso">
-        <thead>
-          <tr>
-            <th>Bruto</th>
-            <th>Tara</th>
-            <th>Neto</th>
-            <th>TM</th>
-            <th>Precio / TM</th>
-            <th>Total LPS</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td data-field="bruto"></td>
-            <td data-field="tara"></td>
-            <td data-field="neto"></td>
-            <td data-field="tm"></td>
-            <td data-field="precioTM"></td>
-            <td data-field="totalLps"></td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+    <div class="cut-line" aria-hidden="true"><span>✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</span></div>
 
-    <section class="signature-section" aria-label="Firma del operador">
-      <div class="signature-line"></div>
-      <div class="signature-text">FIRMA OPERADOR BASCULA</div>
+    <section class="receipt-copy receipt-copy--bottom" aria-label="Copia cliente">
+      <div class="receipt-watermark" aria-hidden="true"></div>
+
+      <header class="receipt-header">
+        <div class="header-center">
+          <div class="company-name">ACOPIO RIVERA</div>
+          <div class="company-address">Aldea Zoilabe, Tela Atlántida, Honduras</div>
+          <div class="company-rtn">RTN. <span data-field="rtn"></span></div>
+          <h1>BOLETA DE PESO</h1>
+        </div>
+
+        <aside class="receipt-number-block">
+          <div class="receipt-number">No. <span data-field="numero"></span></div>
+          <div class="receipt-date" data-field="fechaDocumento"></div>
+          <div class="copy-type">
+            <div>ORIGINAL</div>
+            <div>CLIENTE</div>
+          </div>
+        </aside>
+      </header>
+
+      <section class="details-grid" aria-label="Datos de la boleta">
+        <div class="details-column details-left">
+          <div class="detail-row">
+            <span class="detail-label">Nombre:</span>
+            <span class="detail-value" data-field="nombre"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Identidad:</span>
+            <span class="detail-value" data-field="identidad"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Placa:</span>
+            <span class="detail-value" data-field="placa"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Fecha Entrada:</span>
+            <span class="detail-value" data-field="fechaEntrada"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Fecha Salida:</span>
+            <span class="detail-value" data-field="fechaSalida"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Cliente:</span>
+            <span class="detail-value" data-field="cliente"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Producto:</span>
+            <span class="detail-value" data-field="producto"></span>
+          </div>
+        </div>
+
+        <div class="details-column details-right">
+          <div class="detail-row">
+            <span class="detail-label">Transac.:</span>
+            <span class="detail-value" data-field="transaccion"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Origen:</span>
+            <span class="detail-value" data-field="origen"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Destino:</span>
+            <span class="detail-value" data-field="destino"></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Finca:</span>
+            <span class="detail-value" data-field="finca"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="weights-section" aria-label="Detalle de peso">
+        <table class="weights-table">
+          <thead>
+            <tr>
+              <th>Bruto</th>
+              <th>Tara</th>
+              <th>Neto</th>
+              <th>TM</th>
+              <th>Precio / TM</th>
+              <th>Total LPS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-field="bruto"></td>
+              <td data-field="tara"></td>
+              <td data-field="neto"></td>
+              <td data-field="tm"></td>
+              <td data-field="precioTM"></td>
+              <td data-field="totalLps"></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="signature-section" aria-label="Firma del operador">
+        <div class="signature-line"></div>
+        <div class="signature-text">FIRMA OPERADOR BASCULA</div>
+      </section>
     </section>
   </main>
 

@@ -125,7 +125,7 @@ function waitForLoad(win) {
 function printViaDialog(win) {
     return new Promise((resolve, reject) => {
         win.webContents.print(
-            { silent: false, printBackground: true, pageSize: 'A5', margins: { marginType: 'none' } },
+            { silent: false, printBackground: true, pageSize: 'A4', margins: { marginType: 'none' } },
             (success, failureReason) => {
                 if (success || failureReason === 'cancelled') {
                     resolve();
@@ -141,7 +141,7 @@ function printViaDialog(win) {
 // dev box with no CUPS destination configured, but can happen anywhere) so the
 // operator still gets the receipt instead of a hard failure.
 async function exportReceiptAsPdf(win, data) {
-    const pdfBuffer = await win.webContents.printToPDF({ pageSize: 'A5', printBackground: true, margins: { marginType: 'none' } });
+    const pdfBuffer = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'none' } });
     const numero = String(data?.numero || '').trim().replace(/[^a-zA-Z0-9-]/g, '') || Date.now();
     const dir = path.join(app.getPath('documents'), 'Boletas Bascula Central');
     const filePath = path.join(dir, `boleta-${numero}.pdf`);
