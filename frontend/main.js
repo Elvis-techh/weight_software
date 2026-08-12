@@ -119,6 +119,15 @@ function waitForLoad(win) {
     });
 }
 
+// Electron's own docs warn that the `landscape` boolean option is ignored
+// (both for webContents.print and printToPDF) once the page defines its own
+// `@page` CSS at-rule — which is exactly what bit listado printing. Rather
+// than depend on that flag at all, orientation is expressed directly as
+// physical page dimensions (width > height = landscape) in microns, per
+// Electron's custom-pageSize format — unambiguous regardless of @page CSS.
+const PAGE_SIZE_A4_PORTRAIT = 'A4';
+const PAGE_SIZE_A4_LANDSCAPE = { width: 297000, height: 210000 };
+
 // Resolves once the print dialog is dismissed, whether the user actually
 // printed or just closed it — a cancel isn't a failure worth surfacing.
 // Rejects only when printing itself can't happen (e.g. no printer/CUPS
@@ -126,7 +135,12 @@ function waitForLoad(win) {
 function printViaDialog(win, { landscape = false } = {}) {
     return new Promise((resolve, reject) => {
         win.webContents.print(
-            { silent: false, printBackground: true, pageSize: 'A4', landscape, margins: { marginType: 'none' } },
+            {
+                silent: false,
+                printBackground: true,
+                pageSize: landscape ? PAGE_SIZE_A4_LANDSCAPE : PAGE_SIZE_A4_PORTRAIT,
+                margins: { marginType: 'none' }
+            },
             (success, failureReason) => {
                 if (success || failureReason === 'cancelled') {
                     resolve();
@@ -142,7 +156,11 @@ function printViaDialog(win, { landscape = false } = {}) {
 // dev box with no CUPS destination configured, but can happen anywhere) so the
 // operator still gets the document instead of a hard failure.
 async function exportWindowAsPdf(win, { landscape = false, fileName }) {
-    const pdfBuffer = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, landscape, margins: { marginType: 'none' } });
+    const pdfBuffer = await win.webContents.printToPDF({
+        pageSize: landscape ? PAGE_SIZE_A4_LANDSCAPE : PAGE_SIZE_A4_PORTRAIT,
+        printBackground: true,
+        margins: { marginType: 'none' }
+    });
     const dir = path.join(app.getPath('documents'), 'Boletas Bascula Central');
     const filePath = path.join(dir, fileName);
 

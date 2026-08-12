@@ -53,16 +53,28 @@ function applyPreviewScale() {
     if (!config) return;
 
     frame.style.width = `${config.width}px`;
-    frame.style.height = `${config.height}px`;
 
+    // The receipt template is always exactly one fixed-size A4 page, but the
+    // listado template flows across as many pages as its row count needs —
+    // so its real rendered height varies and isn't just config.height (one
+    // page's worth). Measuring it directly keeps the whole table reachable
+    // through the outer viewport's scrollbar instead of a second, nested
+    // scrollbar inside the iframe itself.
+    const contentHeight = frame.contentDocument?.documentElement?.scrollHeight || config.height;
+    frame.style.height = `${contentHeight}px`;
+
+    // Fill the viewport's width rather than shrinking to fit the whole page —
+    // legibility (being able to actually read the printed numbers) matters
+    // more than seeing the entire A4 sheet at once. The viewport scrolls
+    // vertically (see #print-preview-viewport's overflow-auto) for whatever
+    // doesn't fit, same as scrolling a zoomed-in document.
     const availableWidth = viewport.clientWidth - 32;
-    const availableHeight = viewport.clientHeight - 32;
-    const scale = Math.min(availableWidth / config.width, availableHeight / config.height, 1);
+    const scale = availableWidth / config.width;
 
     frame.style.transform = `scale(${scale})`;
     frame.style.transformOrigin = 'top left';
     wrapper.style.width = `${config.width * scale}px`;
-    wrapper.style.height = `${config.height * scale}px`;
+    wrapper.style.height = `${contentHeight * scale}px`;
 }
 
 function setPreviewConfirmBusy(busy) {
