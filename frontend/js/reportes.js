@@ -20,15 +20,43 @@ function normalizarTransaccion(record = {}) {
     };
 }
 
+// Holds whatever updateReportesTab() last filtered, so "Imprimir Listado"
+// can reuse it directly instead of re-reading the filter inputs and
+// re-filtering transaccionesData itself.
+let ultimoFiltroReportes = { filteredData: [], startDate: '', endDate: '', customerSearchRaw: '' };
+
+// Shared by the on-screen table row and the listado print payload, so the
+// identification fallback, unit label, and metric-ton conversion only live
+// in one place.
+function formatearFilaReporte(transaction) {
+    const identification = transaction.placa !== 'S/P'
+        ? transaction.placa
+        : transaction.conductor !== 'Desconocido'
+            ? transaction.conductor
+            : 'S/P';
+    const unitLabel = transaction.unidad === 'quintal' ? 'QQ' : 'TON';
+    const metricTons = calculateMetricTons(transaction.neto, { truncate: true });
+
+    return {
+        identification,
+        unitLabel,
+        metricTons,
+        fechaDisplay: formatDateForDisplay(transaction.fecha),
+        netoLabel: `${transaction.neto.toLocaleString('en-US')} LBS`,
+        toneladasLabel: `${metricTons.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TON`,
+        precioLabel: `L ${formatMoney(transaction.precioAplicado)} / ${unitLabel}`,
+        totalLabel: `L ${formatMoney(transaction.total)}`
+    };
+}
+
 function updateReportesTab() {
     const tbody = document.getElementById('reports-table-body');
     if (!tbody) return;
 
     const startDate = document.getElementById('filter-start')?.value || '';
     const endDate = document.getElementById('filter-end')?.value || '';
-    const customerSearch = (document.getElementById('filter-client')?.value || '')
-        .trim()
-        .toLocaleLowerCase('es');
+    const customerSearchRaw = document.getElementById('filter-client')?.value || '';
+    const customerSearch = customerSearchRaw.trim().toLocaleLowerCase('es');
 
     const filteredData = transaccionesData.filter(transaction => {
         if (startDate && transaction.fecha < startDate) return false;
@@ -36,6 +64,10 @@ function updateReportesTab() {
         if (customerSearch && !transaction.clienteNombre.toLocaleLowerCase('es').includes(customerSearch)) return false;
         return true;
     });
+
+    ultimoFiltroReportes = { filteredData, startDate, endDate, customerSearchRaw };
+    const listadoButton = document.getElementById('btn-imprimir-listado');
+    if (listadoButton) listadoButton.disabled = filteredData.length === 0;
 
     const totalLbs = filteredData.reduce((sum, item) => sum + item.neto, 0);
     const totalDinero = filteredData.reduce((sum, item) => sum + item.total, 0);
@@ -55,23 +87,17 @@ function updateReportesTab() {
     }
 
     tbody.innerHTML = filteredData.map(transaction => {
-        const identification = transaction.placa !== 'S/P'
-            ? transaction.placa
-            : transaction.conductor !== 'Desconocido'
-                ? transaction.conductor
-                : 'S/P';
-        const unitLabel = transaction.unidad === 'quintal' ? 'QQ' : 'TON';
-        const metricTons = calculateMetricTons(transaction.neto, { truncate: true });
+        const fila = formatearFilaReporte(transaction);
 
         return `
             <tr class="hover:bg-gray-50 border-b border-gray-100">
-                <td class="p-4 font-mono text-gray-500 text-xs">${escapeHtml(formatDateForDisplay(transaction.fecha))}<br>${escapeHtml(transaction.hora)}</td>
-                <td class="p-4 font-bold text-gray-800 uppercase">${escapeHtml(identification)}</td>
+                <td class="p-4 font-mono text-gray-500 text-xs">${escapeHtml(fila.fechaDisplay)}<br>${escapeHtml(transaction.hora)}</td>
+                <td class="p-4 font-bold text-gray-800 uppercase">${escapeHtml(fila.identification)}</td>
                 <td class="p-4 text-gray-600 text-sm">${escapeHtml(transaction.clienteNombre)}</td>
-                <td class="p-4 text-right font-mono font-bold text-gray-800">${transaction.neto.toLocaleString('en-US')} LBS</td>
-                <td class="p-4 text-right font-mono font-bold text-brand-700">${metricTons.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TON</td>
-                <td class="p-4 text-right font-mono text-gray-500 text-xs">L ${formatMoney(transaction.precioAplicado)} / ${unitLabel}</td>
-                <td class="p-4 text-right font-mono font-bold text-green-700">L ${formatMoney(transaction.total)}</td>
+                <td class="p-4 text-right font-mono font-bold text-gray-800">${escapeHtml(fila.netoLabel)}</td>
+                <td class="p-4 text-right font-mono font-bold text-brand-700">${escapeHtml(fila.toneladasLabel)}</td>
+                <td class="p-4 text-right font-mono text-gray-500 text-xs">${escapeHtml(fila.precioLabel)}</td>
+                <td class="p-4 text-right font-mono font-bold text-green-700">${escapeHtml(fila.totalLabel)}</td>
                 <td class="p-4 flex justify-center gap-2">
                     <button type="button" onclick="imprimirRecibo('${escapeHtml(transaction.id)}')" class="text-gray-500 hover:text-gray-900 transition-colors" aria-label="Imprimir recibo"><span class="material-icons">print</span></button>
                     <button type="button" onclick="abrirReporteModal('${escapeHtml(transaction.id)}')" class="text-blue-500 hover:text-blue-800 transition-colors" aria-label="Editar reporte"><span class="material-icons">edit</span></button>
@@ -88,7 +114,18 @@ function formatFechaHoraForReceipt(fecha, hora) {
     return [datePart, timePart].filter(Boolean).join(' ');
 }
 
-async function imprimirRecibo(id) {
+// Performs the real print IPC call for a receipt; only invoked once the
+// operator confirms "Imprimir" in the preview modal (see printPreview.js).
+async function ejecutarImpresionRecibo(payload) {
+    const result = await window.electronAPI.printReceipt(payload);
+    // No printer was available, so main.js saved the receipt as a PDF instead
+    // of printing it — let the operator know where to find it.
+    if (result?.mode === 'pdf') {
+        mostrarNotificacion(`No se encontró una impresora. Boleta guardada como PDF en: ${result.path}`, 'error');
+    }
+}
+
+function imprimirRecibo(id) {
     const transaction = transaccionesData.find(item => sameRecordId(item.id, id));
     if (!transaction) return mostrarNotificacion('Transacción no encontrada.', 'error');
 
@@ -132,17 +169,83 @@ async function imprimirRecibo(id) {
         totalLps: `${formatMoney(transaction.total)} Lps`
     };
 
-    try {
-        const result = await window.electronAPI.printReceipt(payload);
-        // No printer was available, so main.js saved the receipt as a PDF instead
-        // of printing it — let the operator know where to find it.
-        if (result?.mode === 'pdf') {
-            mostrarNotificacion(`No se encontró una impresora. Boleta guardada como PDF en: ${result.path}`, 'error');
-        }
-    } catch (error) {
-        console.error('Error al imprimir la boleta:', error);
-        mostrarNotificacion(error.message || 'No se pudo imprimir la boleta.', 'error');
+    mostrarVistaPrevia({
+        template: 'receipt',
+        payload,
+        title: `Vista previa - Boleta No. ${payload.numero || ''}`,
+        printAction: () => ejecutarImpresionRecibo(payload)
+    });
+}
+
+// Builds the pre-formatted payload for the listado print/preview from
+// whatever updateReportesTab() last filtered (see ultimoFiltroReportes) —
+// never re-reads the filter inputs or re-filters transaccionesData itself.
+function construirPayloadListado() {
+    const { filteredData, startDate, endDate, customerSearchRaw } = ultimoFiltroReportes;
+
+    const totalNeto = filteredData.reduce((sum, item) => sum + item.neto, 0);
+    const totalToneladas = calculateMetricTons(totalNeto, { truncate: true });
+    const totalDinero = filteredData.reduce((sum, item) => sum + item.total, 0);
+    const tienePendientes = filteredData.some(item => item.pendingSync);
+
+    const rows = filteredData.map(transaction => {
+        const fila = formatearFilaReporte(transaction);
+        return {
+            fecha: fila.fechaDisplay,
+            hora: transaction.hora,
+            identificacion: fila.identification,
+            cliente: transaction.clienteNombre,
+            neto: fila.netoLabel,
+            toneladas: fila.toneladasLabel,
+            precioUnidad: fila.precioLabel,
+            total: fila.totalLabel,
+            pendingSync: Boolean(transaction.pendingSync)
+        };
+    });
+
+    return {
+        generatedAt: new Date().toLocaleString('es-HN'),
+        filtroCliente: customerSearchRaw.trim() || 'Todos',
+        filtroDesde: startDate ? formatDateForDisplay(startDate) : 'Sin límite',
+        filtroHasta: endDate ? formatDateForDisplay(endDate) : 'Sin límite',
+        totalRegistros: String(rows.length),
+        rows,
+        totalNeto: `${totalNeto.toLocaleString('en-US')} LBS`,
+        totalToneladas: `${totalToneladas.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TON`,
+        totalDinero: `L ${formatMoney(totalDinero)}`,
+        tienePendientes
+    };
+}
+
+// Performs the real print IPC call for the listado; only invoked once the
+// operator confirms "Imprimir" in the preview modal (see printPreview.js).
+async function ejecutarImpresionListado(payload) {
+    const result = await window.electronAPI.printListado(payload);
+    if (result?.mode === 'pdf') {
+        mostrarNotificacion(`No se encontró una impresora. Listado guardado como PDF en: ${result.path}`, 'error');
     }
+}
+
+function imprimirListadoReportes() {
+    if (typeof window.electronAPI?.printListado !== 'function') {
+        return mostrarNotificacion(
+            'La impresión de listados solo está disponible dentro de la aplicación de escritorio.',
+            'error'
+        );
+    }
+
+    if (ultimoFiltroReportes.filteredData.length === 0) {
+        return mostrarNotificacion('No hay transacciones para el filtro actual.', 'error');
+    }
+
+    const payload = construirPayloadListado();
+
+    mostrarVistaPrevia({
+        template: 'listado',
+        payload,
+        title: `Vista previa - Listado (${payload.totalRegistros} registros)`,
+        printAction: () => ejecutarImpresionListado(payload)
+    });
 }
 
 function abrirReporteModal(id) {

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Listado de Transacciones - Acopio Rivera</title>
+  <link rel="stylesheet" href="listado.css" />
+</head>
+<body>
+  <!--
+    A4 landscape page holding a table of transactions (whatever the
+    Reportes filters currently show), instead of a single fixed-size
+    boleta. Unlike receipt.html, this flows across as many printed pages
+    as the row count needs — see listado.css for the pagination rules.
+    window.setListadoData() (listado.js) fills the header fields and
+    rebuilds the table body from scratch on every call.
+  -->
+  <main class="sheet" id="sheet">
+    <header class="listado-header">
+      <div class="header-top">
+        <div>
+          <div class="company-name">ACOPIO RIVERA</div>
+          <div class="company-address">Aldea Zoilabe, Tela Atlántida, Honduras</div>
+        </div>
+        <div class="header-meta">
+          <h1>LISTADO DE TRANSACCIONES</h1>
+          <div class="generated-at">Generado: <span data-field="generatedAt"></span></div>
+        </div>
+      </div>
+
+      <div class="filter-summary">
+        Cliente: <span data-field="filtroCliente"></span> &middot;
+        Desde: <span data-field="filtroDesde"></span> &middot;
+        Hasta: <span data-field="filtroHasta"></span> &middot;
+        <span data-field="totalRegistros"></span> registro(s)
+      </div>
+    </header>
+
+    <table class="listado-table">
+      <thead>
+        <tr>
+          <th class="col-fecha">Fecha / Hora</th>
+          <th class="col-ident">Identificación</th>
+          <th class="col-cliente">Cliente</th>
+          <th class="col-num">Neto</th>
+          <th class="col-num">Toneladas</th>
+          <th class="col-num">Precio / Unidad</th>
+          <th class="col-num">Total</th>
+        </tr>
+      </thead>
+      <tbody id="listado-body">
+        <!-- Rows are rebuilt entirely by listado.js on every setListadoData() call. -->
+      </tbody>
+    </table>
+
+    <div class="totals-block">
+      <span>Totales:</span>
+      <span class="totals-item">Neto: <strong data-field="totalNeto"></strong></span>
+      <span class="totals-item">Toneladas: <strong data-field="totalToneladas"></strong></span>
+      <span class="totals-item">Invertido: <strong data-field="totalDinero"></strong></span>
+    </div>
+
+    <div class="footnote" id="footnote" hidden>
+      * Registro(s) provisional(es): generado(s) sin conexión y aún no confirmado(s) por el servidor.
+    </div>
+  </main>
+
+  <script src="listado.js"></script>
+</body>
+</html>

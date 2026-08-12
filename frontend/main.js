@@ -123,15 +123,15 @@ function waitForLoad(win) {
 // printed or just closed it — a cancel isn't a failure worth surfacing.
 // Rejects only when printing itself can't happen (e.g. no printer/CUPS
 // destination configured), so the caller can fall back to a saved PDF.
-function printViaDialog(win) {
+function printViaDialog(win, { landscape = false } = {}) {
     return new Promise((resolve, reject) => {
         win.webContents.print(
-            { silent: false, printBackground: true, pageSize: 'A4', margins: { marginType: 'none' } },
+            { silent: false, printBackground: true, pageSize: 'A4', landscape, margins: { marginType: 'none' } },
             (success, failureReason) => {
                 if (success || failureReason === 'cancelled') {
                     resolve();
                 } else {
-                    reject(new Error(failureReason || 'No se pudo imprimir la boleta.'));
+                    reject(new Error(failureReason || 'No se pudo imprimir el documento.'));
                 }
             }
         );
@@ -140,12 +140,11 @@ function printViaDialog(win) {
 
 // Used when there's no printer available to print to (common on a fresh Linux
 // dev box with no CUPS destination configured, but can happen anywhere) so the
-// operator still gets the receipt instead of a hard failure.
-async function exportReceiptAsPdf(win, data) {
-    const pdfBuffer = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'none' } });
-    const numero = String(data?.numero || '').trim().replace(/[^a-zA-Z0-9-]/g, '') || Date.now();
+// operator still gets the document instead of a hard failure.
+async function exportWindowAsPdf(win, { landscape = false, fileName }) {
+    const pdfBuffer = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, landscape, margins: { marginType: 'none' } });
     const dir = path.join(app.getPath('documents'), 'Boletas Bascula Central');
-    const filePath = path.join(dir, `boleta-${numero}.pdf`);
+    const filePath = path.join(dir, fileName);
 
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.writeFile(filePath, pdfBuffer);
@@ -187,7 +186,8 @@ async function printReceipt(data) {
             return { ok: true, mode: 'print' };
         } catch (printError) {
             logUpdate(`Impresión de boleta falló, exportando a PDF en su lugar: ${printError.message}`);
-            const filePath = await exportReceiptAsPdf(receiptWindow, data);
+            const numero = String(data?.numero || '').trim().replace(/[^a-zA-Z0-9-]/g, '') || Date.now();
+            const filePath = await exportWindowAsPdf(receiptWindow, { fileName: `boleta-${numero}.pdf` });
             return { ok: true, mode: 'pdf', path: filePath };
         }
     } finally {
@@ -195,9 +195,50 @@ async function printReceipt(data) {
     }
 }
 
+// Mirrors printReceipt() but for the filtered-transactions table (listado),
+// which prints landscape and has no natural "number" for the PDF filename.
+async function printListado(data) {
+    const listadoWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true
+        }
+    });
+
+    try {
+        const loaded = waitForLoad(listadoWindow);
+        listadoWindow.loadFile(path.join(__dirname, 'receipt', 'listado.html'));
+        await loaded;
+
+        const payload = JSON.stringify(data ?? {})
+            .split(String.fromCharCode(0x2028)).join('\\u2028')
+            .split(String.fromCharCode(0x2029)).join('\\u2029');
+        await listadoWindow.webContents.executeJavaScript(`window.setListadoData(${payload})`);
+
+        try {
+            await printViaDialog(listadoWindow, { landscape: true });
+            return { ok: true, mode: 'print' };
+        } catch (printError) {
+            logUpdate(`Impresión de listado falló, exportando a PDF en su lugar: ${printError.message}`);
+            const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+            const filePath = await exportWindowAsPdf(listadoWindow, { landscape: true, fileName: `listado-${stamp}.pdf` });
+            return { ok: true, mode: 'pdf', path: filePath };
+        }
+    } finally {
+        if (!listadoWindow.isDestroyed()) listadoWindow.destroy();
+    }
+}
+
 function registerReceiptIpc() {
     ipcMain.removeHandler('receipt:print');
     ipcMain.handle('receipt:print', (_event, data) => printReceipt(data));
+}
+
+function registerListadoIpc() {
+    ipcMain.removeHandler('listado:print');
+    ipcMain.handle('listado:print', (_event, data) => printListado(data));
 }
 
 function registerOfflineQueueIpc() {
@@ -279,6 +320,7 @@ app.whenReady().then(() => {
     currentScaleSettings = scaleSettings.loadSettings(app);
     registerScaleIpc();
     registerReceiptIpc();
+    registerListadoIpc();
     registerOfflineQueueIpc();
     createWindow();
 
@@ -323,6 +365,7 @@ app.on('before-quit', () => {
     ipcMain.removeHandler('scale:save-settings');
     ipcMain.removeHandler('scale:test-connection');
     ipcMain.removeHandler('receipt:print');
+    ipcMain.removeHandler('listado:print');
     ipcMain.removeHandler('offline-queue:load');
     ipcMain.removeHandler('offline-queue:save');
     ipcMain.removeHandler('offline-queue:warn');

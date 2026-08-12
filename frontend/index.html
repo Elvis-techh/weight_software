@@ -705,6 +705,35 @@
         </div>
     </div>
 
+    <!-- PRINT PREVIEW MODAL (shared by receipt + listado printing) -->
+
+    <div id="print-preview-modal" class="hidden fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-[900px] max-w-full max-h-[94vh] overflow-hidden flex flex-col">
+            <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white">
+                <h3 id="print-preview-title" class="font-bold text-lg">Vista previa</h3>
+                <button onclick="cerrarVistaPrevia()" class="hover:text-red-400 transition-colors">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div id="print-preview-viewport" class="flex-1 overflow-auto bg-gray-200 p-4 flex justify-center">
+                <div id="print-preview-scale-wrapper">
+                    <iframe id="print-preview-frame" title="Vista previa de impresión" class="border-0"></iframe>
+                </div>
+            </div>
+
+            <div class="mt-2 flex justify-end gap-3 px-6 py-4 border-t shrink-0">
+                <button onclick="cerrarVistaPrevia()"
+                    class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+                <button id="print-preview-confirm" onclick="confirmarImpresionVistaPrevia()"
+                    class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed">
+                    <span class="material-icons text-[18px]">print</span>
+                    <span id="print-preview-confirm-label">Imprimir</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- GASTOS MODAL -->
 
     <div id="gastos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -1697,6 +1726,12 @@
 
                     </div>
 
+                    <button id="btn-imprimir-listado" onclick="imprimirListadoReportes()" disabled
+                        class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 ml-2">
+                        <span class="material-icons text-[18px]">print</span>
+                        <span class="hidden sm:inline">Imprimir Listado</span>
+                    </button>
+
                 </div>
 
 
@@ -2167,6 +2202,7 @@
     <script src="js/sidebar.js" defer></script>
     <script src="js/clientes.js" defer></script>
     <script src="js/pesaje.js" defer></script>
+    <script src="js/printPreview.js" defer></script>
     <script src="js/reportes.js" defer></script>
     <script src="js/corapsa.js" defer></script>
     <script src="js/gastos.js" defer></script>

@@ -49,6 +49,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('receipt:print', data);
     },
 
+    printListado(data) {
+        return ipcRenderer.invoke('listado:print', data);
+    },
+
     loadOfflineQueue() {
         return ipcRenderer.invoke('offline-queue:load');
     },
