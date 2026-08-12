@@ -8,8 +8,8 @@
   --paper-bg: #ffffff;
 
   /* Fine-tuned visual controls, per copy */
-  --watermark-width: 190mm;
-  --watermark-height: 135mm;
+  --watermark-width: 220mm;
+  --watermark-height: 165mm;
   --watermark-top: -6mm;
   --watermark-opacity: 0.62;
   --signature-gap: 18mm;
@@ -185,8 +185,8 @@ body {
    ========================= */
 .details-grid {
   display: grid;
-  grid-template-columns: minmax(0, 119mm) minmax(0, 47mm);
-  column-gap: 15mm;
+  grid-template-columns: minmax(0, 119mm) minmax(0, 54mm);
+  column-gap: 8mm;
   margin-top: 3mm;
 }
 
@@ -203,7 +203,7 @@ body {
   grid-template-columns: 29mm minmax(0, 1fr);
   align-items: baseline;
   min-height: 7.3mm;
-  font-size: 9pt;
+  font-size: 10.5pt;
   line-height: 1.08;
 }
 
@@ -211,13 +211,13 @@ body {
   grid-template-columns: 21mm minmax(0, 1fr);
 }
 
-.detail-label,
-.detail-value {
+.detail-label {
   white-space: nowrap;
 }
 
 .detail-value {
   min-width: 0;
+  overflow-wrap: break-word;
 }
 
 /* =========================
@@ -242,7 +242,7 @@ body {
 .weights-table th {
   padding: 1.8mm 0.5mm 1.5mm;
   border-bottom: 0.3mm solid #111;
-  font-size: 10pt;
+  font-size: 11.5pt;
   font-weight: 700;
   line-height: 1;
 }
@@ -250,7 +250,7 @@ body {
 .weights-table td {
   padding: 1.8mm 0.4mm 1.9mm;
   border-bottom: 0.3mm solid #111;
-  font-size: 9pt;
+  font-size: 11pt;
   line-height: 1;
 }
 
@@ -284,7 +284,7 @@ body {
 
 .signature-text {
   margin-top: 2mm;
-  font-size: 8.5pt;
+  font-size: 9.5pt;
   line-height: 1;
   white-space: nowrap;
 }
