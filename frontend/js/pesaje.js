@@ -235,13 +235,34 @@ async function saveWeight(type, manualWeight = null) {
         const body = type === 'bruto'
             ? { pesoBruto: reading.weight }
             : { pesoTara: reading.weight };
+        let wentOffline = false;
 
-        const result = await apiRequest(
-            `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}`,
-            { method: 'PATCH', body }
-        );
+        try {
+            const result = await apiRequest(
+                `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}`,
+                { method: 'PATCH', body }
+            );
+            activeTransaction = normalizarCamionPatio(result?.camion || result);
+        } catch (error) {
+            if (!isConnectivityError(error)) throw error;
+            wentOffline = true;
 
-        activeTransaction = normalizarCamionPatio(result?.camion || result);
+            await enqueueOp({
+                opId: generateLocalId('op'),
+                type: 'update',
+                localTruckId: activeTransaction.id,
+                payload: body,
+                createdAt: new Date().toISOString()
+            });
+
+            activeTransaction = {
+                ...activeTransaction,
+                pesoBruto: type === 'bruto' ? reading.weight : activeTransaction.pesoBruto,
+                pesoTara: type === 'tara' ? reading.weight : activeTransaction.pesoTara,
+                pendingSync: true
+            };
+        }
+
         const index = camionesEnPatio.findIndex(item => sameRecordId(item.id, activeTransaction.id));
         if (index >= 0) camionesEnPatio[index] = { ...activeTransaction };
 
@@ -250,9 +271,12 @@ async function saveWeight(type, manualWeight = null) {
         calcularNetoYTotal();
         actualizarEstadoBotonesPeso();
         mostrarNotificacion(
-            wasReplacingTara
-                ? 'Peso tara actualizado exitosamente.'
-                : `Peso ${type === 'bruto' ? 'bruto' : 'tara'} guardado exitosamente.`
+            wentOffline
+                ? 'Sin conexión: peso guardado localmente. Se sincronizará automáticamente al reconectar.'
+                : wasReplacingTara
+                    ? 'Peso tara actualizado exitosamente.'
+                    : `Peso ${type === 'bruto' ? 'bruto' : 'tara'} guardado exitosamente.`,
+            wentOffline ? 'error' : 'success'
         );
         return true;
     } catch (error) {
@@ -303,9 +327,36 @@ async function crearNuevaTransaccion(tipoPeso, pesoValue) {
         mostrarNotificacion('Vehículo registrado en patio exitosamente.');
         return true;
     } catch (error) {
-        console.error('Error al guardar en patio:', error);
-        mostrarNotificacion(error.message || 'El camión no se guardó.', 'error');
-        return false;
+        if (!isConnectivityError(error)) {
+            console.error('Error al guardar en patio:', error);
+            mostrarNotificacion(error.message || 'El camión no se guardó.', 'error');
+            return false;
+        }
+
+        const localId = generateLocalId('truck');
+        const localTruck = normalizarCamionPatio({
+            ...truckData,
+            id: localId,
+            identidadSnapshot: getClienteIdentidadLocal(truckData.clienteId, truckData.casualSnapshot)
+        });
+        localTruck.pendingSync = true;
+        camionesEnPatio.push(localTruck);
+
+        await enqueueOp({
+            opId: generateLocalId('op'),
+            type: 'create',
+            localTruckId: localId,
+            payload: truckData,
+            createdAt: new Date().toISOString()
+        });
+
+        renderQueue();
+        limpiarFormulario();
+        mostrarNotificacion(
+            'Sin conexión: vehículo guardado localmente. Se sincronizará automáticamente al reconectar.',
+            'error'
+        );
+        return true;
     }
 }
 
@@ -347,6 +398,9 @@ function renderQueue() {
         const invalidIdLabel = hasValidId
             ? ''
             : '<div class="text-[10px] font-bold text-red-600 mt-1">ID pendiente de reparación</div>';
+        const pendingSyncLabel = truck.pendingSync
+            ? '<div class="text-[10px] font-bold text-amber-600 mt-1">SIN SINCRONIZAR</div>'
+            : '';
         const deleteButton = hasValidId
             ? `<button type="button" onclick="eliminarDeCola('${escapeHtml(queueId)}', event)" class="bg-red-100 hover:bg-red-500 hover:text-white text-red-700 px-2 py-1 rounded text-xs font-bold transition-colors" aria-label="Eliminar de la cola">
                     <span class="material-icons text-[14px]">delete</span>
@@ -359,7 +413,7 @@ function renderQueue() {
             <tr class="hover:bg-blue-50 ${hasValidId ? 'cursor-pointer' : 'cursor-not-allowed'} group" ${rowAction}>
                 <td class="p-3 font-bold text-gray-800">${escapeHtml(truck.placa === 'S/P' ? '-' : truck.placa)}</td>
                 <td class="p-3 font-bold text-gray-800">${escapeHtml(truck.conductor === 'Desconocido' ? '-' : truck.conductor)}</td>
-                <td class="p-3 text-sm text-gray-600">${escapeHtml(nombreCliente)}${invalidIdLabel}</td>
+                <td class="p-3 text-sm text-gray-600">${escapeHtml(nombreCliente)}${invalidIdLabel}${pendingSyncLabel}</td>
                 <td class="p-3 text-right font-mono font-bold text-gray-500">${escapeHtml(getQueueWeightLabel(truck))}</td>
                 <td class="p-3 text-center">
                     <div class="flex justify-center gap-1">
@@ -381,6 +435,20 @@ function eliminarDeCola(id, event) {
             'error'
         );
     }
+
+    // A truck whose own "create" hasn't synced yet exists only on this
+    // machine — no server round trip (or justification) is needed to drop it,
+    // just forget it and the queued operations that reference it.
+    const truck = camionesEnPatio.find(item => sameRecordId(item.id, queueId));
+    if (truck?.pendingSync && isLocalOnlyTruckId(queueId)) {
+        camionesEnPatio = camionesEnPatio.filter(item => !sameRecordId(item.id, queueId));
+        removeQueuedOpsForLocalTruck(queueId);
+        if (activeTransaction.id && sameRecordId(activeTransaction.id, queueId)) limpiarFormulario();
+        renderQueue();
+        mostrarNotificacion('Vehículo (sin sincronizar) removido localmente.');
+        return;
+    }
+
     abrirActionModal('delete_cola', queueId);
 }
 
@@ -513,38 +581,87 @@ function calcularNetoYTotal() {
     return { neto, total };
 }
 
+async function finalizarTransaccionOffline(truck, fecha, hora, neto, total) {
+    const predictedNumeroBoleta = getNextPredictedBoletaNumber();
+    const localTransactionId = generateLocalId('tx');
+
+    const transactionSnapshot = normalizarTransaccion({
+        id: localTransactionId,
+        fecha,
+        hora,
+        fechaEntrada: truck.fechaEntrada || fecha,
+        horaEntrada: truck.horaEntrada || hora,
+        placa: truck.placa,
+        conductor: truck.conductor,
+        clienteNombre: truck.clienteNombreSnapshot || 'Cliente no disponible',
+        identidad: truck.identidadSnapshot || '',
+        numeroBoleta: predictedNumeroBoleta,
+        pesoBruto: truck.pesoBruto,
+        pesoTara: truck.pesoTara,
+        neto,
+        precioAplicado: truck.precioAplicado,
+        total,
+        unidad: truck.unidad
+    });
+    transactionSnapshot.pendingSync = true;
+
+    await enqueueOp({
+        opId: generateLocalId('op'),
+        type: 'finalize',
+        localTruckId: truck.id,
+        payload: { fecha, hora },
+        predictedNumeroBoleta,
+        localTransactionId,
+        transactionSnapshot,
+        createdAt: new Date().toISOString()
+    });
+
+    return transactionSnapshot;
+}
+
 async function guardarTransaccion() {
     if (weightRequestInProgress) return;
     if (!activeTransaction.id || activeTransaction.pesoBruto == null || activeTransaction.pesoTara == null) {
         return mostrarNotificacion('La transacción todavía no tiene ambos pesos.', 'error');
     }
 
-    const { neto } = calcularNetoYTotal();
+    const { neto, total } = calcularNetoYTotal();
     if (neto <= 0) return mostrarNotificacion('El peso neto debe ser mayor que cero.', 'error');
 
     weightRequestInProgress = true;
     setWeightButtonsBusy(true);
 
-    try {
-        const result = await apiRequest(
-            `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
-            {
-                method: 'POST',
-                body: {
-                    fecha: getLocalIsoDate(),
-                    hora: getLocalTimeString()
-                }
-            }
-        );
+    const fecha = getLocalIsoDate();
+    const hora = getLocalTimeString();
 
-        const savedTransaction = normalizarTransaccion(result?.transaccion || result);
+    try {
+        let savedTransaction;
+        let wentOffline = false;
+
+        try {
+            const result = await apiRequest(
+                `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
+                { method: 'POST', body: { fecha, hora } }
+            );
+            savedTransaction = normalizarTransaccion(result?.transaccion || result);
+        } catch (error) {
+            if (!isConnectivityError(error)) throw error;
+            wentOffline = true;
+            savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total);
+        }
+
         transaccionesData.unshift(savedTransaction);
         camionesEnPatio = camionesEnPatio.filter(item => !sameRecordId(item.id, activeTransaction.id));
 
         renderQueue();
         updateReportesTab();
         limpiarFormulario();
-        mostrarNotificacion('Transacción finalizada y guardada exitosamente.');
+        mostrarNotificacion(
+            wentOffline
+                ? 'Sin conexión: transacción finalizada localmente con boleta provisional. Se confirmará al reconectar.'
+                : 'Transacción finalizada y guardada exitosamente.',
+            wentOffline ? 'error' : 'success'
+        );
     } catch (error) {
         console.error('No se pudo finalizar la transacción:', error);
         mostrarNotificacion(error.message || 'No se pudo finalizar la transacción.', 'error');

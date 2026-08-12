@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const scaleSettings = require('./scaleSettings');
 const scaleReader = require('./scaleReader');
+const offlineQueueStore = require('./offlineQueueStore');
 
 // Packaged apps have no attached console, so without this, autoUpdater
 // failures (no internet, blocked firewall, bad manifest, etc.) are
@@ -199,6 +200,29 @@ function registerReceiptIpc() {
     ipcMain.handle('receipt:print', (_event, data) => printReceipt(data));
 }
 
+function registerOfflineQueueIpc() {
+    ipcMain.removeHandler('offline-queue:load');
+    ipcMain.handle('offline-queue:load', () => offlineQueueStore.loadQueue(app));
+
+    ipcMain.removeHandler('offline-queue:save');
+    ipcMain.handle('offline-queue:save', (_event, queue) => offlineQueueStore.saveQueue(app, queue));
+
+    // A must-acknowledge native dialog, not just a toast — this fires only for
+    // the rare cases where an offline-captured value (a boleta number, or a
+    // sync that failed outright) turned out to disagree with the server once
+    // reconnected, which is exactly the kind of thing that must not go unseen.
+    ipcMain.removeHandler('offline-queue:warn');
+    ipcMain.handle('offline-queue:warn', (_event, message) => {
+        return dialog.showMessageBox(mainWindow, {
+            type: 'warning',
+            title: 'Revisar sincronización sin conexión',
+            message: 'Se detectó un problema al sincronizar cambios guardados sin conexión.',
+            detail: String(message || ''),
+            buttons: ['Entendido']
+        });
+    });
+}
+
 function registerScaleIpc() {
     ipcMain.removeHandler('scale-simulation:set-preset');
     ipcMain.handle('scale-simulation:set-preset', (_event, presetName) => {
@@ -255,6 +279,7 @@ app.whenReady().then(() => {
     currentScaleSettings = scaleSettings.loadSettings(app);
     registerScaleIpc();
     registerReceiptIpc();
+    registerOfflineQueueIpc();
     createWindow();
 
     app.on('activate', () => {
@@ -298,4 +323,7 @@ app.on('before-quit', () => {
     ipcMain.removeHandler('scale:save-settings');
     ipcMain.removeHandler('scale:test-connection');
     ipcMain.removeHandler('receipt:print');
+    ipcMain.removeHandler('offline-queue:load');
+    ipcMain.removeHandler('offline-queue:save');
+    ipcMain.removeHandler('offline-queue:warn');
 });

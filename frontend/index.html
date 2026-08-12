@@ -1214,12 +1214,21 @@
 
                 </div>
 
-                <div
+                <div id="pending-sync-badge"
+                    class="hidden items-center gap-2 bg-amber-50 text-amber-700 px-3 py-1.5 rounded-full border border-amber-200">
+
+                    <span class="material-icons text-[16px]">sync_problem</span>
+
+                    <span data-role="pending-sync-label" class="text-xs font-bold uppercase tracking-wide">0 cambios sin sincronizar</span>
+
+                </div>
+
+                <div id="server-status-indicator"
                     class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full border border-green-200">
 
-                    <div class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
+                    <div data-role="status-dot" class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
 
-                    <span class="text-xs font-bold uppercase tracking-wide">Servidor Conectado</span>
+                    <span data-role="status-label" class="text-xs font-bold uppercase tracking-wide">Servidor Conectado</span>
 
                 </div>
 
@@ -2152,6 +2161,8 @@
     <!-- EXTERNAL JS MODULES -->
     <script src="js/globals.js" defer></script>
     <script src="js/api.js" defer></script>
+    <script src="js/connectivity.js" defer></script>
+    <script src="js/offlineQueue.js" defer></script>
     <script src="js/ui.js" defer></script>
     <script src="js/sidebar.js" defer></script>
     <script src="js/clientes.js" defer></script>

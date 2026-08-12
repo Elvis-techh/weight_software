@@ -47,5 +47,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     printReceipt(data) {
         return ipcRenderer.invoke('receipt:print', data);
+    },
+
+    loadOfflineQueue() {
+        return ipcRenderer.invoke('offline-queue:load');
+    },
+
+    saveOfflineQueue(queue) {
+        return ipcRenderer.invoke('offline-queue:save', queue);
+    },
+
+    warnOfflineSyncIssue(message) {
+        return ipcRenderer.invoke('offline-queue:warn', message);
     }
 });

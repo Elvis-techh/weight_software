@@ -216,11 +216,13 @@ function renderInitialState() {
     renderQueue();
     updateReportesTab();
     updateSimulatorButtons('loaded');
+    renderServerStatus();
 }
 
 async function initApp() {
     startClock();
     await initScaleSettings();
+    await initOfflineQueue();
     setupScaleListener();
     setDefaultDateFilters();
     renderInitialState();
@@ -250,6 +252,17 @@ async function initApp() {
             'error'
         );
     }
+
+    // Layer any not-yet-synced local operations (e.g. left over from a crash
+    // during a previous outage) on top of the server's data, now that it's
+    // loaded — this is what makes a pending truck/receipt reappear after a
+    // restart instead of silently vanishing until the next successful sync.
+    rebuildOptimisticStateFromOfflineQueue();
+    renderQueue();
+    updateReportesTab();
+    renderPendingSyncBadge();
+
+    startServerPolling();
 }
 
 window.addEventListener('DOMContentLoaded', initApp, { once: true });

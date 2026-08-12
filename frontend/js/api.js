@@ -35,6 +35,10 @@ async function apiRequest(path, {
             signal: controller.signal
         });
 
+        // Any HTTP response at all — even a 4xx/5xx — proves the server was
+        // reachable, which is what the connection indicator cares about.
+        if (typeof setServerConnectionState === 'function') setServerConnectionState(true);
+
         if (response.status === 204) return null;
 
         const rawText = await response.text();
@@ -62,6 +66,7 @@ async function apiRequest(path, {
         return payload?.ok === true ? payload.data : payload;
     } catch (error) {
         if (error?.name === 'AbortError') {
+            if (typeof setServerConnectionState === 'function') setServerConnectionState(false);
             throw new ApiError('El servidor tardó demasiado en responder.', {
                 code: 'REQUEST_TIMEOUT'
             });
@@ -69,6 +74,7 @@ async function apiRequest(path, {
 
         if (error instanceof ApiError) throw error;
 
+        if (typeof setServerConnectionState === 'function') setServerConnectionState(false);
         throw new ApiError('No fue posible conectar con el servidor.', {
             code: 'NETWORK_ERROR',
             details: error?.message || String(error)

@@ -99,6 +99,16 @@ async function imprimirRecibo(id) {
         );
     }
 
+    // Finalized offline: the boleta number is this station's best local
+    // prediction, not yet confirmed by the server (see offlineQueue.js). Say
+    // so before it goes to paper, since it's the one thing that could change.
+    if (transaction.pendingSync) {
+        mostrarNotificacion(
+            `Boleta #${transaction.numeroBoleta} provisional: se generó sin conexión y aún no fue confirmada por el servidor.`,
+            'error'
+        );
+    }
+
     const tm = calculateMetricTons(transaction.neto, { truncate: true });
     // The printed ticket always bills per metric ton (its "Precio / TM" column isn't
     // unit-aware), so the rate is derived from the actual total instead of reusing
