@@ -87,8 +87,113 @@ function mostrarInfoCliente() {
     document.getElementById('precio-unidad').textContent = snapshot.unidad === 'quintal' ? 'Quintal' : 'Ton';
     priceBox.classList.remove('hidden');
 
+    const editButton = document.getElementById('price-edit-button');
+    if (editButton) editButton.classList.toggle('hidden', !getPriceEditContext());
+
     if (activeTransaction.pesoBruto != null && activeTransaction.pesoTara != null) {
         calcularNetoYTotal();
+    }
+}
+
+// Registered (non-casual) clients only — a casual client has no row in `clientes` to persist
+// the price against, and its price is already editable inline via the casual modal.
+function getPriceEditContext() {
+    const clienteId = activeTransaction.id
+        ? activeTransaction.clienteId
+        : document.getElementById('cliente-select')?.value;
+    const flete = activeTransaction.id
+        ? activeTransaction.flete
+        : (document.getElementById('flete-select')?.value === 'Cliente' ? 'Cliente' : 'Propio');
+
+    if (clienteId == null || clienteId === '' || clienteId === 'casual') return null;
+
+    return { clienteId, flete };
+}
+
+function abrirPriceEditModal() {
+    const context = getPriceEditContext();
+    if (!context) {
+        return mostrarNotificacion('Seleccione un cliente registrado para modificar su precio.', 'error');
+    }
+
+    const snapshot = activeTransaction.id
+        ? { precioAplicado: activeTransaction.precioAplicado, unidad: activeTransaction.unidad }
+        : getSelectedClientSnapshot();
+    if (!snapshot) return;
+
+    document.getElementById('price-edit-unidad-label').textContent = snapshot.unidad === 'quintal' ? 'Quintal' : 'Ton';
+    document.getElementById('price-edit-input').value = formatNumberForInput(
+        snapshot.precioAplicado,
+        snapshot.unidad === 'quintal' ? 1 : 2
+    );
+    document.getElementById('price-edit-justificacion').value = '';
+    document.getElementById('price-edit-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('price-edit-input')?.focus(), 0);
+}
+
+function cerrarPriceEditModal() {
+    if (document.getElementById('price-edit-confirm-button')?.disabled) return;
+    document.getElementById('price-edit-modal').classList.add('hidden');
+}
+
+async function confirmarPriceEditModal() {
+    const button = document.getElementById('price-edit-confirm-button');
+    if (button?.disabled) return;
+
+    const context = getPriceEditContext();
+    if (!context) {
+        cerrarPriceEditModal();
+        return mostrarNotificacion('Seleccione un cliente registrado para modificar su precio.', 'error');
+    }
+
+    const nuevoPrecio = parseFormattedNumber(document.getElementById('price-edit-input').value);
+    const justificacion = document.getElementById('price-edit-justificacion').value.trim();
+
+    if (!Number.isFinite(nuevoPrecio) || nuevoPrecio < 0) {
+        return mostrarNotificacion('Ingrese un precio válido.', 'error');
+    }
+    if (!justificacion) {
+        return mostrarNotificacion('Debe ingresar una justificación para modificar el precio.', 'error');
+    }
+
+    button.disabled = true;
+    button.textContent = 'Guardando...';
+
+    try {
+        const result = await apiRequest(`/api/clientes/${encodeURIComponent(context.clienteId)}/precio`, {
+            method: 'PATCH',
+            body: {
+                flete: context.flete,
+                precio: nuevoPrecio,
+                justificacion,
+                truckId: activeTransaction.id || undefined
+            }
+        });
+
+        if (result?.cliente) {
+            const savedClient = normalizarCliente(result.cliente);
+            const index = MOCK_CLIENTES.findIndex(c => sameRecordId(c.id, savedClient.id));
+            if (index >= 0) MOCK_CLIENTES[index] = savedClient;
+            else MOCK_CLIENTES.push(savedClient);
+            renderClientesTab();
+        }
+
+        if (result?.camion) {
+            activeTransaction = normalizarCamionPatio(result.camion);
+            const queueIndex = camionesEnPatio.findIndex(item => sameRecordId(item.id, activeTransaction.id));
+            if (queueIndex >= 0) camionesEnPatio[queueIndex] = { ...activeTransaction };
+            renderQueue();
+        }
+
+        mostrarInfoCliente();
+        document.getElementById('price-edit-modal').classList.add('hidden');
+        mostrarNotificacion('Precio actualizado exitosamente.');
+    } catch (error) {
+        console.error('Error al actualizar el precio:', error);
+        mostrarNotificacion(error.message || 'No se pudo actualizar el precio.', 'error');
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Guardar';
     }
 }
 
@@ -483,6 +588,7 @@ function cargarDeCola(truckId) {
     ['cliente-select', 'placa-input', 'conductor-input', 'flete-select'].forEach(id => {
         document.getElementById(id).disabled = true;
     });
+    actualizarClienteDisplayBox();
 
     updateWeightDisplayFromTransaction();
     mostrarInfoCliente();
@@ -681,12 +787,14 @@ function limpiarFormulario() {
 
     MOCK_CASUAL = createDefaultCasualClient();
     populateClienteDropdown();
+    cerrarClienteBuscador();
 
     document.getElementById('cliente-select').value = '';
     document.getElementById('placa-input').value = '';
     document.getElementById('conductor-input').value = '';
     document.getElementById('flete-select').value = 'Propio';
     document.getElementById('client-price-box').classList.add('hidden');
+    actualizarClienteDisplayBox();
 
     updateLiveWeightPreview();
     document.getElementById('neto-display').textContent = '0 LBS';

@@ -1,9 +1,8 @@
 :root {
-  /* A4 PORTRAIT: 210 x 297mm — same physical page as receipt.css, so this
-     always fits the paper actually loaded in the printer. Unlike
-     receipt.css's single fixed-height page, this sheet has no explicit
-     height — content flows across as many printed pages as the row count
-     needs. */
+  /* A4 PORTRAIT: 210 x 297mm — same physical page as receipt.css and
+     listado.css, so this always fits the paper actually loaded in the
+     printer. This sheet has no explicit height — content flows across as
+     many printed pages as the row count needs. */
   --page-width: 210mm;
   --ink: #111111;
   --paper-bg: #ffffff;
@@ -93,12 +92,10 @@ body {
 /* =========================
    TABLE
    ========================= */
-/* auto (not fixed): each column is sized from its own actual widest line
-   (header or a data cell) across the whole table, so Cliente/Neto/Total etc.
-   only ever take the width they truly need instead of a hand-guessed
-   percentage — which is what left a large dead gap after Cliente before.
-   Any leftover width is spread across columns in proportion to their
-   content instead of piling up in one of them. */
+/* auto (not fixed): each column sizes itself from its own actual widest
+   line (header or a data cell) across the whole table, instead of a
+   hand-guessed percentage — see receipt/listado.css for why fixed
+   percentages didn't work well here. */
 .listado-table {
   width: 100%;
   border-collapse: collapse;
@@ -118,11 +115,9 @@ body {
   border-bottom: 0.25mm solid #ccc;
   text-align: left;
   vertical-align: top;
-  /* Last-resort only: breaks a word mid-way purely to avoid the old
-     clipping bug on a truly-too-narrow column. Each column below is sized
-     to fit its actual header/content, so this shouldn't normally trigger —
-     unlike word-break: break-word (removed), it won't break a word early
-     just because *some* wrap point exists sooner. */
+  /* Last-resort only: breaks a word mid-way purely to avoid clipping on a
+     truly-too-narrow column — shouldn't normally trigger since each column
+     is sized to its actual header/content. */
   overflow-wrap: break-word;
 }
 
@@ -137,14 +132,24 @@ body {
   text-align: right;
 }
 
-.listado-table td.col-fecha {
-  white-space: pre-line;
+/* Precio and Total are currency strings with a space in them ("L 28,912.77") —
+   without this, a column squeezed even slightly narrower than that whole
+   string wraps at the space, dropping "L" onto its own line above the
+   number. nowrap makes table-layout: auto treat the full string as that
+   column's non-negotiable minimum width, so it always gets the room it
+   needs and neighboring columns (Toneladas included) cede space to it
+   instead — the same "size to real content" behavior as every other column
+   here, just guaranteed to never break this particular string. */
+.listado-table .col-precio,
+.listado-table .col-total {
+  white-space: nowrap;
 }
 
-/* No explicit per-column widths — table-layout: auto above sizes each one
-   from its real content. No Identificación/Placa column on the printed
-   listado at all (still shown in the on-screen Reportes table; dropped here
-   only to give the remaining columns more room). */
+/* A little breathing room on the side facing Total, so Toneladas' value
+   doesn't sit flush against the border between the two columns. */
+.listado-table .col-toneladas {
+  padding-right: 4mm;
+}
 
 /* A row is never split across a page break — if it doesn't fit, the
    whole row moves to the next page instead. */
@@ -153,13 +158,8 @@ body {
   page-break-inside: avoid;
 }
 
-.pending-marker {
-  color: #b45309;
-  font-weight: 700;
-}
-
 /* =========================
-   TOTALS / FOOTNOTE
+   TOTALS
    ========================= */
 /* A <div> after the table, not a <tfoot> — Chromium repeats <tfoot> on
    every printed page (same mechanism as thead), which is right for a
@@ -173,14 +173,6 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 3mm 6mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.footnote {
-  margin-top: 3mm;
-  font-size: 8.5pt;
-  color: var(--muted);
   break-inside: avoid;
   page-break-inside: avoid;
 }

@@ -53,6 +53,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('listado:print', data);
     },
 
+    saveListadoAsPdf(data) {
+        return ipcRenderer.invoke('listado:save-pdf', data);
+    },
+
+    printCorapsaListado(data) {
+        return ipcRenderer.invoke('corapsa-listado:print', data);
+    },
+
+    saveCorapsaListadoAsPdf(data) {
+        return ipcRenderer.invoke('corapsa-listado:save-pdf', data);
+    },
+
     loadOfflineQueue() {
         return ipcRenderer.invoke('offline-queue:load');
     },

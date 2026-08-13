@@ -1037,6 +1037,72 @@ app.delete('/api/clientes/:id', asyncHandler(async (req, res) => {
     sendData(res, { id });
 }));
 
+// Lets the Pesaje tab correct a client's applied price without navigating to Gestión > Clientes.
+// Always updates the client's stored price (source of truth for future trucks); if a truck for
+// this same client/flete is currently open in the yard queue, its snapshot is synced too so the
+// weighing screen's totals reflect the new price immediately.
+app.patch('/api/clientes/:id/precio', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const flete = asFreightType(req.body?.flete);
+    const justificacion = requireJustification(req.body);
+    const nuevoPrecio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
+    const truckIdRaw = req.body?.truckId;
+    const truckId = truckIdRaw === null || truckIdRaw === undefined || truckIdRaw === ''
+        ? null
+        : String(truckIdRaw).trim();
+
+    const result = await withTransaction(async () => {
+        const clientRow = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
+        if (!clientRow) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
+
+        const unidad = clientRow.unidad === 'quintal' ? 'quintal' : 'tonelada';
+        const precioAnteriorTonelada = getStoredTonPrice(clientRow, flete);
+        const precioUnidad = unidad === 'quintal' ? roundToNearestWhole(nuevoPrecio) : roundToCurrency(nuevoPrecio);
+        // Editing in Pesaje always edits the price actually charged (precioUnidad). When the
+        // client bills by quintal, the base ton price is derived FROM it (the reverse of the
+        // Clientes form, where ton price is entered and quintal is suggested from it) so the two
+        // stay consistent.
+        const precioTonelada = unidad === 'quintal'
+            ? roundToCurrency(precioUnidad * QUINTALES_PER_TON)
+            : precioUnidad;
+
+        if (flete === 'Cliente') {
+            await db.run(
+                `UPDATE clientes SET precio_flete_cliente = ?, precio_tonelada_cliente = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [precioUnidad, precioTonelada, id]
+            );
+        } else {
+            await db.run(
+                `UPDATE clientes SET precio_flete_propio = ?, precio_tonelada_propio = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [precioUnidad, precioTonelada, id]
+            );
+        }
+
+        const cliente = mapClient(await db.get('SELECT * FROM clientes WHERE id = ?', [id]));
+
+        let camion = null;
+        if (truckId) {
+            const truckRow = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [truckId]);
+            if (truckRow && String(truckRow.cliente_id) === String(id) && truckRow.flete === flete) {
+                await db.run('UPDATE camiones_en_patio SET precio_aplicado = ? WHERE id = ?', [precioUnidad, truckId]);
+                camion = mapTruck(await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [truckId]));
+            }
+        }
+
+        await logAudit({
+            entity: 'cliente',
+            entityId: id,
+            action: 'editar_precio_pesaje',
+            justification: justificacion,
+            details: { flete, unidad, precioAnteriorTonelada, precioNuevo: precioUnidad, precioTonelada, truckId }
+        });
+
+        return { cliente, camion };
+    });
+
+    sendData(res, result);
+}));
+
 // CAMIONES EN PATIO
 app.get('/api/camiones-patio', asyncHandler(async (_req, res) => {
     const rows = await db.all('SELECT * FROM camiones_en_patio ORDER BY created_at ASC, id ASC');

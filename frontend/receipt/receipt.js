@@ -24,6 +24,8 @@ const receiptData = {
   neto: '',
   tm: '',
   precioTM: '',
+  unidadCantidad: 'TM',
+  unidadPrecio: 'Precio / TM',
   totalLps: ''
 };
 

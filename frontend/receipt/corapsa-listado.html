@@ -3,17 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Listado de Transacciones - Acopio Rivera</title>
-  <link rel="stylesheet" href="listado.css" />
+  <title>Listado de Recibos Externos - Acopio Rivera</title>
+  <link rel="stylesheet" href="corapsa-listado.css" />
 </head>
 <body>
   <!--
-    A4 landscape page holding a table of transactions (whatever the
-    Reportes filters currently show), instead of a single fixed-size
-    boleta. Unlike receipt.html, this flows across as many printed pages
-    as the row count needs — see listado.css for the pagination rules.
-    window.setListadoData() (listado.js) fills the header fields and
-    rebuilds the table body from scratch on every call.
+    A4 portrait page holding a table of Recibos Externos (Corapsa) rows —
+    whatever the Recibos Externos tab's filters currently show — mirroring
+    receipt/listado.html's approach for transactions but with this module's
+    own fields (destino, origen, recibo #, estado) instead. Flows across as
+    many printed pages as the row count needs; see corapsa-listado.css for
+    the pagination rules. window.setCorapsaListadoData() (corapsa-listado.js)
+    fills the header fields and rebuilds the table body from scratch on
+    every call.
   -->
   <main class="sheet" id="sheet">
     <header class="listado-header">
@@ -23,13 +25,14 @@
           <div class="company-address">Aldea Zoilabe, Tela Atlántida, Honduras</div>
         </div>
         <div class="header-meta">
-          <h1>LISTADO DE TRANSACCIONES</h1>
+          <h1>LISTADO DE RECIBOS EXTERNOS</h1>
           <div class="generated-at">Generado: <span data-field="generatedAt"></span></div>
         </div>
       </div>
 
       <div class="filter-summary">
         Cliente: <span data-field="filtroCliente"></span> &middot;
+        Destino: <span data-field="filtroDestino"></span> &middot;
         Desde: <span data-field="filtroDesde"></span> &middot;
         Hasta: <span data-field="filtroHasta"></span> &middot;
         <span data-field="totalRegistros"></span> registro(s)
@@ -39,31 +42,29 @@
     <table class="listado-table">
       <thead>
         <tr>
-          <th class="col-fecha">Fecha / Hora</th>
+          <th class="col-fecha">Fecha</th>
           <th class="col-cliente">Cliente</th>
-          <th class="col-num col-neto">Neto</th>
+          <th class="col-destino">Destino</th>
+          <th class="col-origen">Origen</th>
+          <th class="col-recibo">Recibo #</th>
+          <th class="col-num col-precio">Precio</th>
           <th class="col-num col-toneladas">Toneladas</th>
-          <th class="col-num col-precio">Precio / Unidad</th>
           <th class="col-num col-total">Total</th>
+          <th class="col-estado">Estado</th>
         </tr>
       </thead>
       <tbody id="listado-body">
-        <!-- Rows are rebuilt entirely by listado.js on every setListadoData() call. -->
+        <!-- Rows are rebuilt entirely by corapsa-listado.js on every setCorapsaListadoData() call. -->
       </tbody>
     </table>
 
     <div class="totals-block">
       <span>Totales:</span>
-      <span class="totals-item">Neto: <strong data-field="totalNeto"></strong></span>
       <span class="totals-item">Toneladas: <strong data-field="totalToneladas"></strong></span>
-      <span class="totals-item">Invertido: <strong data-field="totalDinero"></strong></span>
-    </div>
-
-    <div class="footnote" id="footnote" hidden>
-      * Registro(s) provisional(es): generado(s) sin conexión y aún no confirmado(s) por el servidor.
+      <span class="totals-item">Monto: <strong data-field="totalDinero"></strong></span>
     </div>
   </main>
 
-  <script src="listado.js"></script>
+  <script src="corapsa-listado.js"></script>
 </body>
 </html>

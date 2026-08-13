@@ -275,6 +275,42 @@
 
 
 
+    <!-- PRECIO APLICADO EDIT MODAL (Pesaje tab: edit a client's price without leaving Pesaje) -->
+    <div id="price-edit-modal" role="dialog" aria-modal="true" aria-labelledby="price-edit-title"
+        class="hidden fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-[420px] max-w-full p-6 flex flex-col gap-4 border-t-4 border-blue-500">
+            <div>
+                <h3 class="font-bold text-lg text-gray-800" id="price-edit-title">Modificar Precio Aplicado</h3>
+                <p class="text-xs text-gray-500 mt-1">Este cambio actualiza el precio del cliente en Gestión &gt; Clientes.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-gray-600 mb-2">Nuevo precio (HNL / <span
+                        id="price-edit-unidad-label">Ton</span>)</label>
+                <input type="text" id="price-edit-input" inputmode="decimal"
+                    oninput="formatDecimalThousandsInput(event)"
+                    class="w-full border-2 border-gray-300 rounded p-3 focus:border-blue-500 outline-none font-bold text-gray-800"
+                    placeholder="Ej. 2,500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-gray-600 mb-2">Justificación *</label>
+                <textarea id="price-edit-justificacion" rows="2"
+                    class="w-full border-2 border-gray-300 rounded p-3 focus:border-blue-500 outline-none"
+                    placeholder="Explique el motivo del cambio de precio"></textarea>
+            </div>
+
+            <div class="mt-2 flex justify-end gap-3">
+                <button type="button" onclick="cerrarPriceEditModal()"
+                    class="px-4 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+                <button id="price-edit-confirm-button" type="button" onclick="confirmarPriceEditModal()"
+                    class="px-6 py-2 bg-blue-600 text-white font-bold rounded shadow hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+
+
     <!-- TOAST NOTIFICATION (Replaces alert freezes) -->
 
     <div id="toast"
@@ -725,6 +761,11 @@
             <div class="mt-2 flex justify-end gap-3 px-6 py-4 border-t shrink-0">
                 <button onclick="cerrarVistaPrevia()"
                     class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+                <button id="print-preview-save" onclick="confirmarGuardadoVistaPrevia()"
+                    class="hidden items-center gap-2 px-4 py-2 bg-gray-700 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed">
+                    <span class="material-icons text-[18px]">save</span>
+                    <span id="print-preview-save-label">Guardar</span>
+                </button>
                 <button id="print-preview-confirm" onclick="confirmarImpresionVistaPrevia()"
                     class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed">
                     <span class="material-icons text-[18px]">print</span>
@@ -1397,12 +1438,34 @@
 
                             <label class="block text-sm font-semibold text-gray-600">Cliente / Productor *</label>
 
-                            <select id="cliente-select" onchange="handleClienteSelect()"
-                                class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2 focus:ring-2 focus:ring-brand-500 outline-none transition-all font-semibold">
+                            <div class="relative">
+                                <!-- Closed state: looks like the old select. Click it to search. -->
+                                <button type="button" id="cliente-display-button" onclick="abrirClienteBuscador()"
+                                    class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2 focus:ring-2 focus:ring-brand-500 outline-none transition-all font-semibold text-left flex justify-between items-center gap-2">
+                                    <span id="cliente-display-text" class="text-gray-400 truncate">Seleccione un cliente...</span>
+                                    <span class="material-icons text-[18px] text-gray-400 shrink-0">expand_more</span>
+                                </button>
 
-                                <!-- Injected via JS -->
+                                <!-- Open state: replaces the button above with a search box and live results. -->
+                                <div id="cliente-buscador-panel"
+                                    class="hidden absolute z-20 top-0 left-0 w-full bg-white border border-gray-300 rounded-lg shadow-xl overflow-hidden">
+                                    <input type="text" id="cliente-buscar" oninput="renderClienteBuscadorResultados()"
+                                        onkeydown="handleClienteBuscarKeydown(event)" autocomplete="off"
+                                        placeholder="Buscar cliente por nombre..."
+                                        class="w-full border-0 border-b border-gray-200 p-2 focus:ring-0 outline-none font-semibold">
+                                    <div id="cliente-buscador-resultados" class="max-h-56 overflow-y-auto">
+                                        <!-- Injected via JS -->
+                                    </div>
+                                </div>
 
-                            </select>
+                                <!-- Drives all existing selection logic; kept out of view since the
+                                     button + search panel above are the actual UI now. -->
+                                <select id="cliente-select" onchange="handleClienteSelect()" class="hidden">
+
+                                    <!-- Injected via JS -->
+
+                                </select>
+                            </div>
 
                             <div id="client-price-box"
                                 class="hidden bg-blue-50 border border-blue-100 rounded-lg p-3 flex justify-between items-center transition-all">
@@ -1410,8 +1473,15 @@
                                     <span class="material-icons text-[18px]">payments</span>
                                     <span class="text-xs font-bold uppercase">Precio Aplicado:</span>
                                 </div>
-                                <div class="text-right text-blue-900 font-bold">
-                                    L <span id="precio-ton">0</span> / <span id="precio-unidad">Ton</span>
+                                <div class="flex items-center gap-2">
+                                    <div class="text-right text-blue-900 font-bold">
+                                        L <span id="precio-ton">0</span> / <span id="precio-unidad">Ton</span>
+                                    </div>
+                                    <button type="button" id="price-edit-button" onclick="abrirPriceEditModal()"
+                                        class="hidden text-blue-600 hover:text-blue-900 transition-colors"
+                                        title="Modificar precio aplicado" aria-label="Modificar precio aplicado">
+                                        <span class="material-icons text-[18px]">edit</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1882,12 +1952,22 @@
 
                     </div>
 
-                    <button onclick="abrirCorapsaModal()"
-                        class="bg-blue-600 hover:bg-blue-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+                    <div class="flex items-center gap-2">
 
-                        <span class="material-icons">add_box</span> Registrar Recibo
+                        <button id="btn-imprimir-listado-corapsa" onclick="imprimirListadoCorapsa()" disabled
+                            class="flex items-center gap-2 px-4 py-3 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700">
+                            <span class="material-icons text-[18px]">print</span>
+                            <span class="hidden sm:inline">Imprimir Listado</span>
+                        </button>
 
-                    </button>
+                        <button onclick="abrirCorapsaModal()"
+                            class="bg-blue-600 hover:bg-blue-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+
+                            <span class="material-icons">add_box</span> Registrar Recibo
+
+                        </button>
+
+                    </div>
 
                 </div>
 

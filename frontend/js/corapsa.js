@@ -367,13 +367,21 @@ function renderCorapsaAttachmentThumbnail(record, type) {
         </button>`;
 }
 
+// Holds whatever renderCorapsaTab() last filtered, so "Imprimir Listado" can
+// reuse it directly instead of re-reading the filter inputs and re-filtering
+// corapsaData itself — mirrors reportes.js's ultimoFiltroReportes.
+let ultimoFiltroCorapsa = {
+    filteredData: [], startDate: '', endDate: '', searchRaw: '', destinoFilter: '', sumTons: 0, sumTotal: 0
+};
+
 function renderCorapsaTab() {
     const tbody = document.getElementById('corapsa-table-body');
     if (!tbody) return;
 
     const startDate = document.getElementById('corapsa-filter-start')?.value || '';
     const endDate = document.getElementById('corapsa-filter-end')?.value || '';
-    const search = (document.getElementById('corapsa-filter-client')?.value || '').trim().toLocaleLowerCase('es');
+    const searchRaw = (document.getElementById('corapsa-filter-client')?.value || '').trim();
+    const search = searchRaw.toLocaleLowerCase('es');
     const destinoFilter = document.getElementById('corapsa-filter-destino')?.value || '';
 
     const filtered = corapsaData.filter(record => {
@@ -388,6 +396,13 @@ function renderCorapsaTab() {
     const sumTotal = filtered.reduce((sum, item) => sum + item.total, 0);
     document.getElementById('corapsa-total-toneladas').textContent = sumTons.toFixed(2);
     document.getElementById('corapsa-total-dinero').textContent = formatMoney(sumTotal);
+
+    // Held for "Imprimir Listado" (see construirPayloadCorapsaListado()) so it
+    // reuses exactly what's currently filtered instead of re-reading the
+    // filter inputs and re-filtering corapsaData itself.
+    ultimoFiltroCorapsa = { filteredData: filtered, startDate, endDate, searchRaw, destinoFilter, sumTons, sumTotal };
+    const listadoButton = document.getElementById('btn-imprimir-listado-corapsa');
+    if (listadoButton) listadoButton.disabled = filtered.length === 0;
 
     if (filtered.length === 0) {
         tbody.innerHTML = '<tr><td colspan="11" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
@@ -424,6 +439,80 @@ function renderCorapsaTab() {
                 </td>
             </tr>`;
     }).join('');
+}
+
+// Builds the pre-formatted payload for the Corapsa listado print/preview from
+// whatever renderCorapsaTab() last filtered (see ultimoFiltroCorapsa) — never
+// re-reads the filter inputs or re-filters corapsaData itself.
+function construirPayloadListadoCorapsa() {
+    const { filteredData, startDate, endDate, searchRaw, destinoFilter, sumTons, sumTotal } = ultimoFiltroCorapsa;
+
+    const rows = filteredData.map(record => ({
+        fecha: formatDateForDisplay(record.fecha),
+        cliente: record.cliente,
+        destino: record.destino || '-',
+        origen: record.esProductoPropio ? 'Acopio' : 'Directo',
+        recibo: record.reciboIn,
+        precioUnidad: `L ${formatMoney(record.precio)}`,
+        toneladas: record.toneladas.toFixed(2),
+        total: `L ${formatMoney(record.total)}`,
+        estado: record.pagado ? 'Pagado' : 'No Pagado'
+    }));
+
+    return {
+        generatedAt: new Date().toLocaleString('es-HN'),
+        filtroCliente: searchRaw || 'Todos',
+        filtroDestino: destinoFilter || 'Todos',
+        filtroDesde: startDate ? formatDateForDisplay(startDate) : 'Sin límite',
+        filtroHasta: endDate ? formatDateForDisplay(endDate) : 'Sin límite',
+        totalRegistros: String(rows.length),
+        rows,
+        totalToneladas: `${sumTons.toFixed(2)} TON`,
+        totalDinero: `L ${formatMoney(sumTotal)}`
+    };
+}
+
+// Performs the real print IPC call; only invoked once the operator confirms
+// "Imprimir" in the preview modal (see printPreview.js).
+async function ejecutarImpresionListadoCorapsa(payload) {
+    const result = await window.electronAPI.printCorapsaListado(payload);
+    if (result?.mode === 'pdf') {
+        mostrarNotificacion(`No se encontró una impresora. Listado guardado como PDF en: ${result.path}`, 'error');
+    }
+}
+
+// Performs the "Guardar" IPC call — lets the operator pick where the PDF
+// goes. Returns { cancelled: true } (instead of just resolving) when the
+// operator closes the native Save dialog without picking a location, so the
+// preview modal knows to stay open instead of treating that as a completed save.
+async function ejecutarGuardadoListadoCorapsa(payload) {
+    const result = await window.electronAPI.saveCorapsaListadoAsPdf(payload);
+    if (result?.mode === 'cancelled') return { cancelled: true };
+    mostrarNotificacion(`Listado guardado en: ${result.path}`);
+    return result;
+}
+
+function imprimirListadoCorapsa() {
+    if (typeof window.electronAPI?.printCorapsaListado !== 'function') {
+        return mostrarNotificacion(
+            'La impresión de listados solo está disponible dentro de la aplicación de escritorio.',
+            'error'
+        );
+    }
+
+    if (ultimoFiltroCorapsa.filteredData.length === 0) {
+        return mostrarNotificacion('No hay recibos externos para el filtro actual.', 'error');
+    }
+
+    const payload = construirPayloadListadoCorapsa();
+
+    mostrarVistaPrevia({
+        template: 'corapsaListado',
+        payload,
+        title: `Vista previa - Listado de Recibos Externos (${payload.totalRegistros} registros)`,
+        printAction: () => ejecutarImpresionListadoCorapsa(payload),
+        saveAction: () => ejecutarGuardadoListadoCorapsa(payload)
+    });
 }
 
 function triggerQuickUpload(id, type) {

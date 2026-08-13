@@ -146,11 +146,15 @@ function imprimirRecibo(id) {
         );
     }
 
-    const tm = calculateMetricTons(transaction.neto, { truncate: true });
-    // The printed ticket always bills per metric ton (its "Precio / TM" column isn't
-    // unit-aware), so the rate is derived from the actual total instead of reusing
-    // precioAplicado directly, which is only a per-TM figure when unidad === 'tonelada'.
-    const precioPorTM = tm > 0 ? transaction.total / tm : 0;
+    const esQuintal = transaction.unidad === 'quintal';
+    // The printed quantity/price columns must match how this client is actually
+    // billed — quintales for unidad === 'quintal', metric tons otherwise — since
+    // Total LPS = cantidad × precio has to reconcile with what the client paid.
+    const cantidad = calculateBillableQuantity(transaction.neto, transaction.unidad);
+    // Rate is derived from the actual total (rather than reusing precioAplicado
+    // directly) so it stays correct even if a record's stored price and total
+    // ever drift apart.
+    const precioPorUnidad = cantidad > 0 ? transaction.total / cantidad : 0;
 
     const payload = {
         numero: transaction.numeroBoleta ?? '',
@@ -164,8 +168,10 @@ function imprimirRecibo(id) {
         bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb`,
         tara: `${transaction.pesoTara.toLocaleString('en-US')} lb`,
         neto: `${transaction.neto.toLocaleString('en-US')} lb`,
-        tm: `${tm.toFixed(2)} TM`,
-        precioTM: `${formatMoney(precioPorTM)} Lps`,
+        tm: `${cantidad.toFixed(2)} ${esQuintal ? 'QQ' : 'TM'}`,
+        precioTM: `${formatMoney(precioPorUnidad)} Lps`,
+        unidadCantidad: esQuintal ? 'QQ' : 'TM',
+        unidadPrecio: esQuintal ? 'Precio / QQ' : 'Precio / TM',
         totalLps: `${formatMoney(transaction.total)} Lps`
     };
 
@@ -193,7 +199,6 @@ function construirPayloadListado() {
         return {
             fecha: fila.fechaDisplay,
             hora: transaction.hora,
-            identificacion: fila.identification,
             cliente: transaction.clienteNombre,
             neto: fila.netoLabel,
             toneladas: fila.toneladasLabel,
@@ -226,6 +231,18 @@ async function ejecutarImpresionListado(payload) {
     }
 }
 
+// Performs the "Guardar" IPC call — lets the operator pick where the PDF goes,
+// via the native Save dialog. Returns { cancelled: true } (instead of just
+// resolving) when the operator closes that dialog without picking a
+// location, so the preview modal (see printPreview.js) knows to stay open
+// instead of treating a cancel as a completed save.
+async function ejecutarGuardadoListado(payload) {
+    const result = await window.electronAPI.saveListadoAsPdf(payload);
+    if (result?.mode === 'cancelled') return { cancelled: true };
+    mostrarNotificacion(`Listado guardado en: ${result.path}`);
+    return result;
+}
+
 function imprimirListadoReportes() {
     if (typeof window.electronAPI?.printListado !== 'function') {
         return mostrarNotificacion(
@@ -244,7 +261,8 @@ function imprimirListadoReportes() {
         template: 'listado',
         payload,
         title: `Vista previa - Listado (${payload.totalRegistros} registros)`,
-        printAction: () => ejecutarImpresionListado(payload)
+        printAction: () => ejecutarImpresionListado(payload),
+        saveAction: () => ejecutarGuardadoListado(payload)
     });
 }
 

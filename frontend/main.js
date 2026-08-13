@@ -119,26 +119,23 @@ function waitForLoad(win) {
     });
 }
 
-// Electron's own docs warn that the `landscape` boolean option is ignored
-// (both for webContents.print and printToPDF) once the page defines its own
-// `@page` CSS at-rule — which is exactly what bit listado printing. Rather
-// than depend on that flag at all, orientation is expressed directly as
-// physical page dimensions (width > height = landscape) in microns, per
-// Electron's custom-pageSize format — unambiguous regardless of @page CSS.
+// Both the boleta and the listado print on the same physical A4 portrait
+// paper the printer is actually loaded with (listado used to request a
+// landscape page, which some printers/drivers don't honor correctly and
+// simply clip to the paper's real width instead).
 const PAGE_SIZE_A4_PORTRAIT = 'A4';
-const PAGE_SIZE_A4_LANDSCAPE = { width: 297000, height: 210000 };
 
 // Resolves once the print dialog is dismissed, whether the user actually
 // printed or just closed it — a cancel isn't a failure worth surfacing.
 // Rejects only when printing itself can't happen (e.g. no printer/CUPS
 // destination configured), so the caller can fall back to a saved PDF.
-function printViaDialog(win, { landscape = false } = {}) {
+function printViaDialog(win) {
     return new Promise((resolve, reject) => {
         win.webContents.print(
             {
                 silent: false,
                 printBackground: true,
-                pageSize: landscape ? PAGE_SIZE_A4_LANDSCAPE : PAGE_SIZE_A4_PORTRAIT,
+                pageSize: PAGE_SIZE_A4_PORTRAIT,
                 margins: { marginType: 'none' }
             },
             (success, failureReason) => {
@@ -152,15 +149,19 @@ function printViaDialog(win, { landscape = false } = {}) {
     });
 }
 
-// Used when there's no printer available to print to (common on a fresh Linux
-// dev box with no CUPS destination configured, but can happen anywhere) so the
-// operator still gets the document instead of a hard failure.
-async function exportWindowAsPdf(win, { landscape = false, fileName }) {
-    const pdfBuffer = await win.webContents.printToPDF({
-        pageSize: landscape ? PAGE_SIZE_A4_LANDSCAPE : PAGE_SIZE_A4_PORTRAIT,
+async function renderWindowToPdfBuffer(win) {
+    return win.webContents.printToPDF({
+        pageSize: PAGE_SIZE_A4_PORTRAIT,
         printBackground: true,
         margins: { marginType: 'none' }
     });
+}
+
+// Used when there's no printer available to print to (common on a fresh Linux
+// dev box with no CUPS destination configured, but can happen anywhere) so the
+// operator still gets the document instead of a hard failure.
+async function exportWindowAsPdf(win, { fileName }) {
+    const pdfBuffer = await renderWindowToPdfBuffer(win);
     const dir = path.join(app.getPath('documents'), 'Boletas Bascula Central');
     const filePath = path.join(dir, fileName);
 
@@ -213,10 +214,14 @@ async function printReceipt(data) {
     }
 }
 
-// Mirrors printReceipt() but for the filtered-transactions table (listado),
-// which prints landscape and has no natural "number" for the PDF filename.
-async function printListado(data) {
-    const listadoWindow = new BrowserWindow({
+// Opens an offscreen window on the given receipt/ HTML file, feeds it a data
+// payload via the given window.<setterName>() hook, then hands it to callback
+// (print, export to a fixed path, or export to an operator-chosen path) and
+// always tears the window down afterward. Shared by every *Listado print/save
+// pair (transactions, Corapsa, ...) so the window setup/teardown only lives
+// in one place.
+async function withPrintableWindow(htmlFileName, setterName, data, callback) {
+    const win = new BrowserWindow({
         show: false,
         webPreferences: {
             nodeIntegration: false,
@@ -226,27 +231,78 @@ async function printListado(data) {
     });
 
     try {
-        const loaded = waitForLoad(listadoWindow);
-        listadoWindow.loadFile(path.join(__dirname, 'receipt', 'listado.html'));
+        const loaded = waitForLoad(win);
+        win.loadFile(path.join(__dirname, 'receipt', htmlFileName));
         await loaded;
 
         const payload = JSON.stringify(data ?? {})
             .split(String.fromCharCode(0x2028)).join('\\u2028')
             .split(String.fromCharCode(0x2029)).join('\\u2029');
-        await listadoWindow.webContents.executeJavaScript(`window.setListadoData(${payload})`);
+        await win.webContents.executeJavaScript(`window.${setterName}(${payload})`);
 
+        return await callback(win);
+    } finally {
+        if (!win.isDestroyed()) win.destroy();
+    }
+}
+
+// Mirrors printReceipt() but for a filtered-rows table (a "listado"), which
+// has no natural "number" for the PDF filename — filePrefix distinguishes
+// the transactions listado from the Corapsa one, etc.
+async function printListadoDocument(htmlFileName, setterName, data, filePrefix) {
+    return withPrintableWindow(htmlFileName, setterName, data, async win => {
         try {
-            await printViaDialog(listadoWindow, { landscape: true });
+            await printViaDialog(win);
             return { ok: true, mode: 'print' };
         } catch (printError) {
-            logUpdate(`Impresión de listado falló, exportando a PDF en su lugar: ${printError.message}`);
+            logUpdate(`Impresión de ${filePrefix} falló, exportando a PDF en su lugar: ${printError.message}`);
             const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-            const filePath = await exportWindowAsPdf(listadoWindow, { landscape: true, fileName: `listado-${stamp}.pdf` });
+            const filePath = await exportWindowAsPdf(win, { fileName: `${filePrefix}-${stamp}.pdf` });
             return { ok: true, mode: 'pdf', path: filePath };
         }
-    } finally {
-        if (!listadoWindow.isDestroyed()) listadoWindow.destroy();
-    }
+    });
+}
+
+// The explicit "Guardar" action for a listado: unlike printListadoDocument()'s
+// no-printer PDF fallback (which always lands in the same auto-created
+// Documents subfolder), this lets the operator pick exactly where it goes.
+async function saveListadoDocumentAsPdf(htmlFileName, setterName, data, { dialogTitle, filePrefix }) {
+    const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: dialogTitle,
+        defaultPath: path.join(app.getPath('documents'), `${filePrefix}-${stamp}.pdf`),
+        filters: [{ name: 'Documento PDF', extensions: ['pdf'] }]
+    });
+    if (canceled || !filePath) return { ok: true, mode: 'cancelled' };
+
+    return withPrintableWindow(htmlFileName, setterName, data, async win => {
+        const pdfBuffer = await renderWindowToPdfBuffer(win);
+        await fs.promises.writeFile(filePath, pdfBuffer);
+        shell.openPath(filePath);
+        return { ok: true, mode: 'pdf', path: filePath };
+    });
+}
+
+function printListado(data) {
+    return printListadoDocument('listado.html', 'setListadoData', data, 'listado');
+}
+
+function saveListadoAsPdf(data) {
+    return saveListadoDocumentAsPdf('listado.html', 'setListadoData', data, {
+        dialogTitle: 'Guardar listado como PDF',
+        filePrefix: 'listado'
+    });
+}
+
+function printCorapsaListado(data) {
+    return printListadoDocument('corapsa-listado.html', 'setCorapsaListadoData', data, 'recibos-externos');
+}
+
+function saveCorapsaListadoAsPdf(data) {
+    return saveListadoDocumentAsPdf('corapsa-listado.html', 'setCorapsaListadoData', data, {
+        dialogTitle: 'Guardar listado de recibos externos como PDF',
+        filePrefix: 'recibos-externos'
+    });
 }
 
 function registerReceiptIpc() {
@@ -257,6 +313,15 @@ function registerReceiptIpc() {
 function registerListadoIpc() {
     ipcMain.removeHandler('listado:print');
     ipcMain.handle('listado:print', (_event, data) => printListado(data));
+    ipcMain.removeHandler('listado:save-pdf');
+    ipcMain.handle('listado:save-pdf', (_event, data) => saveListadoAsPdf(data));
+}
+
+function registerCorapsaListadoIpc() {
+    ipcMain.removeHandler('corapsa-listado:print');
+    ipcMain.handle('corapsa-listado:print', (_event, data) => printCorapsaListado(data));
+    ipcMain.removeHandler('corapsa-listado:save-pdf');
+    ipcMain.handle('corapsa-listado:save-pdf', (_event, data) => saveCorapsaListadoAsPdf(data));
 }
 
 function registerOfflineQueueIpc() {
@@ -339,6 +404,7 @@ app.whenReady().then(() => {
     registerScaleIpc();
     registerReceiptIpc();
     registerListadoIpc();
+    registerCorapsaListadoIpc();
     registerOfflineQueueIpc();
     createWindow();
 

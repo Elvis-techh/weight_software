@@ -1,19 +1,22 @@
-// Shared "preview before printing" modal, used by both the single-receipt
-// print (frontend/receipt/receipt.html) and the filtered-list print
-// (frontend/receipt/listado.html). The iframe always loads the exact same
-// file main.js prints from, so the preview and the printed page can never
-// drift apart — this file only owns showing/hiding/scaling the modal and
-// wiring Cancelar/Imprimir; each caller supplies its own printAction(), which
-// does the real window.electronAPI.print*() call and its own result/error
+// Shared "preview before printing" modal, used by the single-receipt print
+// (frontend/receipt/receipt.html) and every filtered-list print (transactions'
+// receipt/listado.html, Corapsa's receipt/corapsa-listado.html). The iframe
+// always loads the exact same file main.js prints from, so the preview and
+// the printed page can never drift apart — this file only owns
+// showing/hiding/scaling the modal and wiring Cancelar/Imprimir/Guardar; each
+// caller supplies its own printAction() (and optionally saveAction()), which
+// does the real window.electronAPI.*() call and its own result/error
 // handling (pdf-fallback toast, pendingSync warning, etc).
 const PRINT_PREVIEW_TEMPLATES = {
     receipt: { src: 'receipt/receipt.html', setter: 'setReceiptData', width: 794, height: 1123 },
-    listado: { src: 'receipt/listado.html', setter: 'setListadoData', width: 1123, height: 794 }
+    listado: { src: 'receipt/listado.html', setter: 'setListadoData', width: 794, height: 1123 },
+    corapsaListado: { src: 'receipt/corapsa-listado.html', setter: 'setCorapsaListadoData', width: 794, height: 1123 }
 };
 
 let previewLoadedTemplateKey = null;
 let previewLoadPromise = null;
 let previewPrintAction = null;
+let previewSaveAction = null;
 let previewResizeHandler = null;
 
 function getPreviewFrame() {
@@ -84,16 +87,30 @@ function setPreviewConfirmBusy(busy) {
     label.textContent = busy ? 'Imprimiendo...' : 'Imprimir';
 }
 
-// options: { template: 'receipt'|'listado', payload, title, printAction }
+function setPreviewSaveBusy(busy) {
+    const button = document.getElementById('print-preview-save');
+    const label = document.getElementById('print-preview-save-label');
+    button.disabled = busy;
+    label.textContent = busy ? 'Guardando...' : 'Guardar';
+}
+
+// options: { template: 'receipt'|'listado', payload, title, printAction, saveAction }
 // printAction is an async () => {...} that performs the real print IPC call
-// and any result/error notifications specific to that feature.
-async function mostrarVistaPrevia({ template, payload, title, printAction }) {
+// and any result/error notifications specific to that feature. saveAction is
+// the same shape but for "save to a file the operator picks" — optional; the
+// Guardar button only shows up when a caller supplies one (only the listado
+// does, for now).
+async function mostrarVistaPrevia({ template, payload, title, printAction, saveAction }) {
     const config = PRINT_PREVIEW_TEMPLATES[template];
     if (!config) throw new Error(`Plantilla de vista previa desconocida: ${template}`);
 
     document.getElementById('print-preview-title').textContent = title || 'Vista previa';
     previewPrintAction = printAction;
+    previewSaveAction = saveAction || null;
     setPreviewConfirmBusy(false);
+    setPreviewSaveBusy(false);
+    document.getElementById('print-preview-save').classList.toggle('hidden', !previewSaveAction);
+    document.getElementById('print-preview-save').classList.toggle('flex', Boolean(previewSaveAction));
     document.getElementById('print-preview-modal').classList.remove('hidden');
 
     try {
@@ -116,6 +133,7 @@ async function mostrarVistaPrevia({ template, payload, title, printAction }) {
 function cerrarVistaPrevia() {
     document.getElementById('print-preview-modal').classList.add('hidden');
     previewPrintAction = null;
+    previewSaveAction = null;
 
     if (previewResizeHandler) {
         window.removeEventListener('resize', previewResizeHandler);
@@ -136,5 +154,24 @@ async function confirmarImpresionVistaPrevia() {
         mostrarNotificacion(error.message || 'No se pudo imprimir el documento.', 'error');
     } finally {
         setPreviewConfirmBusy(false);
+    }
+}
+
+async function confirmarGuardadoVistaPrevia() {
+    if (typeof previewSaveAction !== 'function') return;
+
+    const action = previewSaveAction;
+    setPreviewSaveBusy(true);
+    try {
+        const result = await action();
+        // The operator closing the native Save dialog without picking a
+        // location isn't a completed save — leave the preview open so they
+        // can try again or print instead, rather than silently dismissing it.
+        if (!result?.cancelled) cerrarVistaPrevia();
+    } catch (error) {
+        console.error('Error al guardar:', error);
+        mostrarNotificacion(error.message || 'No se pudo guardar el documento.', 'error');
+    } finally {
+        setPreviewSaveBusy(false);
     }
 }

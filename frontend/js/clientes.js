@@ -185,11 +185,128 @@ function populateClienteDropdown() {
 
     const canRestore = Array.from(select.options).some(option => option.value === previousValue);
     select.value = canRestore ? previousValue : '';
+
+    actualizarClienteDisplayBox();
+    // This can run mid-search (e.g. a background price sync repopulating the
+    // list) — keep whatever results panel the user has open current instead
+    // of leaving it showing a stale list.
+    if (!document.getElementById('cliente-buscador-panel')?.classList.contains('hidden')) {
+        renderClienteBuscadorResultados();
+    }
 }
+
+function getClienteDisplayLabel(clienteId) {
+    if (clienteId === 'casual') {
+        return MOCK_CASUAL.nombre ? `👤 Casual: ${MOCK_CASUAL.nombre}` : '👤 Cliente Casual / Rápido';
+    }
+    const cliente = MOCK_CLIENTES.find(item => sameRecordId(item.id, clienteId));
+    return cliente ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() : '';
+}
+
+// Keeps the clickable display box (the visible stand-in for the hidden
+// <select>) in sync with whatever the select's actual value/disabled state
+// is. Call this any time cliente-select's value or disabled flag changes.
+function actualizarClienteDisplayBox() {
+    const select = document.getElementById('cliente-select');
+    const displayText = document.getElementById('cliente-display-text');
+    const displayButton = document.getElementById('cliente-display-button');
+    if (!select || !displayText || !displayButton) return;
+
+    const label = select.value ? getClienteDisplayLabel(select.value) : '';
+    displayText.textContent = label || 'Seleccione un cliente...';
+    displayText.classList.toggle('text-gray-400', !label);
+    displayText.classList.toggle('text-gray-900', Boolean(label));
+
+    displayButton.disabled = select.disabled;
+    displayButton.classList.toggle('opacity-60', select.disabled);
+    displayButton.classList.toggle('cursor-not-allowed', select.disabled);
+}
+
+function abrirClienteBuscador() {
+    const select = document.getElementById('cliente-select');
+    const panel = document.getElementById('cliente-buscador-panel');
+    if (!select || !panel || select.disabled) return;
+
+    document.getElementById('cliente-buscar').value = '';
+    panel.classList.remove('hidden');
+    renderClienteBuscadorResultados();
+    setTimeout(() => document.getElementById('cliente-buscar')?.focus(), 0);
+}
+
+function cerrarClienteBuscador() {
+    document.getElementById('cliente-buscador-panel')?.classList.add('hidden');
+}
+
+function renderClienteBuscadorResultados() {
+    const contenedor = document.getElementById('cliente-buscador-resultados');
+    if (!contenedor) return;
+
+    const searchTerm = (document.getElementById('cliente-buscar')?.value || '')
+        .trim()
+        .toLocaleLowerCase('es');
+
+    const opciones = [
+        { id: 'casual', label: getClienteDisplayLabel('casual'), isCasual: true },
+        ...MOCK_CLIENTES.map(cliente => ({
+            id: String(cliente.id),
+            label: `${cliente.nombre} ${cliente.apellido || ''}`.trim(),
+            isCasual: false
+        }))
+    ];
+
+    const filtradas = searchTerm
+        ? opciones.filter(opcion => opcion.isCasual || opcion.label.toLocaleLowerCase('es').includes(searchTerm))
+        : opciones;
+
+    if (filtradas.length === 0) {
+        contenedor.innerHTML = '<div class="p-3 text-sm text-gray-400 text-center">Sin coincidencias.</div>';
+        return;
+    }
+
+    contenedor.innerHTML = filtradas.map(opcion => `
+        <button type="button" data-cliente-id="${escapeHtml(opcion.id)}"
+            onclick="seleccionarClienteDesdeBuscador('${escapeHtml(opcion.id)}')"
+            class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${opcion.isCasual ? 'font-bold text-blue-600 border-b border-gray-100' : 'text-gray-800'}">
+            ${escapeHtml(opcion.label)}
+        </button>
+    `).join('');
+}
+
+function handleClienteBuscarKeydown(event) {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        cerrarClienteBuscador();
+        return;
+    }
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    document.querySelector('#cliente-buscador-resultados [data-cliente-id]')?.click();
+}
+
+function seleccionarClienteDesdeBuscador(clienteId) {
+    const select = document.getElementById('cliente-select');
+    if (!select) return;
+
+    select.value = clienteId;
+    cerrarClienteBuscador();
+    select.dispatchEvent(new Event('change'));
+}
+
+document.addEventListener('click', event => {
+    const panel = document.getElementById('cliente-buscador-panel');
+    const displayButton = document.getElementById('cliente-display-button');
+    if (!panel || panel.classList.contains('hidden')) return;
+    if (!panel.contains(event.target) && !displayButton?.contains(event.target)) {
+        cerrarClienteBuscador();
+    }
+});
 
 function handleClienteSelect() {
     const select = document.getElementById('cliente-select');
     if (!select) return;
+
+    actualizarClienteDisplayBox();
+    cerrarClienteBuscador();
 
     if (select.value === 'casual') {
         document.getElementById('casual-nombre').value = MOCK_CASUAL.nombre || '';
@@ -207,6 +324,7 @@ function handleClienteSelect() {
 function cerrarCasualModal() {
     document.getElementById('casual-modal').classList.add('hidden');
     document.getElementById('cliente-select').value = '';
+    actualizarClienteDisplayBox();
     mostrarInfoCliente();
 }
 
@@ -229,6 +347,7 @@ function guardarCasual() {
 
     populateClienteDropdown();
     document.getElementById('cliente-select').value = 'casual';
+    actualizarClienteDisplayBox();
     document.getElementById('casual-modal').classList.add('hidden');
     mostrarInfoCliente();
     mostrarNotificacion('Cliente casual configurado.');
