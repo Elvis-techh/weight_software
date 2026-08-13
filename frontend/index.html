@@ -241,6 +241,57 @@
 
 
 
+    <div id="otro-destino-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+
+            <div class="bg-blue-800 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg">Nueva Empresa</h3>
+
+                <button onclick="cerrarOtroDestinoModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Nombre de la Empresa *</label>
+
+                    <input type="text" id="otro-destino-nombre"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700"
+                        placeholder="Ej. NUEVA EMPRESA S.A.">
+
+                </div>
+
+                <p class="text-xs text-gray-500">¿Desea guardar esta empresa permanentemente para futuros recibos, o
+                    usarla solo esta vez?</p>
+
+                <div class="mt-4 flex flex-wrap justify-end gap-3">
+
+                    <button onclick="cerrarOtroDestinoModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button onclick="guardarOtroDestinoTemporal()"
+                        class="px-4 py-2 border border-blue-600 text-blue-600 font-bold rounded hover:bg-blue-50">Usar
+                        Solo Esta Vez</button>
+
+                    <button id="btn-guardar-otro-destino-permanente" onclick="guardarOtroDestinoPermanente()"
+                        class="px-6 py-2 bg-blue-600 text-white font-bold rounded shadow hover:bg-blue-700">Guardar
+                        Permanentemente</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
     <!-- UNIVERSAL ACTION MODAL (Replaces prompt/confirm freezes) -->
 
     <div id="action-modal" role="dialog" aria-modal="true" aria-labelledby="action-title"
@@ -381,12 +432,9 @@
 
                         <label class="block text-xs font-bold text-gray-600 mb-1">Destino *</label>
 
-                        <select id="corapsa-destino"
+                        <select id="corapsa-destino" onchange="handleDestinoSelect(this)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700">
                             <option value="">Seleccione...</option>
-                            <option value="CORAPSA">CORAPSA</option>
-                            <option value="AGROTOR">AGROTOR</option>
-                            <option value="DINANT">DINANT</option>
                         </select>
 
                     </div>
@@ -1118,12 +1166,9 @@
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <div><label class="block text-xs font-bold text-gray-600 mb-1">Destino *</label>
-                        <select id="overview-payment-destino"
+                        <select id="overview-payment-destino" onchange="handleDestinoSelect(this)"
                             class="w-full border rounded-lg p-2 font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
                             <option value="">Seleccione...</option>
-                            <option value="CORAPSA">CORAPSA</option>
-                            <option value="AGROTOR">AGROTOR</option>
-                            <option value="DINANT">DINANT</option>
                         </select>
                     </div>
                     <div><label class="block text-xs font-bold text-gray-600 mb-1">Referencia / Estado #</label><input
@@ -1957,9 +2002,6 @@
                             <select id="corapsa-filter-destino" onchange="renderCorapsaTab()"
                                 class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none">
                                 <option value="">Todos los destinos</option>
-                                <option value="CORAPSA">CORAPSA</option>
-                                <option value="AGROTOR">AGROTOR</option>
-                                <option value="DINANT">DINANT</option>
                             </select>
 
                         </div>
@@ -2303,6 +2345,7 @@
     <script src="js/ui.js" defer></script>
     <script src="js/sidebar.js" defer></script>
     <script src="js/clientes.js" defer></script>
+    <script src="js/companies.js" defer></script>
     <script src="js/pesaje.js" defer></script>
     <script src="js/printPreview.js" defer></script>
     <script src="js/reportes.js" defer></script>

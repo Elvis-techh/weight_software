@@ -11,9 +11,6 @@ const HOST = process.env.HOST || '0.0.0.0';
 const API_KEY = process.env.API_KEY || '';
 const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
-// Companies that can receive fruit tracked via Recibos Externos. Extending this
-// list requires adding the option to the frontend dropdown (index.html) too.
-const VALID_DESTINOS = new Set(['CORAPSA', 'AGROTOR', 'DINANT']);
 const LBS_PER_METRIC_TON = 2204.62262185;
 const LBS_PER_QUINTAL = 100;
 const QUINTALES_PER_TON = 22.04;
@@ -305,7 +302,8 @@ function asFreightType(value) {
 
 function asDestino(value) {
     const destino = String(value || '').trim().toUpperCase();
-    if (!VALID_DESTINOS.has(destino)) throw new HttpError(400, 'El destino no es válido.', 'VALIDATION_ERROR');
+    if (!destino) throw new HttpError(400, 'El destino es obligatorio.', 'VALIDATION_ERROR');
+    if (destino.length > 80) throw new HttpError(400, 'El destino excede 80 caracteres.', 'VALIDATION_ERROR');
     return destino;
 }
 
@@ -413,6 +411,10 @@ async function respondWithAttachment(res, { fileName, mimeType, data, key }) {
         return sendStoredAttachment(res, { fileName, mimeType, data: buffer });
     }
     return sendStoredAttachment(res, { fileName, mimeType, data });
+}
+
+function mapCompany(row) {
+    return { id: row.id, nombre: row.nombre };
 }
 
 function mapClient(row) {
@@ -859,6 +861,28 @@ app.use(requireApiKey);
 app.get('/api/health', (_req, res) => {
     sendData(res, { status: 'ok' });
 });
+
+// COMPANIES (destino options for Recibos Externos)
+app.get('/api/companies', asyncHandler(async (_req, res) => {
+    const rows = await db.all('SELECT * FROM companies ORDER BY nombre ASC');
+    sendData(res, rows.map(mapCompany));
+}));
+
+app.post('/api/companies', asyncHandler(async (req, res) => {
+    const nombre = asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 80 }).toUpperCase();
+
+    const company = await withTransaction(async () => {
+        const existing = await db.get('SELECT id FROM companies WHERE UPPER(nombre) = ?', [nombre]);
+        if (existing) throw new HttpError(409, 'Esa empresa ya existe.', 'COMPANY_EXISTS');
+
+        const result = await db.run('INSERT INTO companies (nombre) VALUES (?)', [nombre]);
+        const row = await db.get('SELECT * FROM companies WHERE id = ?', [result.lastID]);
+        await logAudit({ entity: 'company', entityId: result.lastID, action: 'crear', details: { nombre } });
+        return mapCompany(row);
+    });
+
+    sendData(res, { company }, 201);
+}));
 
 // CLIENTES
 app.get('/api/clientes', asyncHandler(async (_req, res) => {

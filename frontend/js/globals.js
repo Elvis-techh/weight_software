@@ -15,6 +15,7 @@ const APP_CONFIG = Object.freeze({
 
 let MOCK_CLIENTES = [];
 let MOCK_CASUAL = createDefaultCasualClient();
+let MOCK_COMPANIES = [];
 
 let currentLiveWeight = 0;
 let currentScaleStable = false;

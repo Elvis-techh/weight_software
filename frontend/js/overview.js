@@ -241,6 +241,7 @@ function abrirPagoCorapsaModal(id = null) {
     document.getElementById('overview-payment-period-start').value = record?.periodoInicio || selectedRange?.start || currentMonth.start;
     document.getElementById('overview-payment-period-end').value = record?.periodoFin || selectedRange?.end || currentMonth.end;
     document.getElementById('overview-payment-date').value = record?.fechaPago || getLocalIsoDate();
+    ensureDestinoOption('overview-payment-destino', record?.destino || '');
     document.getElementById('overview-payment-destino').value = record?.destino || '';
     document.getElementById('overview-payment-reference').value = record?.referencia || '';
     document.getElementById('overview-payment-tons').value = record ? formatNumberForInput(record.toneladas, 2) : '';

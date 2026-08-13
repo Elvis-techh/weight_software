@@ -157,6 +157,12 @@ async function initializeDB() {
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS companies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS camiones_en_patio (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cliente_id TEXT NOT NULL,
@@ -298,6 +304,12 @@ async function initializeDB() {
         CREATE INDEX IF NOT EXISTS idx_planilla_asistencia_fecha ON planilla_asistencia(fecha);
         CREATE INDEX IF NOT EXISTS idx_planilla_asistencia_trabajador ON planilla_asistencia(trabajador_id);
         CREATE INDEX IF NOT EXISTS idx_planilla_periodos_rango ON planilla_periodos(fecha_inicio, fecha_fin);
+    `);
+
+    // Seeds the destino companies that used to be a hardcoded enum, so existing
+    // installs keep working once "destino" is validated against this table.
+    await db.exec(`
+        INSERT OR IGNORE INTO companies (nombre) VALUES ('CORAPSA'), ('AGROTOR'), ('DINANT');
     `);
 
     // Compatible migrations for databases created by earlier project versions.

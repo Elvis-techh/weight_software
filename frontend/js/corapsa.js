@@ -77,6 +77,7 @@ function abrirCorapsaModal(id = null, justificacion = '') {
     document.getElementById('corapsa-fecha').value = record?.fecha || getLocalIsoDate();
     document.getElementById('corapsa-recibo-in').value = record?.reciboIn || '';
     document.getElementById('corapsa-cliente').value = record?.cliente || '';
+    ensureDestinoOption('corapsa-destino', record?.destino || '');
     document.getElementById('corapsa-destino').value = record?.destino || '';
     document.getElementById('corapsa-a-nombre-de').value = record?.aNombreDe || '';
     document.getElementById('corapsa-es-producto-propio').checked = Boolean(record?.esProductoPropio);

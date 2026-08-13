@@ -15,6 +15,12 @@ async function fetchClientes() {
     renderQueue();
 }
 
+async function fetchCompanies() {
+    const records = await apiRequest('/api/companies');
+    MOCK_COMPANIES = Array.isArray(records) ? records : [];
+    populateDestinoDropdowns();
+}
+
 async function fetchCamionesEnPatio() {
     const records = await apiRequest('/api/camiones-patio');
     camionesEnPatio = Array.isArray(records) ? records.map(normalizarCamionPatio) : [];
@@ -229,6 +235,7 @@ async function initApp() {
 
     const loaders = [
         ['clientes', fetchClientes],
+        ['companies', fetchCompanies],
         ['camiones en patio', fetchCamionesEnPatio],
         ['transacciones', fetchTransacciones],
         ['Corapsa', fetchCorapsa],
