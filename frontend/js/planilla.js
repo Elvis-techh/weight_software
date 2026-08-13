@@ -307,32 +307,32 @@ function renderPlanilla() {
 
         return `
             <tr class="hover:bg-orange-50/60 border-b border-gray-100 align-middle">
-                <td class="p-3 min-w-[190px]">
-                    <div class="font-bold text-gray-800">${escapeHtml(`${trabajador.nombre} ${trabajador.apellido}`)}</div>
-                    <div class="text-xs text-gray-500">${escapeHtml(trabajador.telefono || 'Sin teléfono')}</div>
+                <td class="p-3">
+                    <div class="font-bold text-gray-800 truncate" title="${escapeHtml(`${trabajador.nombre} ${trabajador.apellido}`)}">${escapeHtml(`${trabajador.nombre} ${trabajador.apellido}`)}</div>
+                    <div class="text-xs text-gray-500 truncate">${escapeHtml(trabajador.telefono || 'Sin teléfono')}</div>
                 </td>
-                <td class="p-3 text-right min-w-[125px]">
+                <td class="p-3 text-right">
                     <span class="font-mono font-bold text-gray-700 whitespace-nowrap">L ${formatMoney(trabajador.sueldoBase)}</span>
                 </td>
-                <td class="p-3 min-w-[285px]">
+                <td class="p-3">
                     <div class="flex gap-1.5 flex-wrap">${attendanceButtons}</div>
                 </td>
-                <td class="p-3 text-center min-w-[90px]">
+                <td class="p-3 text-center">
                     <span class="inline-flex min-w-12 justify-center rounded-lg bg-orange-100 px-3 py-2 font-mono font-black text-orange-800">
                         ${toFiniteNumber(trabajador.diasTrabajados).toLocaleString('en-US', { maximumFractionDigits: 2 })}
                     </span>
                 </td>
-                <td class="p-3 text-center min-w-[130px]">
+                <td class="p-3 text-center">
                     <input type="text" inputmode="numeric" id="extras-${id}"
                         value="${formatNumberForInput(trabajador.extras, 0)}"
                         oninput="formatCurrencyInput(event); recalcularFilaPlanilla('${id}')"
                         onchange="guardarExtrasPeriodo('${id}')"
-                        class="w-28 border rounded-lg p-2 text-right font-bold text-green-700 focus:ring-2 focus:ring-orange-300 outline-none">
+                        class="w-full border rounded-lg p-2 text-right font-bold text-green-700 focus:ring-2 focus:ring-orange-300 outline-none">
                 </td>
-                <td class="p-3 text-right bg-orange-50 min-w-[150px]">
+                <td class="p-3 text-right bg-orange-50">
                     <div id="total-${id}" class="font-mono font-black text-orange-700 text-lg whitespace-nowrap">L ${formatMoney(total)}</div>
                 </td>
-                <td class="p-3 text-center min-w-[90px]">
+                <td class="p-3 text-center">
                     <button type="button" onclick="abrirPlanillaModal('${id}')" class="text-blue-500 hover:text-blue-800 mx-1" title="Editar trabajador"><span class="material-icons text-[18px]">edit</span></button>
                     <button type="button" onclick="abrirActionModal('delete_trabajador', '${id}')" class="text-red-400 hover:text-red-700 mx-1" title="Eliminar trabajador"><span class="material-icons text-[18px]">delete</span></button>
                 </td>
