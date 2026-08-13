@@ -94,6 +94,7 @@ function abrirCorapsaModal(id = null, justificacion = '') {
 function cerrarCorapsaModal() {
     document.getElementById('corapsa-modal').classList.add('hidden');
     activeCorapsaEditJustification = '';
+    limpiarDestinoTemporal('corapsa-destino');
 }
 
 function handleCorapsaClientInput() {

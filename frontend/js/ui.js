@@ -93,7 +93,8 @@ function getActionModalCopy(action) {
         delete_corapsa: ['Eliminar Recibo', 'Justificación para eliminar el recibo:', 'Explique el motivo'],
         delete_gasto: ['Eliminar Gasto', 'Justificación para eliminar el gasto:', 'Explique el motivo'],
         delete_trabajador: ['Eliminar Trabajador', 'Justificación para eliminar al trabajador:', 'Explique el motivo'],
-        delete_corapsa_pago: ['Eliminar Pago de Corapsa', 'Justificación para eliminar el estado de cuenta:', 'Explique el motivo']
+        delete_corapsa_pago: ['Eliminar Pago de Corapsa', 'Justificación para eliminar el estado de cuenta:', 'Explique el motivo'],
+        delete_company: ['Eliminar Empresa', 'Justificación para eliminar la empresa:', 'Explique el motivo']
     };
 
     return copies[action] || ['Confirmar Acción', 'Justificación obligatoria:', 'Explique el motivo'];
@@ -237,6 +238,11 @@ async function confirmarActionModal() {
             case 'delete_trabajador':
                 await eliminarTrabajadorServidor(id, value);
                 mostrarNotificacion('Trabajador eliminado.');
+                break;
+
+            case 'delete_company':
+                await eliminarEmpresaServidor(id, value);
+                mostrarNotificacion('Empresa eliminada.');
                 break;
 
             default:

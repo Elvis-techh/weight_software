@@ -884,6 +884,39 @@ app.post('/api/companies', asyncHandler(async (req, res) => {
     sendData(res, { company }, 201);
 }));
 
+app.put('/api/companies/:id', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const justificacion = requireJustification(req.body);
+    const nombre = asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 80 }).toUpperCase();
+
+    const company = await withTransaction(async () => {
+        const existing = await db.get('SELECT id FROM companies WHERE UPPER(nombre) = ? AND id != ?', [nombre, id]);
+        if (existing) throw new HttpError(409, 'Esa empresa ya existe.', 'COMPANY_EXISTS');
+
+        const result = await db.run('UPDATE companies SET nombre = ? WHERE id = ?', [nombre, id]);
+        if (!result.changes) throw new HttpError(404, 'Empresa no encontrada.', 'NOT_FOUND');
+
+        const row = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
+        await logAudit({ entity: 'company', entityId: id, action: 'editar', justification: justificacion, details: { nombre } });
+        return mapCompany(row);
+    });
+
+    sendData(res, { company });
+}));
+
+app.delete('/api/companies/:id', asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const justificacion = requireJustification(req.body);
+
+    await withTransaction(async () => {
+        const result = await db.run('DELETE FROM companies WHERE id = ?', [id]);
+        if (!result.changes) throw new HttpError(404, 'Empresa no encontrada.', 'NOT_FOUND');
+        await logAudit({ entity: 'company', entityId: id, action: 'eliminar', justification: justificacion });
+    });
+
+    sendData(res, { id });
+}));
+
 // CLIENTES
 app.get('/api/clientes', asyncHandler(async (_req, res) => {
     const rows = await db.all('SELECT * FROM clientes ORDER BY id DESC');

@@ -241,7 +241,7 @@
 
 
 
-    <div id="otro-destino-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+    <div id="otro-destino-modal" class="hidden fixed inset-0 bg-black/60 z-[95] flex items-center justify-center">
 
         <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
 
@@ -281,6 +281,96 @@
                     <button id="btn-guardar-otro-destino-permanente" onclick="guardarOtroDestinoPermanente()"
                         class="px-6 py-2 bg-blue-600 text-white font-bold rounded shadow hover:bg-blue-700">Guardar
                         Permanentemente</button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <div id="gestion-empresas-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] max-h-[85vh] overflow-hidden flex flex-col">
+
+            <div class="bg-blue-800 px-6 py-4 flex justify-between items-center text-white shrink-0">
+
+                <h3 class="font-bold text-lg">Gestionar Empresas</h3>
+
+                <button onclick="cerrarGestionEmpresasModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4 overflow-y-auto">
+
+                <div class="flex gap-2">
+
+                    <input type="text" id="gestion-empresa-nombre-nueva"
+                        class="flex-1 border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700"
+                        placeholder="Nombre de la nueva empresa">
+
+                    <button onclick="agregarEmpresaDesdeGestion()"
+                        class="px-4 py-2 bg-blue-600 text-white font-bold rounded shadow hover:bg-blue-700">Agregar</button>
+
+                </div>
+
+                <div id="gestion-empresas-lista" class="flex flex-col"></div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <div id="editar-empresa-modal" class="hidden fixed inset-0 bg-black/60 z-[95] flex items-center justify-center">
+
+        <div class="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+
+            <div class="bg-blue-800 px-6 py-4 flex justify-between items-center text-white">
+
+                <h3 class="font-bold text-lg">Editar Empresa</h3>
+
+                <button onclick="cerrarEditarEmpresaModal()" class="hover:text-red-400 transition-colors"><span
+                        class="material-icons">close</span></button>
+
+            </div>
+
+            <div class="p-6 flex flex-col gap-4">
+
+                <input type="hidden" id="editar-empresa-id">
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Nombre de la Empresa *</label>
+
+                    <input type="text" id="editar-empresa-nombre"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700">
+
+                </div>
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Justificación *</label>
+
+                    <input type="text" id="editar-empresa-justificacion"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="Explique el motivo del cambio">
+
+                </div>
+
+                <div class="mt-4 flex justify-end gap-3">
+
+                    <button onclick="cerrarEditarEmpresaModal()"
+                        class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
+
+                    <button id="btn-guardar-empresa-editada" onclick="guardarEmpresaEditada()"
+                        class="px-6 py-2 bg-blue-600 text-white font-bold rounded shadow hover:bg-blue-700">Guardar</button>
 
                 </div>
 
@@ -2009,6 +2099,12 @@
                     </div>
 
                     <div class="flex items-center gap-2">
+
+                        <button onclick="abrirGestionEmpresasModal()"
+                            class="flex items-center gap-2 px-4 py-3 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors text-sm">
+                            <span class="material-icons text-[18px]">business</span>
+                            <span class="hidden sm:inline">Gestionar Empresas</span>
+                        </button>
 
                         <button id="btn-imprimir-listado-corapsa" onclick="imprimirListadoCorapsa()" disabled
                             class="flex items-center gap-2 px-4 py-3 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700">

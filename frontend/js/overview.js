@@ -256,6 +256,7 @@ function abrirPagoCorapsaModal(id = null) {
 
 function cerrarPagoCorapsaModal() {
     document.getElementById('overview-payment-modal').classList.add('hidden');
+    limpiarDestinoTemporal('overview-payment-destino');
 }
 
 async function guardarPagoCorapsa() {
