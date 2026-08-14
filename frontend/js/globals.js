@@ -314,6 +314,9 @@ function calculatePayment(netWeightLbs, price, unit) {
 
 function isPreviewableAttachmentType(mimeType) {
     const mime = String(mimeType || '').toLowerCase();
+    // Matches the backend's isAllowedAttachmentMime: SVG is excluded even
+    // though it matches image/*, since it can carry an XSS payload.
+    if (mime === 'image/svg+xml') return false;
     return mime === 'application/pdf' || mime.startsWith('image/');
 }
 

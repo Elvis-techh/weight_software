@@ -13,6 +13,7 @@ const STABILITY_TOLERANCE_LBS = 3;
 
 const STALE_AFTER_MS = 3000;
 const WATCHDOG_INTERVAL_MS = 1000;
+const RECONNECT_DELAY_MS = 5000;
 
 let activePort = null;
 let activeParser = null;
@@ -22,6 +23,7 @@ let lastLineReceivedAt = 0;
 let watchdogTimer = null;
 let staleNotified = false;
 let onReading = () => {};
+let reconnectTimer = null;
 
 function parseWeightFromLine(line, parsePattern) {
     let regex = DEFAULT_WEIGHT_REGEX;
@@ -66,6 +68,23 @@ function stopWatchdog() {
     watchdogTimer = null;
 }
 
+function stopReconnectTimer() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+}
+
+// Retries the last-used settings after a bumped cable, a scale power-cycle,
+// or a port that briefly fails to open. Only ever armed from an unexpected
+// error/close while a listener is still attached — closeActivePort() strips
+// listeners before an intentional close, so that path never schedules one.
+function scheduleReconnect() {
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        resumeActiveReader();
+    }, RECONNECT_DELAY_MS);
+}
+
 function startWatchdog() {
     stopWatchdog();
     watchdogTimer = setInterval(() => {
@@ -79,6 +98,7 @@ function startWatchdog() {
 // nothing is open. Does not touch `activeSettings` so a caller can resume later.
 function closeActivePort() {
     stopWatchdog();
+    stopReconnectTimer();
     if (activeParser) {
         activeParser.removeAllListeners();
         activeParser = null;
@@ -130,13 +150,18 @@ function startReading(settings, readingCallback) {
     activePort.on('error', error => {
         console.error('Error del puerto serial:', error.message);
         emitDisconnected();
+        scheduleReconnect();
     });
-    activePort.on('close', () => emitDisconnected());
+    activePort.on('close', () => {
+        emitDisconnected();
+        scheduleReconnect();
+    });
 
     activePort.open(error => {
         if (error) {
             console.error('No se pudo abrir el puerto serial:', error.message);
             emitDisconnected();
+            scheduleReconnect();
             return;
         }
         lastLineReceivedAt = 0;

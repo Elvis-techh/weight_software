@@ -522,7 +522,7 @@
 
                         <label class="block text-xs font-bold text-gray-600 mb-1">Destino *</label>
 
-                        <select id="corapsa-destino" onchange="handleDestinoSelect(this)"
+                        <select id="corapsa-destino" onfocus="rememberDestinoValue(this)" onchange="handleDestinoSelect(this)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-700">
                             <option value="">Seleccione...</option>
                         </select>
@@ -641,7 +641,7 @@
                     <button onclick="cerrarCorapsaModal()"
                         class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
 
-                    <button onclick="guardarCorapsa()"
+                    <button type="button" id="corapsa-save-button" onclick="guardarCorapsa()"
                         class="px-6 py-2 bg-blue-700 text-white font-bold rounded shadow hover:bg-blue-800">Guardar
 
                         Registro</button>
@@ -760,7 +760,7 @@
                     <button onclick="cerrarAjusteGlobal()"
                         class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
 
-                    <button onclick="aplicarAjusteGlobalForm()"
+                    <button type="button" id="ajuste-global-save-button" onclick="aplicarAjusteGlobalForm()"
                         class="px-6 py-2 bg-gray-800 text-white font-bold rounded shadow hover:bg-black">Aplicar a
 
                         Todos</button>
@@ -966,13 +966,13 @@
 
                 </div>
 
-                <div>
+                <div id="gastos-justificacion-container" class="hidden rounded-xl border border-yellow-200 bg-yellow-50 p-3">
 
-                    <label class="block text-xs font-bold text-gray-600 mb-1">Justificación</label>
+                    <label class="block text-xs font-bold text-yellow-800 mb-1">Justificación de edición *</label>
 
                     <textarea id="gastos-justificacion" rows="2"
-                        class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm"
-                        placeholder="Detalles adicionales..."></textarea>
+                        class="w-full border border-yellow-300 rounded p-2 focus:ring-2 focus:ring-yellow-500 outline-none text-sm"
+                        placeholder="Explique por qué se modifica el gasto"></textarea>
 
                 </div>
 
@@ -999,7 +999,7 @@
                     <button onclick="cerrarGastosModal()"
                         class="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded">Cancelar</button>
 
-                    <button onclick="guardarGasto()"
+                    <button type="button" id="gastos-save-button" onclick="guardarGasto()"
                         class="px-6 py-2 bg-red-700 text-white font-bold rounded shadow hover:bg-red-800">Guardar</button>
 
                 </div>
@@ -1256,7 +1256,7 @@
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <div><label class="block text-xs font-bold text-gray-600 mb-1">Destino *</label>
-                        <select id="overview-payment-destino" onchange="handleDestinoSelect(this)"
+                        <select id="overview-payment-destino" onfocus="rememberDestinoValue(this)" onchange="handleDestinoSelect(this)"
                             class="w-full border rounded-lg p-2 font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
                             <option value="">Seleccione...</option>
                         </select>

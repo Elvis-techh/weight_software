@@ -697,7 +697,13 @@ async function aplicarAjusteGlobalForm() {
         );
     }
 
+    const saveButton = document.getElementById('ajuste-global-save-button');
     try {
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Aplicando...';
+        }
+
         const result = await apiRequest('/api/clientes/ajuste-global', {
             method: 'POST',
             body: { montoTonelada, monto: montoTonelada, razon }
@@ -730,6 +736,11 @@ async function aplicarAjusteGlobalForm() {
     } catch (error) {
         console.error('Error al aplicar ajuste global:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar el ajuste.', 'error');
+    } finally {
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Aplicar a Todos';
+        }
     }
 }
 

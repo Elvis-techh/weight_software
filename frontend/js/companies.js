@@ -2,8 +2,11 @@ const DESTINO_SELECT_IDS = ['corapsa-destino', 'overview-payment-destino'];
 const DESTINO_OTRO_VALUE = '__otro__';
 
 let otroDestinoTargetSelectId = null;
+let otroDestinoPreviousValue = '';
 
 function populateDestinoDropdowns() {
+    let filterValueChanged = false;
+
     [...DESTINO_SELECT_IDS, 'corapsa-filter-destino'].forEach(selectId => {
         const select = document.getElementById(selectId);
         if (!select) return;
@@ -35,23 +38,48 @@ function populateDestinoDropdowns() {
 
         const canRestore = Array.from(select.options).some(option => option.value === previousValue);
         select.value = canRestore ? previousValue : '';
+
+        if (isFilter && select.value !== previousValue) filterValueChanged = true;
     });
+
+    // A rename/delete can force the Corapsa filter back to "Todos los destinos"
+    // above (previousValue no longer exists as an option); without this, the
+    // table beneath keeps showing the old filtered subset until some other
+    // control triggers a re-render, desyncing it from what the dropdown shows.
+    if (filterValueChanged && typeof renderCorapsaTab === 'function') renderCorapsaTab();
+}
+
+// Snapshots the select's value before the browser applies the user's new
+// choice, so cerrarOtroDestinoModal() can restore it on Cancel. A native
+// <select> always gains focus before its value changes, whether the user
+// clicks or navigates with the keyboard, so onfocus is a reliable hook point.
+function rememberDestinoValue(selectEl) {
+    if (selectEl.value !== DESTINO_OTRO_VALUE) {
+        selectEl.dataset.priorValue = selectEl.value;
+    }
 }
 
 function handleDestinoSelect(selectEl) {
     if (selectEl.value !== DESTINO_OTRO_VALUE) return;
 
     otroDestinoTargetSelectId = selectEl.id;
+    otroDestinoPreviousValue = selectEl.dataset.priorValue || '';
     selectEl.value = '';
 
     document.getElementById('otro-destino-nombre').value = '';
     document.getElementById('otro-destino-modal').classList.remove('hidden');
 }
 
-function cerrarOtroDestinoModal() {
+function cerrarOtroDestinoModal({ restorePrevious = true } = {}) {
+    if (restorePrevious && otroDestinoTargetSelectId) {
+        const select = document.getElementById(otroDestinoTargetSelectId);
+        if (select) select.value = otroDestinoPreviousValue;
+    }
+
     document.getElementById('otro-destino-modal').classList.add('hidden');
     document.getElementById('otro-destino-nombre').value = '';
     otroDestinoTargetSelectId = null;
+    otroDestinoPreviousValue = '';
 }
 
 function readOtroDestinoNombre() {
@@ -107,7 +135,7 @@ function guardarOtroDestinoTemporal() {
     if (!nombre) return;
 
     applyDestinoToTargetSelect(nombre);
-    cerrarOtroDestinoModal();
+    cerrarOtroDestinoModal({ restorePrevious: false });
 }
 
 // POSTs a new company and keeps MOCK_COMPANIES / the destino selects in
@@ -132,7 +160,7 @@ async function guardarOtroDestinoPermanente() {
         const company = await crearCompanyRemota(nombre);
 
         applyDestinoToTargetSelect(company.nombre);
-        cerrarOtroDestinoModal();
+        cerrarOtroDestinoModal({ restorePrevious: false });
         mostrarNotificacion('Empresa agregada.');
     } catch (error) {
         console.error('Error al guardar empresa:', error);

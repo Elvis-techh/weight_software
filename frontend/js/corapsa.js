@@ -104,7 +104,7 @@ function handleCorapsaClientInput() {
     );
 
     if (match) {
-        document.getElementById('corapsa-precio').value = formatNumberForInput(match.precioFletePropio, 2);
+        document.getElementById('corapsa-precio').value = formatNumberForInput(match.precioToneladaPropio, 2);
         calcularTotalCorapsa();
     }
 }
@@ -158,7 +158,13 @@ async function guardarCorapsa() {
         return mostrarNotificacion('La edición requiere una justificación.', 'error');
     }
 
+    const saveButton = document.getElementById('corapsa-save-button');
     try {
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Guardando...';
+        }
+
         const [archivoCliente, archivoNuestro] = await Promise.all([
             buildAttachmentPayload(clienteFile),
             buildAttachmentPayload(nuestroFile)
@@ -180,6 +186,11 @@ async function guardarCorapsa() {
     } catch (error) {
         console.error('Error al guardar Corapsa:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar el recibo.', 'error');
+    } finally {
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Guardar Registro';
+        }
     }
 }
 
@@ -300,6 +311,14 @@ function solicitarReemplazarArchivoActual() {
         cerrarVisorRecibo();
         abrirGastosModal(id);
         setTimeout(() => document.getElementById('gastos-file')?.focus(), 0);
+        return;
+    }
+
+    if (activeReceiptViewer.module === 'overview') {
+        const id = activeReceiptViewer.id;
+        cerrarVisorRecibo();
+        abrirPagoCorapsaModal(id);
+        setTimeout(() => document.getElementById('overview-payment-file')?.focus(), 0);
         return;
     }
 

@@ -22,6 +22,19 @@ function logUpdate(message) {
     }
 }
 
+// Without these, an uncaught exception or unhandled promise rejection in the
+// main process terminates the whole app with no dialog and no attached
+// console to see why — the kiosk just silently vanishes. Logging and
+// swallowing it instead keeps the app (and the scale connection) alive for
+// a bug that's very unlikely to be fatal to the running process.
+process.on('uncaughtException', (error) => {
+    logUpdate(`Uncaught exception: ${error?.stack || error}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+    logUpdate(`Unhandled promise rejection: ${reason?.stack || reason}`);
+});
+
 let mainWindow = null;
 let scaleSimulationTimer = null;
 let simulationPreset = 'loaded';

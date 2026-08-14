@@ -316,15 +316,15 @@ async function initializeDB() {
     await ensureColumn(db, 'clientes', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'clientes', 'precio_tonelada_propio', 'REAL');
     await ensureColumn(db, 'clientes', 'precio_tonelada_cliente', 'REAL');
-    await ensureColumn(db, 'clientes', 'created_at', 'TEXT');
-    await ensureColumn(db, 'clientes', 'updated_at', 'TEXT');
+    await ensureColumn(db, 'clientes', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    await ensureColumn(db, 'clientes', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'clientes', 'identidad', "TEXT NOT NULL DEFAULT ''");
 
     await ensureColumn(db, 'camiones_en_patio', 'cliente_nombre_snapshot', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'camiones_en_patio', 'precio_aplicado', 'REAL NOT NULL DEFAULT 0');
     await ensureColumn(db, 'camiones_en_patio', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'camiones_en_patio', 'casual_snapshot', 'TEXT');
-    await ensureColumn(db, 'camiones_en_patio', 'created_at', 'TEXT');
+    await ensureColumn(db, 'camiones_en_patio', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     // Captured when the truck joins the weigh-in queue, so the printed receipt
     // can show both Fecha Entrada and Fecha Salida (the latter is set at finalize).
     await ensureColumn(db, 'camiones_en_patio', 'fecha_entrada', 'TEXT');
@@ -332,7 +332,7 @@ async function initializeDB() {
     await ensureColumn(db, 'camiones_en_patio', 'identidad_snapshot', "TEXT NOT NULL DEFAULT ''");
 
     await ensureColumn(db, 'transacciones', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
-    await ensureColumn(db, 'transacciones', 'created_at', 'TEXT');
+    await ensureColumn(db, 'transacciones', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'transacciones', 'fecha_entrada', 'TEXT');
     await ensureColumn(db, 'transacciones', 'hora_entrada', 'TEXT');
     await ensureColumn(db, 'transacciones', 'identidad', "TEXT NOT NULL DEFAULT ''");
@@ -354,8 +354,8 @@ async function initializeDB() {
     // own Acopio scale (transacciones). Excluded from Compra Directo in the
     // Overview so it isn't counted twice toward Compra Total de Palma.
     await ensureColumn(db, 'corapsa', 'es_producto_propio', 'INTEGER NOT NULL DEFAULT 0');
-    await ensureColumn(db, 'corapsa', 'created_at', 'TEXT');
-    await ensureColumn(db, 'corapsa', 'updated_at', 'TEXT');
+    await ensureColumn(db, 'corapsa', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    await ensureColumn(db, 'corapsa', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
     await ensureColumn(db, 'corapsa_pagos', 'referencia', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa_pagos', 'destino', "TEXT NOT NULL DEFAULT 'CORAPSA'");
@@ -364,19 +364,22 @@ async function initializeDB() {
     await ensureColumn(db, 'corapsa_pagos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa_pagos', 'file_data', 'BLOB');
     await ensureColumn(db, 'corapsa_pagos', 'file_key', 'TEXT');
-    await ensureColumn(db, 'corapsa_pagos', 'created_at', 'TEXT');
-    await ensureColumn(db, 'corapsa_pagos', 'updated_at', 'TEXT');
+    await ensureColumn(db, 'corapsa_pagos', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    await ensureColumn(db, 'corapsa_pagos', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
     await ensureColumn(db, 'gastos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'gastos', 'file_data', 'BLOB');
     await ensureColumn(db, 'gastos', 'file_key', 'TEXT');
-    await ensureColumn(db, 'gastos', 'created_at', 'TEXT');
-    await ensureColumn(db, 'gastos', 'updated_at', 'TEXT');
+    await ensureColumn(db, 'gastos', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    await ensureColumn(db, 'gastos', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
     await ensureColumn(db, 'planilla', 'asistencia_migrada', 'INTEGER NOT NULL DEFAULT 0');
-    await ensureColumn(db, 'planilla', 'created_at', 'TEXT');
-    await ensureColumn(db, 'planilla', 'updated_at', 'TEXT');
+    await ensureColumn(db, 'planilla', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    await ensureColumn(db, 'planilla', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
+    // Each backfill below is scoped with a WHERE clause so it only rewrites rows
+    // that still need repair — after the first run on a given database, these
+    // become no-op scans instead of a full-table rewrite on every server start.
     await db.exec(`
         UPDATE clientes
         SET precio_tonelada_propio = COALESCE(
@@ -394,13 +397,19 @@ async function initializeDB() {
                 END
             ),
             created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
-            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP)
+        WHERE precio_tonelada_propio IS NULL
+           OR precio_tonelada_cliente IS NULL
+           OR created_at IS NULL OR TRIM(created_at) = ''
+           OR updated_at IS NULL OR TRIM(updated_at) = '';
 
         UPDATE camiones_en_patio
-        SET created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP);
+        SET created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP)
+        WHERE created_at IS NULL OR TRIM(created_at) = '';
 
         UPDATE transacciones
-        SET created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP);
+        SET created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP)
+        WHERE created_at IS NULL OR TRIM(created_at) = '';
 
         UPDATE corapsa
         SET file_name = COALESCE(NULLIF(TRIM(file_name), ''), 'Sin Archivo'),
@@ -408,7 +417,13 @@ async function initializeDB() {
             file_nuestro = COALESCE(NULLIF(TRIM(file_nuestro), ''), 'Sin Archivo'),
             file_nuestro_mime_type = COALESCE(file_nuestro_mime_type, ''),
             created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
-            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP)
+        WHERE file_name IS NULL OR TRIM(file_name) = ''
+           OR file_mime_type IS NULL
+           OR file_nuestro IS NULL OR TRIM(file_nuestro) = ''
+           OR file_nuestro_mime_type IS NULL
+           OR created_at IS NULL OR TRIM(created_at) = ''
+           OR updated_at IS NULL OR TRIM(updated_at) = '';
 
         UPDATE corapsa_pagos
         SET referencia = COALESCE(referencia, ''),
@@ -416,18 +431,42 @@ async function initializeDB() {
             file_name = COALESCE(NULLIF(TRIM(file_name), ''), 'Sin Archivo'),
             file_mime_type = COALESCE(file_mime_type, ''),
             created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
-            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP)
+        WHERE referencia IS NULL
+           OR notas IS NULL
+           OR file_name IS NULL OR TRIM(file_name) = ''
+           OR file_mime_type IS NULL
+           OR created_at IS NULL OR TRIM(created_at) = ''
+           OR updated_at IS NULL OR TRIM(updated_at) = '';
 
         UPDATE gastos
         SET file_name = COALESCE(NULLIF(TRIM(file_name), ''), 'Sin Archivo'),
             file_mime_type = COALESCE(file_mime_type, ''),
             created_at = COALESCE(NULLIF(TRIM(created_at), ''), CURRENT_TIMESTAMP),
-            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP);
+            updated_at = COALESCE(NULLIF(TRIM(updated_at), ''), CURRENT_TIMESTAMP)
+        WHERE file_name IS NULL OR TRIM(file_name) = ''
+           OR file_mime_type IS NULL
+           OR created_at IS NULL OR TRIM(created_at) = ''
+           OR updated_at IS NULL OR TRIM(updated_at) = '';
     `);
 
     await repairLegacyQueueIds(db);
     await migrateLegacyPayrollAttendance(db);
     await db.exec('CREATE INDEX IF NOT EXISTS idx_camiones_created_at ON camiones_en_patio(created_at);');
+
+    // numero_boleta is scanned via MAX() on every truck finalize (the busiest
+    // write path) and can be hand-edited to an arbitrary value via PUT
+    // /api/transacciones/:id, so it needs both an index and, ideally, a
+    // uniqueness guarantee. The UNIQUE index is attempted first; if manual
+    // edits already left duplicates on this database it falls back to a
+    // plain index instead of blocking startup, and self-heals to unique the
+    // next time the server starts after the duplicates are cleaned up.
+    try {
+        await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_transacciones_numero_boleta ON transacciones(numero_boleta) WHERE numero_boleta IS NOT NULL;');
+    } catch (error) {
+        console.warn(`No se pudo crear un índice único para numero_boleta (probablemente ya existen boletas duplicadas): ${error.message}`);
+        await db.exec('CREATE INDEX IF NOT EXISTS idx_transacciones_numero_boleta ON transacciones(numero_boleta);');
+    }
 
     return db;
 }

@@ -36,7 +36,12 @@ function abrirGastosModal(id = null) {
     document.getElementById('gastos-fecha').value = gasto?.fecha || getLocalIsoDate();
     document.getElementById('gastos-monto').value = gasto ? formatNumberForInput(gasto.monto, 2) : '';
     document.getElementById('gastos-concepto').value = gasto?.concepto || '';
-    document.getElementById('gastos-justificacion').value = gasto?.justificacion || '';
+    // Blank every time the modal opens, even when editing: this is a
+    // per-edit audit reason (like corapsa/clientes/overview-payment), not
+    // the expense's own data, so it shouldn't be pre-filled from whatever
+    // reason was given for a previous edit.
+    document.getElementById('gastos-justificacion').value = '';
+    document.getElementById('gastos-justificacion-container').classList.toggle('hidden', !gasto);
     document.getElementById('gastos-file').value = '';
     updateGastoModalAttachmentState(gasto);
     document.getElementById('gastos-modal').classList.remove('hidden');
@@ -59,8 +64,15 @@ async function guardarGasto() {
 
     if (!payload.fecha || !payload.concepto) return mostrarNotificacion('Complete los campos obligatorios.', 'error');
     if (!Number.isFinite(payload.monto) || payload.monto <= 0) return mostrarNotificacion('El monto debe ser mayor que cero.', 'error');
+    if (id && !payload.justificacion) return mostrarNotificacion('La edición requiere una justificación.', 'error');
 
+    const saveButton = document.getElementById('gastos-save-button');
     try {
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Guardando...';
+        }
+
         const archivo = await buildAttachmentPayload(selectedFile);
         if (archivo) payload.archivo = archivo;
 
@@ -78,6 +90,11 @@ async function guardarGasto() {
     } catch (error) {
         console.error('Error al guardar gasto:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar el gasto.', 'error');
+    } finally {
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Guardar';
+        }
     }
 }
 

@@ -342,16 +342,29 @@ async function saveWeight(type, manualWeight = null) {
             : { pesoTara: reading.weight };
         let wentOffline = false;
 
-        try {
-            const result = await apiRequest(
-                `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}`,
-                { method: 'PATCH', body }
-            );
-            activeTransaction = normalizarCamionPatio(result?.camion || result);
-        } catch (error) {
-            if (!isConnectivityError(error)) throw error;
+        // If this truck's own "create" hasn't synced yet (still queued, or the
+        // connection only just came back and the drain hasn't reached it), the
+        // server has no record of activeTransaction.id at all — a live PATCH
+        // would 404 (not a connectivity error, so it wouldn't fall into the
+        // catch below) and leave activeTransaction stuck on a dead local id.
+        // Queue it instead; remapLocalTruckId() retargets it once the create
+        // replays, same as while genuinely offline.
+        if (isLocalOnlyTruckId(activeTransaction.id)) {
             wentOffline = true;
+        } else {
+            try {
+                const result = await apiRequest(
+                    `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}`,
+                    { method: 'PATCH', body }
+                );
+                activeTransaction = normalizarCamionPatio(result?.camion || result);
+            } catch (error) {
+                if (!isConnectivityError(error)) throw error;
+                wentOffline = true;
+            }
+        }
 
+        if (wentOffline) {
             await enqueueOp({
                 opId: generateLocalId('op'),
                 type: 'update',
@@ -744,16 +757,25 @@ async function guardarTransaccion() {
         let savedTransaction;
         let wentOffline = false;
 
-        try {
-            const result = await apiRequest(
-                `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
-                { method: 'POST', body: { fecha, hora } }
-            );
-            savedTransaction = normalizarTransaccion(result?.transaccion || result);
-        } catch (error) {
-            if (!isConnectivityError(error)) throw error;
+        // Same reasoning as saveWeight(): if this truck's own "create" hasn't
+        // synced yet, the server has no record of activeTransaction.id and a
+        // live finalize would 404 instead of queuing — go straight to the
+        // offline path so it lands behind the create in strict order.
+        if (isLocalOnlyTruckId(activeTransaction.id)) {
             wentOffline = true;
             savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total);
+        } else {
+            try {
+                const result = await apiRequest(
+                    `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
+                    { method: 'POST', body: { fecha, hora } }
+                );
+                savedTransaction = normalizarTransaccion(result?.transaccion || result);
+            } catch (error) {
+                if (!isConnectivityError(error)) throw error;
+                wentOffline = true;
+                savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total);
+            }
         }
 
         transaccionesData.unshift(savedTransaction);

@@ -39,8 +39,23 @@ function sendData(res, data, status = 200) {
     res.status(status).json({ ok: true, data });
 }
 
+// Pure attachment downloads never touch the write queue (no DB write, and
+// SQLite's WAL mode already lets reads run concurrently with everything
+// else), so exempting them here keeps one slow DigitalOcean Spaces transfer
+// from stalling every other operator's unrelated request while it downloads.
+// Upload routes still need the queue below — they follow with a DB write —
+// so this only helps the read/view side of the attachment flow.
+const UNSERIALIZED_ATTACHMENT_READS = [
+    /^\/api\/corapsa\/[^/]+\/archivo\/[^/]+$/,
+    /^\/api\/gastos\/[^/]+\/archivo$/,
+    /^\/api\/corapsa-pagos\/[^/]+\/archivo$/
+];
+
 function serializeDatabaseAccess(req, res, next) {
     if (req.method === 'OPTIONS') return next();
+    if (req.method === 'GET' && UNSERIALIZED_ATTACHMENT_READS.some(pattern => pattern.test(req.path))) {
+        return next();
+    }
 
     const previous = writeQueue;
     let release;
@@ -99,7 +114,10 @@ function asText(value, { required = false, field = 'campo', maxLength = 250 } = 
 }
 
 function asNumber(value, { required = false, min = -Infinity, field = 'valor' } = {}) {
-    if ((value === null || value === undefined || value === '') && !required) return null;
+    if (value === null || value === undefined || value === '') {
+        if (required) throw new HttpError(400, `${field} es obligatorio.`, 'VALIDATION_ERROR');
+        return null;
+    }
     const number = Number(value);
     if (!Number.isFinite(number)) throw new HttpError(400, `${field} no es válido.`, 'VALIDATION_ERROR');
     if (number < min) throw new HttpError(400, `${field} debe ser mayor o igual que ${min}.`, 'VALIDATION_ERROR');
@@ -323,6 +341,11 @@ function safeJsonParse(value) {
 
 function isAllowedAttachmentMime(mimeType) {
     const mime = String(mimeType || '').toLowerCase();
+    // SVG excluded despite the image/* prefix: it can carry embedded
+    // <script>/event-handler payloads that execute if the file is ever
+    // opened outside the app's own <img>-tag viewer (e.g. a direct
+    // navigation or new-tab open), unlike raster image formats.
+    if (mime === 'image/svg+xml') return false;
     return mime === 'application/pdf' || mime.startsWith('image/');
 }
 
@@ -699,10 +722,13 @@ async function buildOverviewSummary(start, end) {
         GROUP BY p.id, p.sueldo_base
     `, [start, end]);
 
+    // Overlap (not full containment) so a period spanning a report-range
+    // boundary still counts in every range it touches, instead of vanishing
+    // from both when neither range fully contains it.
     const payrollExtras = await db.get(`
         SELECT COALESCE(SUM(extras), 0) AS monto
         FROM planilla_periodos
-        WHERE fecha_inicio >= ? AND fecha_fin <= ?
+        WHERE fecha_fin >= ? AND fecha_inicio <= ?
     `, [start, end]);
 
     const statementRows = await db.all(`
@@ -710,7 +736,7 @@ async function buildOverviewSummary(start, end) {
                toneladas, monto, notas, file_name, file_mime_type,
                (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file, created_at, updated_at
         FROM corapsa_pagos
-        WHERE periodo_inicio >= ? AND periodo_fin <= ?
+        WHERE periodo_fin >= ? AND periodo_inicio <= ?
         ORDER BY periodo_inicio DESC, periodo_fin DESC, id DESC
     `, [start, end]);
 
@@ -728,7 +754,7 @@ async function buildOverviewSummary(start, end) {
                COALESCE(SUM(toneladas), 0) AS toneladas,
                COALESCE(SUM(monto), 0) AS monto
         FROM corapsa_pagos
-        WHERE periodo_inicio >= ? AND periodo_fin <= ?
+        WHERE periodo_fin >= ? AND periodo_inicio <= ?
         GROUP BY destino
     `, [start, end]);
 
@@ -1012,9 +1038,9 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
                 nombre, apellido, telefono, ubicacion, identidad,
                 precio_flete_propio, precio_flete_cliente,
                 precio_tonelada_propio, precio_tonelada_cliente,
-                unidad
+                unidad, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             client.nombre,
             client.apellido,
@@ -1071,6 +1097,16 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
             id
         ]);
         if (!result.changes) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
+
+        // Keeps any truck already in the yard queue for this client in sync with
+        // the price just saved — otherwise it stays snapshotted at the old price
+        // (wrong or not) until finalized, even though Clientes now shows the new one.
+        await db.run(
+            `UPDATE camiones_en_patio
+             SET precio_aplicado = CASE WHEN flete = 'Propio' THEN ? ELSE ? END
+             WHERE cliente_id = ?`,
+            [client.precioFletePropio, client.precioFleteCliente, String(id)]
+        );
 
         const row = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
         await logAudit({ entity: 'cliente', entityId: id, action: 'editar', justification: justificacion, details: client });
@@ -1230,8 +1266,8 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
             INSERT INTO camiones_en_patio (
                 id, cliente_id, cliente_nombre_snapshot, placa, conductor, flete,
                 peso_bruto, peso_tara, precio_aplicado, unidad, casual_snapshot,
-                fecha_entrada, hora_entrada, identidad_snapshot
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fecha_entrada, hora_entrada, identidad_snapshot, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
             id,
             String(clienteId),
@@ -1312,7 +1348,7 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
 
 app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
     const id = req.params.id;
-    const fecha = asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 });
+    const fecha = asIsoDate(req.body?.fecha, 'La fecha');
     const hora = asText(req.body?.hora, { required: true, field: 'La hora', maxLength: 20 });
 
     const transaction = await withTransaction(async () => {
@@ -1322,11 +1358,16 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
             throw new HttpError(409, 'La transacción no tiene ambos pesos.', 'MISSING_WEIGHT');
         }
 
-        const neto = Math.abs(Number(truck.peso_bruto) - Number(truck.peso_tara));
+        const pesoBrutoFinal = Number(truck.peso_bruto);
+        const pesoTaraFinal = Number(truck.peso_tara);
+        if (pesoBrutoFinal < pesoTaraFinal) {
+            throw new HttpError(409, 'El peso bruto no puede ser menor que el peso tara. Verifique si los pesos fueron capturados invertidos.', 'INVALID_WEIGHT_ORDER');
+        }
+        const neto = pesoBrutoFinal - pesoTaraFinal;
         if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
         const unidad = truck.unidad === 'quintal' ? 'quintal' : 'tonelada';
         const cantidadFacturable = calculateBillableQuantity(neto, unidad);
-        const total = cantidadFacturable * Number(truck.precio_aplicado || 0);
+        const total = roundToCurrency(cantidadFacturable * Number(truck.precio_aplicado || 0));
 
         const nextBoletaRow = await db.get('SELECT COALESCE(MAX(numero_boleta), 0) + 1 AS next FROM transacciones');
         const numeroBoleta = Number(nextBoletaRow.next);
@@ -1334,8 +1375,8 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         const insertResult = await db.run(`
             INSERT INTO transacciones (
                 fecha, hora, fecha_entrada, hora_entrada, placa, conductor, cliente_nombre, identidad,
-                numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
             fecha, hora, truck.fecha_entrada || fecha, truck.hora_entrada || hora,
             truck.placa, truck.conductor,
@@ -1386,11 +1427,20 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const numeroBoletaRaw = asNumber(req.body?.numeroBoleta, { required: true, min: 1, field: 'El número de boleta' });
     if (!Number.isInteger(numeroBoletaRaw)) throw new HttpError(400, 'El número de boleta no es válido.', 'VALIDATION_ERROR');
 
-    const neto = Math.abs(pesoBruto - pesoTara);
+    if (pesoBruto < pesoTara) {
+        throw new HttpError(409, 'El peso bruto no puede ser menor que el peso tara. Verifique si los pesos fueron capturados invertidos.', 'INVALID_WEIGHT_ORDER');
+    }
+    const neto = pesoBruto - pesoTara;
     if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
-    const total = calculateBillableQuantity(neto, unidad) * precioAplicado;
+    const total = roundToCurrency(calculateBillableQuantity(neto, unidad) * precioAplicado);
 
     const transaction = await withTransaction(async () => {
+        const duplicate = await db.get(
+            'SELECT id FROM transacciones WHERE numero_boleta = ? AND id != ?',
+            [numeroBoletaRaw, id]
+        );
+        if (duplicate) throw new HttpError(409, 'Ya existe otra transacción con ese número de boleta.', 'DUPLICATE_BOLETA');
+
         const result = await db.run(`
             UPDATE transacciones
             SET fecha = ?, hora = ?, placa = ?, conductor = ?, cliente_nombre = ?,
@@ -1447,14 +1497,14 @@ app.get('/api/corapsa', asyncHandler(async (_req, res) => {
 }));
 
 app.post('/api/corapsa', asyncHandler(async (req, res) => {
-    const fecha = asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 });
+    const fecha = asIsoDate(req.body?.fecha, 'La fecha');
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
     const destino = asDestino(req.body?.destino);
     const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
-    const total = toneladas * precio;
+    const total = roundToCurrency(toneladas * precio);
     const esProductoPropio = asBoolean(req.body?.esProductoPropio ?? false);
     const archivoCliente = await storeAttachment(
         'corapsa-cliente',
@@ -1470,8 +1520,9 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
             INSERT INTO corapsa (
                 fecha, recibo_in, cliente, destino, a_nombre_de, toneladas, precio, total,
                 file_name, file_mime_type, file_data, file_key,
-                file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado, es_producto_propio
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado, es_producto_propio,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             fecha, reciboIn, cliente, destino, aNombreDe, toneladas, precio, total,
             archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null, archivoCliente?.key || null,
@@ -1495,14 +1546,14 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const current = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
     if (!current) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
 
-    const fecha = asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 });
+    const fecha = asIsoDate(req.body?.fecha, 'La fecha');
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
     const destino = asDestino(req.body?.destino);
     const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
     const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
-    const total = toneladas * precio;
+    const total = roundToCurrency(toneladas * precio);
 
     const hasClienteUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente');
     const hasNuestroUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro');
@@ -1551,6 +1602,21 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const current = await db.get('SELECT file_key, file_nuestro_key FROM corapsa WHERE id = ?', [id]);
     if (!current) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
+
+    // Setting and clearing the same attachment in one request would otherwise
+    // silently drop the upload (both fragments assign the same SQL column;
+    // the later one wins) while leaving the just-uploaded Spaces object
+    // orphaned, since nothing in the DB ends up referencing its key.
+    const setsCliente = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente');
+    const clearsCliente = req.body?.eliminarArchivoCliente === true || req.body?.fileName === 'Sin Archivo';
+    if (setsCliente && clearsCliente) {
+        throw new HttpError(400, 'No se puede adjuntar y eliminar el archivo del cliente en la misma solicitud.', 'VALIDATION_ERROR');
+    }
+    const setsNuestro = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro');
+    const clearsNuestro = req.body?.eliminarArchivoNuestro === true || req.body?.fileNuestro === 'Sin Archivo';
+    if (setsNuestro && clearsNuestro) {
+        throw new HttpError(400, 'No se puede adjuntar y eliminar el archivo nuestro en la misma solicitud.', 'VALIDATION_ERROR');
+    }
 
     const updates = [];
     const values = [];
@@ -1642,7 +1708,7 @@ app.get('/api/gastos', asyncHandler(async (_req, res) => {
 
 app.post('/api/gastos', asyncHandler(async (req, res) => {
     const expense = {
-        fecha: asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 }),
+        fecha: asIsoDate(req.body?.fecha, 'La fecha'),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
         justificacion: asText(req.body?.justificacion, { maxLength: 1000 })
@@ -1650,8 +1716,8 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
     const attachment = await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
     const gasto = await withTransaction(async () => {
         const result = await db.run(`
-            INSERT INTO gastos (fecha, monto, concepto, justificacion, file_name, file_mime_type, file_data, file_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO gastos (fecha, monto, concepto, justificacion, file_name, file_mime_type, file_data, file_key, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             expense.fecha, expense.monto, expense.concepto, expense.justificacion,
             attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null
@@ -1669,10 +1735,10 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
     if (!current) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
 
     const expense = {
-        fecha: asText(req.body?.fecha, { required: true, field: 'La fecha', maxLength: 10 }),
+        fecha: asIsoDate(req.body?.fecha, 'La fecha'),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
-        justificacion: asText(req.body?.justificacion, { maxLength: 1000 })
+        justificacion: asText(req.body?.justificacion, { required: true, field: 'La justificación', maxLength: 1000 })
     };
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
     const attachment = hasUpload ? await storeAttachment('gastos', parseAttachmentPayload(req.body.archivo, 'El recibo del gasto')) : null;
@@ -1692,7 +1758,7 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
             id
         ]);
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
-        await logAudit({ entity: 'gasto', entityId: id, action: 'editar', details: mapExpense(row) });
+        await logAudit({ entity: 'gasto', entityId: id, action: 'editar', justification: expense.justificacion, details: mapExpense(row) });
         return mapExpense(row);
     });
 
@@ -1773,8 +1839,8 @@ app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
         const result = await db.run(`
             INSERT INTO corapsa_pagos (
                 fecha_pago, periodo_inicio, periodo_fin, referencia, destino, toneladas,
-                monto, notas, file_name, file_mime_type, file_data, file_key
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                monto, notas, file_name, file_mime_type, file_data, file_key, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             payment.fechaPago, payment.periodoInicio, payment.periodoFin,
             payment.referencia, payment.destino, payment.toneladas, payment.monto, payment.notas,
@@ -1864,8 +1930,8 @@ app.post('/api/planilla', asyncHandler(async (req, res) => {
     const trabajador = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO planilla
-                (nombre, apellido, telefono, sueldo_base, dias_trabajados, extras, asistencia_migrada)
-            VALUES (?, ?, ?, ?, 0, 0, 1)
+                (nombre, apellido, telefono, sueldo_base, dias_trabajados, extras, asistencia_migrada, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase]);
         const row = await db.get('SELECT * FROM planilla WHERE id = ?', [result.lastID]);
         await logAudit({ entity: 'trabajador', entityId: result.lastID, action: 'crear', details: worker });
