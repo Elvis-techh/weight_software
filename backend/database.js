@@ -200,6 +200,7 @@ async function initializeDB() {
             recibo_in TEXT NOT NULL,
             recibo_out TEXT NOT NULL DEFAULT '',
             cliente TEXT NOT NULL,
+            telefono TEXT NOT NULL DEFAULT '',
             destino TEXT NOT NULL DEFAULT 'CORAPSA',
             a_nombre_de TEXT NOT NULL DEFAULT '',
             toneladas REAL NOT NULL,
@@ -340,6 +341,7 @@ async function initializeDB() {
     // can be corrected/seeded to match a physical ticket book if needed.
     await ensureColumn(db, 'transacciones', 'numero_boleta', 'INTEGER');
 
+    await ensureColumn(db, 'corapsa', 'telefono', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'destino', "TEXT NOT NULL DEFAULT 'CORAPSA'");
     await ensureColumn(db, 'corapsa', 'a_nombre_de', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");

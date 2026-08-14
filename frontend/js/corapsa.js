@@ -5,6 +5,7 @@ function normalizarCorapsa(record = {}) {
         reciboIn: String(record.reciboIn ?? record.recibo_in ?? ''),
         reciboOut: String(record.reciboOut ?? record.recibo_out ?? ''),
         cliente: String(record.cliente || ''),
+        telefono: String(record.telefono || ''),
         destino: String(record.destino || ''),
         aNombreDe: String(record.aNombreDe ?? record.a_nombre_de ?? ''),
         toneladas: toFiniteNumber(record.toneladas),
@@ -77,13 +78,13 @@ function abrirCorapsaModal(id = null, justificacion = '') {
     document.getElementById('corapsa-fecha').value = record?.fecha || getLocalIsoDate();
     document.getElementById('corapsa-recibo-in').value = record?.reciboIn || '';
     document.getElementById('corapsa-cliente').value = record?.cliente || '';
+    document.getElementById('corapsa-telefono').value = record?.telefono || '';
     ensureDestinoOption('corapsa-destino', record?.destino || '');
     document.getElementById('corapsa-destino').value = record?.destino || '';
     document.getElementById('corapsa-a-nombre-de').value = record?.aNombreDe || '';
     document.getElementById('corapsa-es-producto-propio').checked = Boolean(record?.esProductoPropio);
     document.getElementById('corapsa-toneladas').value = record?.toneladas || '';
     document.getElementById('corapsa-precio').value = record ? formatNumberForInput(record.precio, 2) : '';
-    document.getElementById('corapsa-recibo-out').value = record?.reciboOut || 'Se generará automáticamente';
     document.getElementById('corapsa-total-display').textContent = formatMoney(record?.total || 0);
     document.getElementById('corapsa-file').value = '';
     document.getElementById('corapsa-file-nuestro').value = '';
@@ -106,6 +107,7 @@ function handleCorapsaClientInput() {
     if (match) {
         document.getElementById('corapsa-precio').value = formatNumberForInput(match.precioToneladaPropio, 2);
         calcularTotalCorapsa();
+        if (match.telefono) document.getElementById('corapsa-telefono').value = match.telefono;
     }
 }
 
@@ -131,11 +133,13 @@ async function guardarCorapsa() {
     const existing = id ? corapsaData.find(item => sameRecordId(item.id, id)) : null;
     const clienteFile = document.getElementById('corapsa-file').files[0] || null;
     const nuestroFile = document.getElementById('corapsa-file-nuestro').files[0] || null;
+    const telefono = document.getElementById('corapsa-telefono').value.trim();
 
     const payload = {
         fecha: document.getElementById('corapsa-fecha').value,
         reciboIn: document.getElementById('corapsa-recibo-in').value.trim(),
         cliente: document.getElementById('corapsa-cliente').value.trim(),
+        telefono: telefono === '+504' ? '' : telefono,
         destino: document.getElementById('corapsa-destino').value.trim(),
         aNombreDe: document.getElementById('corapsa-a-nombre-de').value.trim(),
         esProductoPropio: document.getElementById('corapsa-es-producto-propio').checked,
@@ -426,7 +430,7 @@ function renderCorapsaTab() {
     if (listadoButton) listadoButton.disabled = filtered.length === 0;
 
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="p-8 text-center text-gray-400">Sin recibos registrados.</td></tr>';
         return;
     }
 
@@ -438,6 +442,7 @@ function renderCorapsaTab() {
         return `
             <tr class="hover:bg-blue-50">
                 <td class="p-3 text-sm font-mono text-gray-600 font-bold">${escapeHtml(formatDateForDisplay(record.fecha))}</td>
+                <td class="p-3 text-sm font-mono text-gray-600">${escapeHtml(record.telefono || '-')}</td>
                 <td class="p-3 font-bold text-gray-800">${escapeHtml(record.cliente)}${record.aNombreDe ? `<br><span class="text-[11px] font-semibold text-gray-400">A nombre de: ${escapeHtml(record.aNombreDe)}</span>` : ''}</td>
                 <td class="p-3"><span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-1 rounded font-bold text-xs uppercase">${escapeHtml(record.destino || '-')}</span></td>
                 <td class="p-3">${record.esProductoPropio

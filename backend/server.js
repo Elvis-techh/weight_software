@@ -510,6 +510,7 @@ function mapCorapsa(row) {
         reciboIn: row.recibo_in,
         reciboOut: row.recibo_out,
         cliente: row.cliente,
+        telefono: row.telefono || '',
         destino: row.destino || '',
         aNombreDe: row.a_nombre_de || '',
         toneladas: Number(row.toneladas || 0),
@@ -1486,7 +1487,7 @@ app.get('/api/corapsa/:id/archivo/:type', asyncHandler(async (req, res) => {
 
 app.get('/api/corapsa', asyncHandler(async (_req, res) => {
     const rows = await db.all(`
-        SELECT id, fecha, recibo_in, recibo_out, cliente, destino, a_nombre_de, toneladas, precio, total,
+        SELECT id, fecha, recibo_in, recibo_out, cliente, telefono, destino, a_nombre_de, toneladas, precio, total,
                file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                file_nuestro, file_nuestro_mime_type, (file_nuestro_key IS NOT NULL OR LENGTH(file_nuestro_data) > 0) AS has_file_nuestro,
                pagado, es_producto_propio, created_at, updated_at
@@ -1500,6 +1501,7 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const fecha = asIsoDate(req.body?.fecha, 'La fecha');
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
+    const telefono = asText(req.body?.telefono, { field: 'El teléfono', maxLength: 40 });
     const destino = asDestino(req.body?.destino);
     const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
@@ -1518,13 +1520,13 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const corapsa = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO corapsa (
-                fecha, recibo_in, cliente, destino, a_nombre_de, toneladas, precio, total,
+                fecha, recibo_in, cliente, telefono, destino, a_nombre_de, toneladas, precio, total,
                 file_name, file_mime_type, file_data, file_key,
                 file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado, es_producto_propio,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
-            fecha, reciboIn, cliente, destino, aNombreDe, toneladas, precio, total,
+            fecha, reciboIn, cliente, telefono, destino, aNombreDe, toneladas, precio, total,
             archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null, archivoCliente?.key || null,
             archivoNuestro?.fileName || 'Sin Archivo', archivoNuestro?.mimeType || '', archivoNuestro?.data || null, archivoNuestro?.key || null,
             asBoolean(req.body?.pagado ?? false) ? 1 : 0,
@@ -1549,6 +1551,7 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const fecha = asIsoDate(req.body?.fecha, 'La fecha');
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
+    const telefono = asText(req.body?.telefono, { field: 'El teléfono', maxLength: 40 });
     const destino = asDestino(req.body?.destino);
     const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
@@ -1567,13 +1570,13 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const corapsa = await withTransaction(async () => {
         await db.run(`
             UPDATE corapsa
-            SET fecha = ?, recibo_in = ?, cliente = ?, destino = ?, a_nombre_de = ?, toneladas = ?, precio = ?, total = ?,
+            SET fecha = ?, recibo_in = ?, cliente = ?, telefono = ?, destino = ?, a_nombre_de = ?, toneladas = ?, precio = ?, total = ?,
                 file_name = ?, file_mime_type = ?, file_data = ?, file_key = ?,
                 file_nuestro = ?, file_nuestro_mime_type = ?, file_nuestro_data = ?, file_nuestro_key = ?,
                 pagado = ?, es_producto_propio = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
-            fecha, reciboIn, cliente, destino, aNombreDe, toneladas, precio, total,
+            fecha, reciboIn, cliente, telefono, destino, aNombreDe, toneladas, precio, total,
             hasClienteUpload ? archivoCliente.fileName : current.file_name,
             hasClienteUpload ? archivoCliente.mimeType : current.file_mime_type,
             hasClienteUpload ? archivoCliente.data : current.file_data,

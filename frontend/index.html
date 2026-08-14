@@ -503,16 +503,29 @@
 
                 </div>
 
-                <div>
+                <div class="flex gap-4">
 
-                    <label class="block text-xs font-bold text-gray-600 mb-1">Nombre del Cliente *</label>
+                    <div class="flex-[2]">
 
-                    <input type="text" id="corapsa-cliente" list="corapsa-clientes-list"
-                        oninput="handleCorapsaClientInput()"
-                        class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold"
-                        placeholder="Escriba para buscar cliente o ingrese nuevo...">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Nombre del Cliente *</label>
 
-                    <datalist id="corapsa-clientes-list"></datalist>
+                        <input type="text" id="corapsa-cliente" list="corapsa-clientes-list"
+                            oninput="handleCorapsaClientInput()"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold"
+                            placeholder="Escriba para buscar cliente o ingrese nuevo...">
+
+                        <datalist id="corapsa-clientes-list"></datalist>
+
+                    </div>
+
+                    <div class="flex-1">
+
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono (Opcional)</label>
+
+                        <input type="text" id="corapsa-telefono" oninput="formatPhone(event)" onfocus="initPhone(event)"
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold placeholder-gray-400">
+
+                    </div>
 
                 </div>
 
@@ -614,14 +627,6 @@
                         <input type="file" id="corapsa-file-nuestro" accept="application/pdf,image/*"
                             class="w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
                         <p class="mt-2 text-[10px] text-gray-400">Imágenes o PDF, máximo 10 MB.</p>
-                    </div>
-
-                    <div class="md:col-span-2">
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Recibo Nuestro (Comprobante
-                            Interno)</label>
-                        <input type="text" id="corapsa-recibo-out"
-                            class="w-full border rounded p-2 bg-gray-100 text-gray-500 outline-none font-mono text-sm"
-                            value="Se generará automáticamente" disabled>
                     </div>
 
                 </div>
@@ -1672,14 +1677,14 @@
                         <div class="flex flex-col gap-4">
 
                             <div
-                                class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                class="flex flex-wrap justify-between items-center gap-2 bg-gray-50 p-3 rounded-lg border border-gray-100">
 
                                 <div class="flex flex-col">
 
-                                    <span class="text-gray-500 font-bold uppercase text-sm">Peso Bruto (Lleno)</span>
+                                    <span class="text-gray-500 font-bold uppercase text-sm whitespace-nowrap">Peso Bruto (Lleno)</span>
 
                                     <button id="manual-bruto-button" type="button" onclick="manualWeight('bruto')"
-                                        class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit"><span
+                                        class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit whitespace-nowrap"><span
                                             class="material-icons text-[12px]">keyboard</span> Ingreso Manual</button>
 
                                 </div>
@@ -1705,14 +1710,14 @@
 
 
                             <div
-                                class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                class="flex flex-wrap justify-between items-center gap-2 bg-gray-50 p-3 rounded-lg border border-gray-100">
 
                                 <div class="flex flex-col">
 
-                                    <span class="text-gray-500 font-bold uppercase text-sm">Tara (Vacío)</span>
+                                    <span class="text-gray-500 font-bold uppercase text-sm whitespace-nowrap">Tara (Vacío)</span>
 
                                     <button id="manual-tara-button" type="button" onclick="manualWeight('tara')"
-                                        class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit"><span
+                                        class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit whitespace-nowrap"><span
                                             class="material-icons text-[12px]">keyboard</span> Ingreso Manual</button>
 
                                 </div>
@@ -2031,6 +2036,8 @@
 
                                     <th class="p-4 font-semibold">Placa</th>
 
+                                    <th class="p-4 font-semibold">Conductor</th>
+
                                     <th class="p-4 font-semibold">Cliente</th>
 
                                     <th class="p-4 font-semibold text-right">Neto (LBS)</th>
@@ -2069,13 +2076,13 @@
 
                 <div class="h-full w-full flex flex-col gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
 
-                <div class="flex justify-between items-center shrink-0">
+                <div class="flex flex-wrap justify-between items-center shrink-0 gap-4">
 
                     <div>
 
                         <h2 class="text-2xl font-bold text-blue-900">Recibos Externos (Corapsa)</h2>
 
-                        <div class="flex items-center gap-2 mt-2">
+                        <div class="flex flex-wrap items-center gap-2 mt-2">
 
                             <input type="date" id="corapsa-filter-start" onchange="renderCorapsaTab()"
                                 class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-200">
@@ -2098,24 +2105,25 @@
 
                     </div>
 
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
 
                         <button onclick="abrirGestionEmpresasModal()"
-                            class="flex items-center gap-2 px-4 py-3 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors text-sm">
+                            class="flex items-center gap-2 px-4 py-3 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors text-sm shrink-0 whitespace-nowrap">
                             <span class="material-icons text-[18px]">business</span>
-                            <span class="hidden sm:inline">Gestionar Empresas</span>
+                            <span class="hidden lg:inline">Gestionar Empresas</span>
                         </button>
 
                         <button id="btn-imprimir-listado-corapsa" onclick="imprimirListadoCorapsa()" disabled
-                            class="flex items-center gap-2 px-4 py-3 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700">
+                            class="flex items-center gap-2 px-4 py-3 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0 whitespace-nowrap">
                             <span class="material-icons text-[18px]">print</span>
-                            <span class="hidden sm:inline">Imprimir Listado</span>
+                            <span class="hidden lg:inline">Imprimir Listado</span>
                         </button>
 
                         <button onclick="abrirCorapsaModal()"
-                            class="bg-blue-600 hover:bg-blue-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2">
+                            class="bg-blue-600 hover:bg-blue-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 shrink-0 whitespace-nowrap">
 
-                            <span class="material-icons">add_box</span> Registrar Recibo
+                            <span class="material-icons">add_box</span>
+                            <span class="hidden lg:inline">Registrar Recibo</span>
 
                         </button>
 
@@ -2136,6 +2144,8 @@
                                 <tr class="text-blue-900 text-[11px] uppercase tracking-wider">
 
                                     <th class="p-3 font-semibold">Fecha</th>
+
+                                    <th class="p-3 font-semibold">Teléfono</th>
 
                                     <th class="p-3 font-semibold">Cliente</th>
 
@@ -2165,7 +2175,7 @@
 
                                 <tr>
 
-                                    <td colspan="11" class="p-8 text-center text-gray-400">Sin recibos registrados.</td>
+                                    <td colspan="12" class="p-8 text-center text-gray-400">Sin recibos registrados.</td>
 
                                 </tr>
 

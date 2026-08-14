@@ -82,17 +82,19 @@ function updateReportesTab() {
     document.getElementById('rep-dinero').textContent = `L ${formatMoney(totalDinero)}`;
 
     if (filteredData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-gray-400">Sin transacciones para los filtros seleccionados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">Sin transacciones para los filtros seleccionados.</td></tr>';
         return;
     }
 
     tbody.innerHTML = filteredData.map(transaction => {
         const fila = formatearFilaReporte(transaction);
+        const conductorLabel = transaction.conductor !== 'Desconocido' ? transaction.conductor : '-';
 
         return `
             <tr class="hover:bg-gray-50 border-b border-gray-100">
                 <td class="p-4 font-mono text-gray-500 text-xs">${escapeHtml(fila.fechaDisplay)}<br>${escapeHtml(transaction.hora)}</td>
                 <td class="p-4 font-bold text-gray-800 uppercase">${escapeHtml(fila.identification)}</td>
+                <td class="p-4 text-gray-600 text-sm">${escapeHtml(conductorLabel)}</td>
                 <td class="p-4 text-gray-600 text-sm">${escapeHtml(transaction.clienteNombre)}</td>
                 <td class="p-4 text-right font-mono font-bold text-gray-800">${escapeHtml(fila.netoLabel)}</td>
                 <td class="p-4 text-right font-mono font-bold text-brand-700">${escapeHtml(fila.toneladasLabel)}</td>
@@ -159,7 +161,6 @@ function imprimirRecibo(id) {
     const payload = {
         numero: transaction.numeroBoleta ?? '',
         fechaDocumento: formatDateForDisplay(transaction.fecha),
-        nombre: transaction.conductor,
         identidad: transaction.identidad,
         placa: transaction.placa,
         fechaEntrada: formatFechaHoraForReceipt(transaction.fechaEntrada, transaction.horaEntrada),
