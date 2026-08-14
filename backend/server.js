@@ -553,6 +553,7 @@ function mapExpense(row) {
         monto: Number(row.monto || 0),
         concepto: row.concepto,
         justificacion: row.justificacion || '',
+        notas: row.notas || '',
         fileName: row.file_name || 'Sin Archivo',
         fileMimeType: row.file_mime_type || '',
         hasFile: Boolean(row.has_file) || Boolean(row.file_key) || hasStoredAttachment(row.file_data),
@@ -1700,7 +1701,7 @@ app.get('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
 
 app.get('/api/gastos', asyncHandler(async (_req, res) => {
     const rows = await db.all(`
-        SELECT id, fecha, monto, concepto, justificacion,
+        SELECT id, fecha, monto, concepto, justificacion, notas,
                file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                created_at, updated_at
         FROM gastos
@@ -1714,15 +1715,16 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
         fecha: asIsoDate(req.body?.fecha, 'La fecha'),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
-        justificacion: asText(req.body?.justificacion, { maxLength: 1000 })
+        justificacion: asText(req.body?.justificacion, { maxLength: 1000 }),
+        notas: asText(req.body?.notas, { maxLength: 1000 })
     };
     const attachment = await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
     const gasto = await withTransaction(async () => {
         const result = await db.run(`
-            INSERT INTO gastos (fecha, monto, concepto, justificacion, file_name, file_mime_type, file_data, file_key, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO gastos (fecha, monto, concepto, justificacion, notas, file_name, file_mime_type, file_data, file_key, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
-            expense.fecha, expense.monto, expense.concepto, expense.justificacion,
+            expense.fecha, expense.monto, expense.concepto, expense.justificacion, expense.notas,
             attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null
         ]);
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [result.lastID]);
@@ -1741,7 +1743,8 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
         fecha: asIsoDate(req.body?.fecha, 'La fecha'),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
-        justificacion: asText(req.body?.justificacion, { required: true, field: 'La justificación', maxLength: 1000 })
+        justificacion: asText(req.body?.justificacion, { required: true, field: 'La justificación', maxLength: 1000 }),
+        notas: asText(req.body?.notas, { maxLength: 1000 })
     };
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
     const attachment = hasUpload ? await storeAttachment('gastos', parseAttachmentPayload(req.body.archivo, 'El recibo del gasto')) : null;
@@ -1749,11 +1752,11 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
     const gasto = await withTransaction(async () => {
         await db.run(`
             UPDATE gastos
-            SET fecha = ?, monto = ?, concepto = ?, justificacion = ?,
+            SET fecha = ?, monto = ?, concepto = ?, justificacion = ?, notas = ?,
                 file_name = ?, file_mime_type = ?, file_data = ?, file_key = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
-            expense.fecha, expense.monto, expense.concepto, expense.justificacion,
+            expense.fecha, expense.monto, expense.concepto, expense.justificacion, expense.notas,
             hasUpload ? attachment.fileName : current.file_name,
             hasUpload ? attachment.mimeType : current.file_mime_type,
             hasUpload ? attachment.data : current.file_data,

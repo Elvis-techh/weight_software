@@ -971,6 +971,16 @@
 
                 </div>
 
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Notas (Opcional)</label>
+
+                    <textarea id="gastos-notas" rows="2"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 outline-none text-sm"
+                        placeholder="Detalles adicionales sobre el gasto..."></textarea>
+
+                </div>
+
                 <div id="gastos-justificacion-container" class="hidden rounded-xl border border-yellow-200 bg-yellow-50 p-3">
 
                     <label class="block text-xs font-bold text-yellow-800 mb-1">Justificación de edición *</label>
@@ -2082,22 +2092,29 @@
 
                         <h2 class="text-2xl font-bold text-blue-900">Recibos Externos (Corapsa)</h2>
 
-                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                        <div
+                            class="flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm mt-2">
+
+                            <div class="relative">
+                                <span
+                                    class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-blue-300 text-[18px]">search</span>
+                                <input type="search" id="corapsa-filter-client" oninput="renderCorapsaTab()"
+                                    placeholder="Buscar cliente, recibo # o teléfono..."
+                                    class="w-64 pl-8 pr-3 py-1.5 border border-blue-100 rounded font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+
+                            <span class="text-xs font-bold text-blue-500 uppercase ml-2">Desde:</span>
 
                             <input type="date" id="corapsa-filter-start" onchange="renderCorapsaTab()"
-                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-200">
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-100">
 
-                            <span class="text-xs font-bold text-blue-500">hasta</span>
+                            <span class="text-xs font-bold text-blue-500 uppercase">Hasta:</span>
 
                             <input type="date" id="corapsa-filter-end" onchange="renderCorapsaTab()"
-                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-200">
-
-                            <input type="text" id="corapsa-filter-client" oninput="renderCorapsaTab()"
-                                placeholder="Filtrar Cliente o Recibo #..."
-                                class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none w-64">
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-100">
 
                             <select id="corapsa-filter-destino" onchange="renderCorapsaTab()"
-                                class="text-sm border border-blue-200 rounded p-1 ml-2 outline-none">
+                                class="text-sm border border-blue-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-700 ml-2">
                                 <option value="">Todos los destinos</option>
                             </select>
 
@@ -2252,7 +2269,7 @@
                                 <span
                                     class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[19px]">search</span>
                                 <input type="search" id="gastos-filter-search" oninput="renderGastos()"
-                                    placeholder="Concepto, justificación o recibo..."
+                                    placeholder="Concepto, notas o recibo..."
                                     class="w-full border border-red-200 bg-white rounded-lg pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-400">
                             </div>
                         </div>
@@ -2307,7 +2324,7 @@
 
                                     <th class="p-4 font-semibold text-right w-28">Monto (L)</th>
 
-                                    <th class="p-4 font-semibold">Justificación</th>
+                                    <th class="p-4 font-semibold">Notas</th>
 
                                     <th class="p-4 font-semibold text-center w-32">Recibo</th>
 

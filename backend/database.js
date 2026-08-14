@@ -242,6 +242,7 @@ async function initializeDB() {
             monto REAL NOT NULL,
             concepto TEXT NOT NULL,
             justificacion TEXT NOT NULL DEFAULT '',
+            notas TEXT NOT NULL DEFAULT '',
             file_name TEXT NOT NULL DEFAULT 'Sin Archivo',
             file_mime_type TEXT NOT NULL DEFAULT '',
             file_data BLOB,
@@ -372,6 +373,17 @@ async function initializeDB() {
     await ensureColumn(db, 'gastos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'gastos', 'file_data', 'BLOB');
     await ensureColumn(db, 'gastos', 'file_key', 'TEXT');
+    // Persistent, user-editable notes about the expense — separate from
+    // "justificacion", which is only ever a one-time reason for an edit and
+    // gets blanked in the UI every time the modal opens (see corapsa_pagos.notas).
+    const hadNotasColumn = (await db.all("PRAGMA table_info(gastos)")).some(column => column.name === 'notas');
+    await ensureColumn(db, 'gastos', 'notas', "TEXT NOT NULL DEFAULT ''");
+    if (!hadNotasColumn) {
+        // One-time backfill: before "notas" existed, "justificacion" doubled as
+        // the gasto's free-text notes, so carry over whatever was already there
+        // instead of letting it disappear from the renamed "Notas" column.
+        await db.run("UPDATE gastos SET notas = justificacion WHERE notas = '' AND justificacion != ''");
+    }
     await ensureColumn(db, 'gastos', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'gastos', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 

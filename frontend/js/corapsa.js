@@ -413,7 +413,7 @@ function renderCorapsaTab() {
         if (startDate && record.fecha < startDate) return false;
         if (endDate && record.fecha > endDate) return false;
         if (destinoFilter && record.destino !== destinoFilter) return false;
-        const searchable = `${record.cliente} ${record.aNombreDe} ${record.reciboIn} ${record.reciboOut}`.toLocaleLowerCase('es');
+        const searchable = `${record.cliente} ${record.aNombreDe} ${record.reciboIn} ${record.reciboOut} ${record.telefono}`.toLocaleLowerCase('es');
         return !search || searchable.includes(search);
     });
 

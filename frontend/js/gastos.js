@@ -5,6 +5,7 @@ function normalizarGasto(record = {}) {
         monto: toFiniteNumber(record.monto),
         concepto: String(record.concepto || ''),
         justificacion: String(record.justificacion || ''),
+        notas: String(record.notas || ''),
         fileName: String(record.fileName ?? record.file_name ?? 'Sin Archivo'),
         fileMimeType: String(record.fileMimeType ?? record.file_mime_type ?? ''),
         hasFile: record.hasFile === true,
@@ -36,6 +37,7 @@ function abrirGastosModal(id = null) {
     document.getElementById('gastos-fecha').value = gasto?.fecha || getLocalIsoDate();
     document.getElementById('gastos-monto').value = gasto ? formatNumberForInput(gasto.monto, 2) : '';
     document.getElementById('gastos-concepto').value = gasto?.concepto || '';
+    document.getElementById('gastos-notas').value = gasto?.notas || '';
     // Blank every time the modal opens, even when editing: this is a
     // per-edit audit reason (like corapsa/clientes/overview-payment), not
     // the expense's own data, so it shouldn't be pre-filled from whatever
@@ -59,7 +61,8 @@ async function guardarGasto() {
         fecha: document.getElementById('gastos-fecha').value,
         monto: parseFormattedNumber(document.getElementById('gastos-monto').value),
         concepto: document.getElementById('gastos-concepto').value.trim(),
-        justificacion: document.getElementById('gastos-justificacion').value.trim()
+        justificacion: document.getElementById('gastos-justificacion').value.trim(),
+        notas: document.getElementById('gastos-notas').value.trim()
     };
 
     if (!payload.fecha || !payload.concepto) return mostrarNotificacion('Complete los campos obligatorios.', 'error');
@@ -183,7 +186,7 @@ function getFilteredAndSortedGastos() {
                 gasto.fecha,
                 formatDateForDisplay(gasto.fecha),
                 gasto.concepto,
-                gasto.justificacion,
+                gasto.notas,
                 gasto.fileName,
                 gasto.monto,
                 formatMoney(gasto.monto)
@@ -261,7 +264,7 @@ function renderGastos() {
             <td class="p-4 font-mono text-gray-600">${escapeHtml(formatDateForDisplay(gasto.fecha))}</td>
             <td class="p-4 font-bold text-gray-800">${escapeHtml(gasto.concepto)}</td>
             <td class="p-4 text-right font-mono font-bold text-red-700">L ${formatMoney(gasto.monto)}</td>
-            <td class="p-4 text-xs text-gray-500">${escapeHtml(gasto.justificacion || '-')}</td>
+            <td class="p-4 text-xs text-gray-500">${escapeHtml(gasto.notas || '-')}</td>
             <td class="p-4 text-center">
                 <div class="flex justify-center">${renderGastoAttachmentThumbnail(gasto)}</div>
             </td>
