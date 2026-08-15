@@ -17,7 +17,7 @@ async function fetchClientes() {
 
 async function fetchCompanies() {
     const records = await apiRequest('/api/companies');
-    MOCK_COMPANIES = Array.isArray(records) ? records : [];
+    MOCK_COMPANIES = Array.isArray(records) ? records.map(normalizarCompany) : [];
     populateDestinoDropdowns();
 }
 
@@ -227,12 +227,11 @@ function renderInitialState() {
 
 // Startup loaders that failed once (e.g. a terminal auto-launching before the
 // backend is reachable) and have no other path back to fresh data: unlike
-// camiones-en-patio (refetched on every successful poll — see connectivity.js)
-// or overview (refetched whenever that tab is opened), clientes/companies/
-// transacciones/Corapsa/gastos/planilla are otherwise only ever fetched here,
-// once. retryFailedInitialLoads() is called from the health-check poll so a
-// module that failed at boot keeps trying until it actually loads, instead of
-// staying empty for the rest of the shift.
+// camiones-en-patio (refetched on every successful poll — see connectivity.js),
+// clientes/companies/transacciones/Corapsa/gastos/planilla are otherwise only
+// ever fetched here, once. retryFailedInitialLoads() is called from the
+// health-check poll so a module that failed at boot keeps trying until it
+// actually loads, instead of staying empty for the rest of the shift.
 const pendingInitialLoaders = new Map();
 
 async function retryFailedInitialLoads() {
@@ -266,8 +265,7 @@ async function initApp() {
         ['transacciones', fetchTransacciones],
         ['Corapsa', fetchCorapsa],
         ['gastos', fetchGastos],
-        ['planilla', fetchPlanilla],
-        ['overview', fetchOverview]
+        ['planilla', fetchPlanilla]
     ];
 
     const results = await Promise.allSettled(loaders.map(([, loader]) => loader()));
@@ -277,9 +275,9 @@ async function initApp() {
 
     failed.forEach(item => {
         console.error(`No se pudo cargar ${item.label}:`, item.result.reason);
-        // camiones-en-patio and overview already have their own recovery path
-        // (see comment on pendingInitialLoaders above) — no need to double-fetch them.
-        if (item.label !== 'camiones en patio' && item.label !== 'overview') {
+        // camiones-en-patio already has its own recovery path (see comment on
+        // pendingInitialLoaders above) — no need to double-fetch it.
+        if (item.label !== 'camiones en patio') {
             pendingInitialLoaders.set(item.label, item.loader);
         }
     });

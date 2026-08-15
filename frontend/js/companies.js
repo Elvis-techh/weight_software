@@ -142,7 +142,7 @@ function guardarOtroDestinoTemporal() {
 // sync. Shared by the "Otro" flow and the Gestionar Empresas "add" row.
 async function crearCompanyRemota(nombre) {
     const result = await apiRequest('/api/companies', { method: 'POST', body: { nombre } });
-    const company = result?.company || result;
+    const company = normalizarCompany(result?.company || result);
     MOCK_COMPANIES.push(company);
     populateDestinoDropdowns();
     return company;
@@ -168,6 +168,13 @@ async function guardarOtroDestinoPermanente() {
     } finally {
         if (saveButton) saveButton.disabled = false;
     }
+}
+
+function normalizarCompany(record = {}) {
+    return {
+        id: record.id,
+        nombre: String(record.nombre || '').trim()
+    };
 }
 
 function sortedCompanies() {
@@ -256,7 +263,7 @@ async function guardarEmpresaEditada() {
             method: 'PUT',
             body: { nombre, justificacion }
         });
-        const company = result?.company || result;
+        const company = normalizarCompany(result?.company || result);
 
         const index = MOCK_COMPANIES.findIndex(item => sameRecordId(item.id, company.id));
         if (index >= 0) MOCK_COMPANIES[index] = company;

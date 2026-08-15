@@ -41,7 +41,7 @@ function setCorapsaListadoData(data = {}) {
 
   const tbody = document.getElementById('listado-body');
   tbody.replaceChildren();
-  (data.rows || []).forEach((row) => tbody.appendChild(buildRow(row)));
+  (Array.isArray(data.rows) ? data.rows : []).forEach((row) => tbody.appendChild(buildRow(row)));
 }
 
 window.setCorapsaListadoData = setCorapsaListadoData;

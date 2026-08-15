@@ -219,12 +219,6 @@ async function togglePagoCorapsa(id) {
     }
 }
 
-function imprimirCorapsa(id) {
-    const record = corapsaData.find(item => sameRecordId(item.id, id));
-    if (!record) return mostrarNotificacion('Recibo no encontrado.', 'error');
-    mostrarNotificacion(`Recibo ${record.reciboOut || record.reciboIn} listo para impresión.`);
-}
-
 function toggleAttachmentImageSize(image) {
     const actualSize = image.dataset.actualSize === 'true';
     image.dataset.actualSize = actualSize ? 'false' : 'true';
@@ -528,6 +522,15 @@ function imprimirListadoCorapsa() {
 
     if (ultimoFiltroCorapsa.filteredData.length === 0) {
         return mostrarNotificacion('No hay recibos externos para el filtro actual.', 'error');
+    }
+
+    if (ultimoFiltroCorapsa.filteredData.length > APP_CONFIG.maxListadoPrintRows) {
+        return mostrarNotificacion(
+            `El listado tiene ${ultimoFiltroCorapsa.filteredData.length.toLocaleString('en-US')} registros — ` +
+            `demasiados para imprimir de una vez (máximo ${APP_CONFIG.maxListadoPrintRows.toLocaleString('en-US')}). ` +
+            'Reduzca el rango de fechas o el filtro de cliente/destino.',
+            'error'
+        );
     }
 
     const payload = construirPayloadListadoCorapsa();

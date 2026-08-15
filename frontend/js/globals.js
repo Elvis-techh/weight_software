@@ -14,7 +14,12 @@ const APP_CONFIG = Object.freeze({
     // Sanity ceiling matching the backend's MAX_WEIGHT_LBS (server.js) — not a
     // business rule, just a fat-finger guard for "Ingreso Manual", the one
     // weight path with no physical scale bounding it.
-    maxWeightLbs: 200000
+    maxWeightLbs: 200000,
+    // History listados are fetched/filtered client-side with no pagination —
+    // above this many rows, printing embeds the whole set into an offscreen
+    // print window with no progress indicator (the same hang failure mode as
+    // an unbounded fetch, just needing months of accumulated data to trigger).
+    maxListadoPrintRows: 2000
 });
 
 let MOCK_CLIENTES = [];

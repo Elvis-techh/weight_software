@@ -132,8 +132,21 @@ async function probarConexionScale() {
 async function guardarScaleSettings() {
     if (!hasScaleSettingsBridge()) return;
 
+    const formData = readScaleSettingsForm();
+    // Without a port and outside test mode, this "saves" successfully but the
+    // scale will never produce a reading — same success toast as a real,
+    // working save, with nothing to tell them apart. Block it instead of
+    // letting that look identical to a completed setup.
+    if (!formData.testModeEnabled && !formData.comPort) {
+        mostrarNotificacion(
+            'Seleccione un puerto COM antes de guardar, o active el modo de prueba. Sin un puerto, la báscula nunca producirá lecturas.',
+            'error'
+        );
+        return;
+    }
+
     try {
-        const saved = await window.electronAPI.saveScaleSettings(readScaleSettingsForm());
+        const saved = await window.electronAPI.saveScaleSettings(formData);
         cachedScaleSettings = saved;
         applySimulatorControlsVisibility(saved?.testModeEnabled);
         cerrarScaleSettingsModal();

@@ -30,7 +30,10 @@ function switchTab(tabName) {
     setActiveLeaf(tabName);
 
     const renderers = {
-        overview: fetchOverview,
+        // 'overview' intentionally has no renderer: its view is a static
+        // "Bajo Mantenimiento" placeholder (see index.html) — overview.js's
+        // dashboard/Corapsa-payments code is kept for a future revival but has
+        // no live DOM to render into, so there's nothing to call here.
         reportes: updateReportesTab,
         corapsa: renderCorapsaTab,
         clientes: renderClientesTab,

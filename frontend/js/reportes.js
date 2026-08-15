@@ -58,7 +58,8 @@ function updateReportesTab() {
     const customerSearchRaw = document.getElementById('filter-client')?.value || '';
     const customerSearch = customerSearchRaw.trim().toLocaleLowerCase('es');
 
-    const filteredData = transaccionesData.filter(transaction => {
+    const invalidDateRange = Boolean(startDate && endDate && startDate > endDate);
+    const filteredData = invalidDateRange ? [] : transaccionesData.filter(transaction => {
         if (startDate && transaction.fecha < startDate) return false;
         if (endDate && transaction.fecha > endDate) return false;
         if (customerSearch && !transaction.clienteNombre.toLocaleLowerCase('es').includes(customerSearch)) return false;
@@ -80,6 +81,11 @@ function updateReportesTab() {
         maximumFractionDigits: 2
     })} LBS`;
     document.getElementById('rep-dinero').textContent = `L ${formatMoney(totalDinero)}`;
+
+    if (invalidDateRange) {
+        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-red-600 font-bold">La fecha inicial no puede ser posterior a la fecha final.</td></tr>';
+        return;
+    }
 
     if (filteredData.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">Sin transacciones para los filtros seleccionados.</td></tr>';
@@ -254,6 +260,15 @@ function imprimirListadoReportes() {
 
     if (ultimoFiltroReportes.filteredData.length === 0) {
         return mostrarNotificacion('No hay transacciones para el filtro actual.', 'error');
+    }
+
+    if (ultimoFiltroReportes.filteredData.length > APP_CONFIG.maxListadoPrintRows) {
+        return mostrarNotificacion(
+            `El listado tiene ${ultimoFiltroReportes.filteredData.length.toLocaleString('en-US')} registros — ` +
+            `demasiados para imprimir de una vez (máximo ${APP_CONFIG.maxListadoPrintRows.toLocaleString('en-US')}). ` +
+            'Reduzca el rango de fechas o el filtro de cliente.',
+            'error'
+        );
     }
 
     const payload = construirPayloadListado();

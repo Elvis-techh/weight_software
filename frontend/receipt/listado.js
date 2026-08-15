@@ -50,7 +50,7 @@ function setListadoData(data = {}) {
 
   const tbody = document.getElementById('listado-body');
   tbody.replaceChildren();
-  (data.rows || []).forEach((row) => tbody.appendChild(buildRow(row)));
+  (Array.isArray(data.rows) ? data.rows : []).forEach((row) => tbody.appendChild(buildRow(row)));
 
   const footnote = document.getElementById('footnote');
   footnote.hidden = !data.tienePendientes;
