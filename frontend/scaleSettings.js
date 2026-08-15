@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { writeFileAtomic } = require('./atomicWrite');
 
 // Off by default: with no saved settings yet (first run) or a corrupt/missing
 // settings file, the app must stay in "no data" mode rather than silently
@@ -62,7 +63,7 @@ function loadSettings(app) {
 function saveSettings(app, partial) {
     const current = loadSettings(app);
     const next = normalizeSettings({ ...current, ...partial }, { strict: true });
-    fs.writeFileSync(getSettingsPath(app), JSON.stringify(next, null, 2), 'utf8');
+    writeFileAtomic(getSettingsPath(app), JSON.stringify(next, null, 2));
     return next;
 }
 

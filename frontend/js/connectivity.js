@@ -61,6 +61,7 @@ function setServerConnectionState(online) {
             } catch (error) {
                 console.error('No se pudo sincronizar la cola local tras reconectar:', error);
             }
+            retryFailedInitialLoads?.().catch(error => console.error('No se pudo recuperar módulos pendientes tras reconectar:', error));
             fetchCamionesEnPatio?.().catch(error => console.error('No se pudo recargar la cola tras reconectar:', error));
         })();
     }
@@ -76,6 +77,7 @@ async function pollServerAndQueue() {
         await apiRequest('/api/health');
         setServerConnectionState(true);
         await drainOfflineQueue?.();
+        await retryFailedInitialLoads?.();
         await fetchCamionesEnPatio();
     } catch (error) {
         setServerConnectionState(false);

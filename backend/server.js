@@ -1205,6 +1205,12 @@ app.get('/api/camiones-patio', asyncHandler(async (_req, res) => {
 }));
 
 app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
+    const clientOpId = asText(req.body?.clientOpId, { field: 'El identificador de operación', maxLength: 100 }) || null;
+    if (clientOpId) {
+        const already = await db.get('SELECT * FROM camiones_en_patio WHERE client_op_id = ?', [clientOpId]);
+        if (already) return sendData(res, { camion: mapTruck(already) }, 200);
+    }
+
     const clienteIdRaw = req.body?.clienteId;
     if (clienteIdRaw === null || clienteIdRaw === undefined || clienteIdRaw === '') {
         throw new HttpError(400, 'El cliente es obligatorio.', 'VALIDATION_ERROR');
@@ -1268,8 +1274,8 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
             INSERT INTO camiones_en_patio (
                 id, cliente_id, cliente_nombre_snapshot, placa, conductor, flete,
                 peso_bruto, peso_tara, precio_aplicado, unidad, casual_snapshot,
-                fecha_entrada, hora_entrada, identidad_snapshot, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                fecha_entrada, hora_entrada, identidad_snapshot, client_op_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
             id,
             String(clienteId),
@@ -1284,7 +1290,8 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
             casualSnapshot ? JSON.stringify(casualSnapshot) : null,
             fechaEntrada,
             horaEntrada,
-            identidadSnapshot
+            identidadSnapshot,
+            clientOpId
         ]);
 
         const row = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
@@ -1352,8 +1359,19 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const fecha = asIsoDate(req.body?.fecha, 'La fecha');
     const hora = asText(req.body?.hora, { required: true, field: 'La hora', maxLength: 20 });
+    const clientOpId = asText(req.body?.clientOpId, { field: 'El identificador de operación', maxLength: 100 }) || null;
 
     const transaction = await withTransaction(async () => {
+        // Replay of an op whose earlier attempt already landed (the client
+        // timed out waiting for the response, or the connection dropped right
+        // after the server committed): return the transaction it already
+        // created instead of re-running the finalize, which would either
+        // double-insert or 404 on the patio row this same op already deleted.
+        if (clientOpId) {
+            const already = await db.get('SELECT * FROM transacciones WHERE client_op_id = ?', [clientOpId]);
+            if (already) return mapTransaction(already);
+        }
+
         const truck = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
         if (!truck) throw new HttpError(404, 'Camión no encontrado para finalizar.', 'NOT_FOUND');
         if (truck.peso_bruto == null || truck.peso_tara == null) {
@@ -1377,15 +1395,15 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         const insertResult = await db.run(`
             INSERT INTO transacciones (
                 fecha, hora, fecha_entrada, hora_entrada, placa, conductor, cliente_nombre, identidad,
-                numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad, client_op_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
             fecha, hora, truck.fecha_entrada || fecha, truck.hora_entrada || hora,
             truck.placa, truck.conductor,
             truck.cliente_nombre_snapshot || 'Cliente no disponible',
             truck.identidad_snapshot || '',
             numeroBoleta,
-            truck.peso_bruto, truck.peso_tara, neto, truck.precio_aplicado, total, unidad
+            truck.peso_bruto, truck.peso_tara, neto, truck.precio_aplicado, total, unidad, clientOpId
         ]);
         const transactionId = insertResult.lastID;
         await db.run('DELETE FROM camiones_en_patio WHERE id = ?', [id]);

@@ -151,7 +151,7 @@ async function warnOfflineSyncIssue(message, context) {
 
 async function replayOp(op) {
     if (op.type === 'create') {
-        const result = await apiRequest('/api/camiones-patio', { method: 'POST', body: op.payload });
+        const result = await apiRequest('/api/camiones-patio', { method: 'POST', body: { ...op.payload, clientOpId: op.opId } });
         const savedTruck = normalizarCamionPatio(result?.camion || result);
         remapLocalTruckId(op.localTruckId, savedTruck.id);
 
@@ -181,7 +181,7 @@ async function replayOp(op) {
     if (op.type === 'finalize') {
         const result = await apiRequest(
             `/api/camiones-patio/${encodeURIComponent(op.localTruckId)}/finalizar`,
-            { method: 'POST', body: op.payload }
+            { method: 'POST', body: { ...op.payload, clientOpId: op.opId } }
         );
         const confirmed = normalizarTransaccion(result?.transaccion || result);
 

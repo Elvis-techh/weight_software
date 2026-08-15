@@ -332,6 +332,13 @@ async function initializeDB() {
     await ensureColumn(db, 'camiones_en_patio', 'fecha_entrada', 'TEXT');
     await ensureColumn(db, 'camiones_en_patio', 'hora_entrada', 'TEXT');
     await ensureColumn(db, 'camiones_en_patio', 'identidad_snapshot', "TEXT NOT NULL DEFAULT ''");
+    // Client-generated id carried by the offline-queue "create" op (see
+    // offlineQueue.js). Lets POST /api/camiones-patio be safely retried: a
+    // redelivery whose first attempt actually succeeded server-side (client
+    // timed out waiting for the response) finds its own row by this key
+    // instead of inserting a duplicate truck.
+    await ensureColumn(db, 'camiones_en_patio', 'client_op_id', 'TEXT');
+    await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_camiones_en_patio_client_op_id ON camiones_en_patio(client_op_id) WHERE client_op_id IS NOT NULL;');
 
     await ensureColumn(db, 'transacciones', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'transacciones', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
@@ -341,6 +348,13 @@ async function initializeDB() {
     // Printed ticket number, independent of the internal auto-increment id so it
     // can be corrected/seeded to match a physical ticket book if needed.
     await ensureColumn(db, 'transacciones', 'numero_boleta', 'INTEGER');
+    // Client-generated id carried by the offline-queue "finalize" op (see
+    // offlineQueue.js). Lets /finalizar be safely retried: a redelivery whose
+    // first attempt actually succeeded server-side (client timed out waiting
+    // for the response) finds its own transaction by this key instead of
+    // re-inserting or 404ing on the already-deleted patio row.
+    await ensureColumn(db, 'transacciones', 'client_op_id', 'TEXT');
+    await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_transacciones_client_op_id ON transacciones(client_op_id) WHERE client_op_id IS NOT NULL;');
 
     await ensureColumn(db, 'corapsa', 'telefono', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'corapsa', 'destino', "TEXT NOT NULL DEFAULT 'CORAPSA'");

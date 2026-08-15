@@ -431,11 +431,17 @@ async function crearNuevaTransaccion(tipoPeso, pesoValue) {
         fecha: getLocalIsoDate(),
         hora: getLocalTimeString()
     };
+    // One id for this create attempt, reused across the direct call and any
+    // offline-queue fallback/replay it produces — same reasoning as
+    // guardarTransaccion()'s opId: without it, a request that times out on
+    // the client after actually committing on the server gets replayed as an
+    // uncorrelated new attempt and inserts a duplicate truck.
+    const opId = generateLocalId('op');
 
     try {
         const result = await apiRequest('/api/camiones-patio', {
             method: 'POST',
-            body: truckData
+            body: { ...truckData, clientOpId: opId }
         });
 
         const savedTruck = normalizarCamionPatio(result?.camion || result);
@@ -461,7 +467,7 @@ async function crearNuevaTransaccion(tipoPeso, pesoValue) {
         camionesEnPatio.push(localTruck);
 
         await enqueueOp({
-            opId: generateLocalId('op'),
+            opId,
             type: 'create',
             localTruckId: localId,
             payload: truckData,
@@ -700,7 +706,7 @@ function calcularNetoYTotal() {
     return { neto, total };
 }
 
-async function finalizarTransaccionOffline(truck, fecha, hora, neto, total) {
+async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId) {
     const predictedNumeroBoleta = getNextPredictedBoletaNumber();
     const localTransactionId = generateLocalId('tx');
 
@@ -725,7 +731,7 @@ async function finalizarTransaccionOffline(truck, fecha, hora, neto, total) {
     transactionSnapshot.pendingSync = true;
 
     await enqueueOp({
-        opId: generateLocalId('op'),
+        opId: opId || generateLocalId('op'),
         type: 'finalize',
         localTruckId: truck.id,
         payload: { fecha, hora },
@@ -752,6 +758,13 @@ async function guardarTransaccion() {
 
     const fecha = getLocalIsoDate();
     const hora = getLocalTimeString();
+    // One id for this finalize attempt, reused across the direct call and any
+    // offline-queue fallback/replay it produces — see server.js's clientOpId
+    // handling: without this, a request that times out on the client after
+    // actually committing on the server gets replayed as an uncorrelated new
+    // attempt, 404s (the patio row it already deleted is gone), and the whole
+    // op is dropped with a false "check manually" alarm.
+    const opId = generateLocalId('op');
 
     try {
         let savedTransaction;
@@ -763,18 +776,18 @@ async function guardarTransaccion() {
         // offline path so it lands behind the create in strict order.
         if (isLocalOnlyTruckId(activeTransaction.id)) {
             wentOffline = true;
-            savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total);
+            savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total, opId);
         } else {
             try {
                 const result = await apiRequest(
                     `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
-                    { method: 'POST', body: { fecha, hora } }
+                    { method: 'POST', body: { fecha, hora, clientOpId: opId } }
                 );
                 savedTransaction = normalizarTransaccion(result?.transaccion || result);
             } catch (error) {
                 if (!isConnectivityError(error)) throw error;
                 wentOffline = true;
-                savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total);
+                savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total, opId);
             }
         }
 

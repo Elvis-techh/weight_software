@@ -225,6 +225,32 @@ function renderInitialState() {
     renderServerStatus();
 }
 
+// Startup loaders that failed once (e.g. a terminal auto-launching before the
+// backend is reachable) and have no other path back to fresh data: unlike
+// camiones-en-patio (refetched on every successful poll — see connectivity.js)
+// or overview (refetched whenever that tab is opened), clientes/companies/
+// transacciones/Corapsa/gastos/planilla are otherwise only ever fetched here,
+// once. retryFailedInitialLoads() is called from the health-check poll so a
+// module that failed at boot keeps trying until it actually loads, instead of
+// staying empty for the rest of the shift.
+const pendingInitialLoaders = new Map();
+
+async function retryFailedInitialLoads() {
+    if (pendingInitialLoaders.size === 0) return;
+
+    const entries = Array.from(pendingInitialLoaders.entries());
+    const results = await Promise.allSettled(entries.map(([, loader]) => loader()));
+
+    results.forEach((result, index) => {
+        const [label] = entries[index];
+        if (result.status === 'fulfilled') {
+            pendingInitialLoaders.delete(label);
+        } else {
+            console.error(`No se pudo recuperar ${label}:`, result.reason);
+        }
+    });
+}
+
 async function initApp() {
     startClock();
     await initScaleSettings();
@@ -246,11 +272,16 @@ async function initApp() {
 
     const results = await Promise.allSettled(loaders.map(([, loader]) => loader()));
     const failed = results
-        .map((result, index) => ({ result, label: loaders[index][0] }))
+        .map((result, index) => ({ result, label: loaders[index][0], loader: loaders[index][1] }))
         .filter(item => item.result.status === 'rejected');
 
     failed.forEach(item => {
         console.error(`No se pudo cargar ${item.label}:`, item.result.reason);
+        // camiones-en-patio and overview already have their own recovery path
+        // (see comment on pendingInitialLoaders above) — no need to double-fetch them.
+        if (item.label !== 'camiones en patio' && item.label !== 'overview') {
+            pendingInitialLoaders.set(item.label, item.loader);
+        }
     });
 
     if (failed.length > 0) {

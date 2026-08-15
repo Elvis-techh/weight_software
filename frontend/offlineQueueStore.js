@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { writeFileAtomic } = require('./atomicWrite');
 
 // Durable home for the renderer's offline outbox (see js/offlineQueue.js).
 // A plain JSON file in userData, written synchronously — same pattern as
@@ -25,7 +26,7 @@ function loadQueue(app) {
 
 function saveQueue(app, queue) {
     const list = Array.isArray(queue) ? queue : [];
-    fs.writeFileSync(getQueuePath(app), JSON.stringify(list, null, 2), 'utf8');
+    writeFileAtomic(getQueuePath(app), JSON.stringify(list, null, 2));
     return list;
 }
 
