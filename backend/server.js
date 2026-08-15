@@ -11,6 +11,8 @@ const HOST = process.env.HOST || '0.0.0.0';
 const API_KEY = process.env.API_KEY || '';
 const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
+const VALID_AJUSTE_CATEGORIAS = new Set(['global', 'acopio', 'directo']);
+const VALID_CLIENT_CATEGORIAS = new Set(['acopio', 'directo', 'ambos']);
 const LBS_PER_METRIC_TON = 2204.62262185;
 const LBS_PER_QUINTAL = 100;
 // Derived (not a rounded business convention) so quintal<->ton price
@@ -253,8 +255,18 @@ function calculateBillableQuantity(netWeightLbs, unit) {
     return truncateToDecimals(net / LBS_PER_METRIC_TON, 2);
 }
 
-function buildClientPricing(body, unidad) {
-    if (unidad === 'quintal') {
+// Acopio (weigh-station) and Directo (direct-to-company) prices are only
+// required from the client form when the client's categoria actually uses
+// them — a 'directo'-only client has no flete prices, an 'acopio'-only
+// client has no Directo price (stored as NULL, see getStoredDirectoPrice).
+function buildClientPricing(body, unidad, categoria) {
+    const includesAcopio = categoria !== 'directo';
+    const includesDirecto = categoria !== 'acopio';
+
+    let acopioPricing;
+    if (!includesAcopio) {
+        acopioPricing = { precioToneladaPropio: 0, precioToneladaCliente: 0, precioFletePropio: 0, precioFleteCliente: 0 };
+    } else if (unidad === 'quintal') {
         const precioToneladaPropio = asNumber(body?.precioToneladaPropio, {
             required: true,
             min: 0,
@@ -283,33 +295,44 @@ function buildClientPricing(body, unidad) {
             field: 'El precio por quintal de flete cliente'
         });
 
-        return {
+        acopioPricing = {
             precioToneladaPropio: roundToCurrency(precioToneladaPropio),
             precioToneladaCliente: roundToCurrency(precioToneladaCliente),
             precioFletePropio: roundToNearestWhole(precioFletePropio),
             precioFleteCliente: roundToNearestWhole(precioFleteCliente)
         };
+    } else {
+        const precioFletePropio = asNumber(body?.precioFletePropio, {
+            required: true,
+            min: 0,
+            max: MAX_MONEY_LEMPIRAS,
+            field: 'El precio de flete propio'
+        });
+        const precioFleteCliente = asNumber(body?.precioFleteCliente, {
+            required: true,
+            min: 0,
+            max: MAX_MONEY_LEMPIRAS,
+            field: 'El precio de flete cliente'
+        });
+
+        acopioPricing = {
+            precioToneladaPropio: roundToCurrency(precioFletePropio),
+            precioToneladaCliente: roundToCurrency(precioFleteCliente),
+            precioFletePropio: roundToCurrency(precioFletePropio),
+            precioFleteCliente: roundToCurrency(precioFleteCliente)
+        };
     }
 
-    const precioFletePropio = asNumber(body?.precioFletePropio, {
-        required: true,
-        min: 0,
-        max: MAX_MONEY_LEMPIRAS,
-        field: 'El precio de flete propio'
-    });
-    const precioFleteCliente = asNumber(body?.precioFleteCliente, {
-        required: true,
-        min: 0,
-        max: MAX_MONEY_LEMPIRAS,
-        field: 'El precio de flete cliente'
-    });
+    const precioToneladaDirecto = includesDirecto
+        ? roundToCurrency(asNumber(body?.precioToneladaDirecto, {
+            required: true,
+            min: 0,
+            max: MAX_MONEY_LEMPIRAS,
+            field: 'El precio directo por tonelada'
+        }))
+        : null;
 
-    return {
-        precioToneladaPropio: roundToCurrency(precioFletePropio),
-        precioToneladaCliente: roundToCurrency(precioFleteCliente),
-        precioFletePropio: roundToCurrency(precioFletePropio),
-        precioFleteCliente: roundToCurrency(precioFleteCliente)
-    };
+    return { ...acopioPricing, precioToneladaDirecto };
 }
 
 function getStoredTonPrice(row, freightType) {
@@ -326,6 +349,17 @@ function getStoredTonPrice(row, freightType) {
         : roundToCurrency(unitPrice);
 }
 
+// Compra Directo (Recibos Externos) has no per-truck flete split, so it
+// stores a single ton price. Falls back to the Propio ton price for clients
+// where it hasn't been set yet, matching the pre-existing autofill behavior.
+function getStoredDirectoPrice(row) {
+    const stored = Number(row.precio_tonelada_directo);
+    if (row.precio_tonelada_directo !== null && row.precio_tonelada_directo !== undefined && Number.isFinite(stored)) {
+        return stored;
+    }
+    return getStoredTonPrice(row, 'Propio');
+}
+
 function asUnit(value) {
     const unit = String(value || 'tonelada');
     if (!VALID_UNITS.has(unit)) throw new HttpError(400, 'Unidad de medida inválida.', 'VALIDATION_ERROR');
@@ -336,6 +370,17 @@ function asFreightType(value) {
     const type = String(value || 'Propio');
     if (!VALID_FREIGHT_TYPES.has(type)) throw new HttpError(400, 'Tipo de flete inválido.', 'VALIDATION_ERROR');
     return type;
+}
+
+// Tags whether a client is a weigh-station (Acopio) customer, a direct-to-company
+// (Directo) customer, or both — lets ajuste-global filter which clients a given
+// adjustment touches.
+function asClientCategoria(value) {
+    const categoria = String(value || '').toLowerCase();
+    if (!VALID_CLIENT_CATEGORIAS.has(categoria)) {
+        throw new HttpError(400, 'La categoría del cliente no es válida.', 'VALIDATION_ERROR');
+    }
+    return categoria;
 }
 
 function asDestino(value) {
@@ -487,6 +532,8 @@ function mapClient(row) {
             : precioFleteClienteRaw,
         precioToneladaPropio: getStoredTonPrice(row, 'Propio'),
         precioToneladaCliente: getStoredTonPrice(row, 'Cliente'),
+        precioToneladaDirecto: getStoredDirectoPrice(row),
+        categoria: VALID_CLIENT_CATEGORIAS.has(row.categoria) ? row.categoria : 'ambos',
         unidad
     };
 }
@@ -998,57 +1045,93 @@ app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
         throw new HttpError(400, 'El monto del ajuste no puede ser cero.', 'VALIDATION_ERROR');
     }
 
+    const categoria = String(req.body?.categoria || 'global').toLowerCase();
+    if (!VALID_AJUSTE_CATEGORIAS.has(categoria)) {
+        throw new HttpError(400, 'La categoría del ajuste no es válida.', 'VALIDATION_ERROR');
+    }
+    const applyAcopio = categoria === 'global' || categoria === 'acopio';
+    const applyDirecto = categoria === 'global' || categoria === 'directo';
+
     const clientes = await withTransaction(async () => {
         const rows = await db.all('SELECT * FROM clientes ORDER BY id DESC');
         const updates = rows.map(row => {
-            const precioToneladaPropio = roundToCurrency(getStoredTonPrice(row, 'Propio') + montoTonelada);
-            const precioToneladaCliente = roundToCurrency(getStoredTonPrice(row, 'Cliente') + montoTonelada);
+            const rowCategoria = VALID_CLIENT_CATEGORIAS.has(row.categoria) ? row.categoria : 'ambos';
+            // A client only receives the slice of the adjustment that matches their
+            // own categoria — e.g. an Acopio-only client is untouched by a Directo
+            // adjustment, even when the adjustment itself is scoped to 'global'.
+            const doAcopio = applyAcopio && rowCategoria !== 'directo';
+            const doDirecto = applyDirecto && rowCategoria !== 'acopio';
+            if (!doAcopio && !doDirecto) return null;
 
-            if (precioToneladaPropio < 0 || precioToneladaCliente < 0) {
-                throw new HttpError(
-                    409,
-                    `El ajuste dejaría un precio negativo para ${row.nombre}.`,
-                    'NEGATIVE_PRICE'
-                );
+            const update = { id: row.id, doAcopio, doDirecto };
+
+            if (doAcopio) {
+                const precioToneladaPropio = roundToCurrency(getStoredTonPrice(row, 'Propio') + montoTonelada);
+                const precioToneladaCliente = roundToCurrency(getStoredTonPrice(row, 'Cliente') + montoTonelada);
+
+                if (precioToneladaPropio < 0 || precioToneladaCliente < 0) {
+                    throw new HttpError(
+                        409,
+                        `El ajuste de Acopio dejaría un precio negativo para ${row.nombre}.`,
+                        'NEGATIVE_PRICE'
+                    );
+                }
+
+                const unidad = row.unidad === 'quintal' ? 'quintal' : 'tonelada';
+                update.precioToneladaPropio = precioToneladaPropio;
+                update.precioToneladaCliente = precioToneladaCliente;
+                update.precioFletePropio = unidad === 'quintal'
+                    ? roundToNearestWhole(precioToneladaPropio / QUINTALES_PER_TON)
+                    : precioToneladaPropio;
+                update.precioFleteCliente = unidad === 'quintal'
+                    ? roundToNearestWhole(precioToneladaCliente / QUINTALES_PER_TON)
+                    : precioToneladaCliente;
             }
 
-            const unidad = row.unidad === 'quintal' ? 'quintal' : 'tonelada';
-            return {
-                id: row.id,
-                precioToneladaPropio,
-                precioToneladaCliente,
-                precioFletePropio: unidad === 'quintal'
-                    ? roundToNearestWhole(precioToneladaPropio / QUINTALES_PER_TON)
-                    : precioToneladaPropio,
-                precioFleteCliente: unidad === 'quintal'
-                    ? roundToNearestWhole(precioToneladaCliente / QUINTALES_PER_TON)
-                    : precioToneladaCliente
-            };
-        });
+            if (doDirecto) {
+                const precioToneladaDirecto = roundToCurrency(getStoredDirectoPrice(row) + montoTonelada);
+
+                if (precioToneladaDirecto < 0) {
+                    throw new HttpError(
+                        409,
+                        `El ajuste Directo dejaría un precio negativo para ${row.nombre}.`,
+                        'NEGATIVE_PRICE'
+                    );
+                }
+
+                update.precioToneladaDirecto = precioToneladaDirecto;
+            }
+
+            return update;
+        }).filter(Boolean);
+
+        if (!updates.length) {
+            throw new HttpError(409, 'No hay clientes registrados en la categoría seleccionada.', 'NO_MATCHING_CLIENTS');
+        }
 
         for (const update of updates) {
-            await db.run(`
-                UPDATE clientes
-                SET precio_flete_propio = ?,
-                    precio_flete_cliente = ?,
-                    precio_tonelada_propio = ?,
-                    precio_tonelada_cliente = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `, [
-                update.precioFletePropio,
-                update.precioFleteCliente,
-                update.precioToneladaPropio,
-                update.precioToneladaCliente,
-                update.id
-            ]);
+            const sets = [];
+            const params = [];
+
+            if (update.doAcopio) {
+                sets.push('precio_flete_propio = ?', 'precio_flete_cliente = ?', 'precio_tonelada_propio = ?', 'precio_tonelada_cliente = ?');
+                params.push(update.precioFletePropio, update.precioFleteCliente, update.precioToneladaPropio, update.precioToneladaCliente);
+            }
+            if (update.doDirecto) {
+                sets.push('precio_tonelada_directo = ?');
+                params.push(update.precioToneladaDirecto);
+            }
+            sets.push('updated_at = CURRENT_TIMESTAMP');
+            params.push(update.id);
+
+            await db.run(`UPDATE clientes SET ${sets.join(', ')} WHERE id = ?`, params);
         }
 
         await logAudit({
             entity: 'clientes',
             action: 'ajuste_global',
             justification: razon,
-            details: { montoTonelada, formulaQuintal: 'roundToNearestWhole(precioTonelada / 22.04)' }
+            details: { montoTonelada, categoria, clientesAfectados: updates.length, formulaQuintal: 'roundToNearestWhole(precioTonelada / 22.04)' }
         });
 
         return (await db.all('SELECT * FROM clientes ORDER BY id DESC')).map(mapClient);
@@ -1059,7 +1142,8 @@ app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
 
 app.post('/api/clientes', asyncHandler(async (req, res) => {
     const unidad = asUnit(req.body?.unidad);
-    const pricing = buildClientPricing(req.body, unidad);
+    const categoria = asClientCategoria(req.body?.categoria);
+    const pricing = buildClientPricing(req.body, unidad, categoria);
     const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
     const client = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
@@ -1068,6 +1152,7 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
         ubicacion: asText(req.body?.ubicacion, { field: 'La ubicación', maxLength: 200 }),
         identidad: asText(req.body?.identidad, { field: 'La identidad', maxLength: 40 }),
         unidad,
+        categoria,
         ...pricing
     };
 
@@ -1076,10 +1161,10 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
             INSERT INTO clientes (
                 nombre, apellido, telefono, ubicacion, identidad,
                 precio_flete_propio, precio_flete_cliente,
-                precio_tonelada_propio, precio_tonelada_cliente,
-                unidad, created_at, updated_at
+                precio_tonelada_propio, precio_tonelada_cliente, precio_tonelada_directo,
+                unidad, categoria, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             client.nombre,
             client.apellido,
@@ -1090,7 +1175,9 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
             client.precioFleteCliente,
             client.precioToneladaPropio,
             client.precioToneladaCliente,
-            client.unidad
+            client.precioToneladaDirecto,
+            client.unidad,
+            client.categoria
         ]);
         const row = await db.get('SELECT * FROM clientes WHERE id = ?', [result.lastID]);
         await logAudit({ entity: 'cliente', entityId: result.lastID, action: 'crear', justification: justificacion, details: client });
@@ -1103,7 +1190,8 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
     const unidad = asUnit(req.body?.unidad);
-    const pricing = buildClientPricing(req.body, unidad);
+    const categoria = asClientCategoria(req.body?.categoria);
+    const pricing = buildClientPricing(req.body, unidad, categoria);
     const client = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { field: 'El apellido', maxLength: 120 }),
@@ -1111,6 +1199,7 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
         ubicacion: asText(req.body?.ubicacion, { field: 'La ubicación', maxLength: 200 }),
         identidad: asText(req.body?.identidad, { field: 'La identidad', maxLength: 40 }),
         unidad,
+        categoria,
         ...pricing
     };
 
@@ -1119,8 +1208,8 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
             UPDATE clientes
             SET nombre = ?, apellido = ?, telefono = ?, ubicacion = ?, identidad = ?,
                 precio_flete_propio = ?, precio_flete_cliente = ?,
-                precio_tonelada_propio = ?, precio_tonelada_cliente = ?,
-                unidad = ?, updated_at = CURRENT_TIMESTAMP
+                precio_tonelada_propio = ?, precio_tonelada_cliente = ?, precio_tonelada_directo = ?,
+                unidad = ?, categoria = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
             client.nombre,
@@ -1132,7 +1221,9 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
             client.precioFleteCliente,
             client.precioToneladaPropio,
             client.precioToneladaCliente,
+            client.precioToneladaDirecto,
             client.unidad,
+            client.categoria,
             id
         ]);
         if (!result.changes) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');

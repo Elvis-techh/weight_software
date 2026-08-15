@@ -152,6 +152,8 @@ async function initializeDB() {
             precio_flete_cliente REAL NOT NULL DEFAULT 0,
             precio_tonelada_propio REAL,
             precio_tonelada_cliente REAL,
+            precio_tonelada_directo REAL,
+            categoria TEXT NOT NULL DEFAULT 'ambos',
             unidad TEXT NOT NULL DEFAULT 'tonelada',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -318,6 +320,17 @@ async function initializeDB() {
     await ensureColumn(db, 'clientes', 'unidad', "TEXT NOT NULL DEFAULT 'tonelada'");
     await ensureColumn(db, 'clientes', 'precio_tonelada_propio', 'REAL');
     await ensureColumn(db, 'clientes', 'precio_tonelada_cliente', 'REAL');
+    // Base price for Compra Directo (Recibos Externos) purchases, adjusted
+    // independently from the Acopio (weigh-station) prices above. NULL means
+    // "not set yet" — getStoredDirectoPrice() falls back to the Propio ton
+    // price so existing clients keep today's autofill behavior until this is
+    // adjusted for the first time.
+    await ensureColumn(db, 'clientes', 'precio_tonelada_directo', 'REAL');
+    // Whether the client is an Acopio (weigh-station) customer, a Directo
+    // (direct-to-company) customer, or both. Existing clients default to
+    // 'ambos' so ajuste-global keeps adjusting them exactly as it did before
+    // this column existed, until someone recategorizes them explicitly.
+    await ensureColumn(db, 'clientes', 'categoria', "TEXT NOT NULL DEFAULT 'ambos'");
     await ensureColumn(db, 'clientes', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'clientes', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'clientes', 'identidad', "TEXT NOT NULL DEFAULT ''");

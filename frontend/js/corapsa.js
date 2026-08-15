@@ -105,7 +105,7 @@ function handleCorapsaClientInput() {
     );
 
     if (match) {
-        document.getElementById('corapsa-precio').value = formatNumberForInput(match.precioToneladaPropio, 2);
+        document.getElementById('corapsa-precio').value = formatNumberForInput(match.precioToneladaDirecto, 2);
         calcularTotalCorapsa();
         if (match.telefono) document.getElementById('corapsa-telefono').value = match.telefono;
     }

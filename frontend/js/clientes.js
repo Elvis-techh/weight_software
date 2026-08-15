@@ -36,6 +36,15 @@ function normalizarCliente(record = {}) {
     const tonClienteRaw = parseFormattedNumber(
         record.precioToneladaCliente ?? record.precio_tonelada_cliente
     );
+    const precioToneladaPropio = Number.isFinite(tonPropioRaw)
+        ? tonPropioRaw
+        : recoverTonPrice(precioFletePropio, unidad);
+
+    const tonDirectoRaw = parseFormattedNumber(
+        record.precioToneladaDirecto ?? record.precio_tonelada_directo
+    );
+    const categoriaRaw = String(record.categoria || '').toLowerCase();
+    const categoria = ['acopio', 'directo', 'ambos'].includes(categoriaRaw) ? categoriaRaw : 'ambos';
 
     return {
         id: record.id,
@@ -44,14 +53,18 @@ function normalizarCliente(record = {}) {
         telefono: String(record.telefono || '').trim(),
         ubicacion: String(record.ubicacion || '').trim(),
         identidad: String(record.identidad || '').trim(),
+        categoria,
         precioFletePropio,
         precioFleteCliente,
-        precioToneladaPropio: Number.isFinite(tonPropioRaw)
-            ? tonPropioRaw
-            : recoverTonPrice(precioFletePropio, unidad),
+        precioToneladaPropio,
         precioToneladaCliente: Number.isFinite(tonClienteRaw)
             ? tonClienteRaw
             : recoverTonPrice(precioFleteCliente, unidad),
+        // Falls back to the Acopio (Propio) ton price when not yet set,
+        // matching the backend's getStoredDirectoPrice() default.
+        precioToneladaDirecto: Number.isFinite(tonDirectoRaw)
+            ? tonDirectoRaw
+            : precioToneladaPropio,
         unidad
     };
 }
@@ -61,6 +74,17 @@ function formatClientUnitPrice(value, unit) {
         minimumFractionDigits: unit === 'quintal' ? 1 : 2,
         maximumFractionDigits: unit === 'quintal' ? 1 : 2
     });
+}
+
+function renderClientCategoriaBadge(categoria) {
+    const styles = {
+        acopio: 'bg-blue-100 text-blue-800',
+        directo: 'bg-amber-100 text-amber-800',
+        ambos: 'bg-purple-100 text-purple-800'
+    };
+    const labels = { acopio: 'Acopio', directo: 'Directo', ambos: 'Ambos' };
+    const key = ['acopio', 'directo', 'ambos'].includes(categoria) ? categoria : 'ambos';
+    return `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${styles[key]}">${labels[key]}</span>`;
 }
 
 function renderClientPrice(price, tonPrice, unit, textClass) {
@@ -116,7 +140,7 @@ function renderClientesTab() {
         });
 
     if (clientesFiltrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-500">No se encontraron clientes.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-500">No se encontraron clientes.</td></tr>';
         return;
     }
 
@@ -126,6 +150,7 @@ function renderClientesTab() {
             <td class="p-3 text-sm font-bold text-gray-800">${escapeHtml(`${cliente.nombre} ${cliente.apellido}`.trim())}</td>
             <td class="p-3 text-sm text-gray-600">${escapeHtml(cliente.telefono || '-')}</td>
             <td class="p-3 text-sm text-gray-600">${escapeHtml(cliente.ubicacion || '-')}</td>
+            <td class="p-3 text-center">${renderClientCategoriaBadge(cliente.categoria)}</td>
             ${renderClientPrice(cliente.precioFletePropio, cliente.precioToneladaPropio, cliente.unidad, 'text-blue-700')}
             ${renderClientPrice(cliente.precioFleteCliente, cliente.precioToneladaCliente, cliente.unidad, 'text-teal-700')}
             <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase">${cliente.unidad === 'quintal' ? 'QQ' : 'TON'}</td>
@@ -141,6 +166,13 @@ function renderClientesTab() {
             </td>
         </tr>
     `).join('');
+}
+
+// Directo-only clients don't weigh at our scale — they have no Acopio flete
+// price (stored as 0), so letting them be picked here would silently produce
+// a L0 truck transaction. 'acopio' and 'ambos' clients remain eligible.
+function esClienteElegibleParaPesaje(cliente) {
+    return (cliente.categoria || 'ambos') !== 'directo';
 }
 
 function populateClienteDropdown() {
@@ -169,11 +201,17 @@ function populateClienteDropdown() {
 
     MOCK_CLIENTES.forEach(cliente => {
         const fullName = `${cliente.nombre} ${cliente.apellido}`.trim();
-        const option = document.createElement('option');
-        option.value = String(cliente.id);
-        option.textContent = fullName;
-        fragment.appendChild(option);
 
+        if (esClienteElegibleParaPesaje(cliente)) {
+            const option = document.createElement('option');
+            option.value = String(cliente.id);
+            option.textContent = fullName;
+            fragment.appendChild(option);
+        }
+
+        // Recibos Externos (Directo) suggests every client by name regardless
+        // of category — an Acopio-only client can still receive a one-off
+        // direct receipt.
         if (dataList) {
             const item = document.createElement('option');
             item.value = fullName;
@@ -247,7 +285,7 @@ function renderClienteBuscadorResultados() {
 
     const opciones = [
         { id: 'casual', label: getClienteDisplayLabel('casual'), isCasual: true },
-        ...MOCK_CLIENTES.map(cliente => ({
+        ...MOCK_CLIENTES.filter(esClienteElegibleParaPesaje).map(cliente => ({
             id: String(cliente.id),
             label: `${cliente.nombre} ${cliente.apellido || ''}`.trim(),
             isCasual: false
@@ -431,9 +469,16 @@ function toggleQuintalPriceOverride(which) {
     refreshJustificationVisibility();
 }
 
+function currentClientCategoria() {
+    return document.getElementById('modal-categoria')?.value || 'ambos';
+}
+
 function applyClientUnitFieldState() {
     const unitSelect = document.getElementById('modal-unidad');
     const tonContainer = document.getElementById('modal-precios-tonelada-container');
+    const fleteContainer = document.getElementById('modal-precios-flete-container');
+    const directoContainer = document.getElementById('modal-precio-directo-container');
+    const directoInput = document.getElementById('modal-precio-directo');
     const ownPriceInput = document.getElementById('modal-precio-propio');
     const clientPriceInput = document.getElementById('modal-precio-cliente');
     const ownTonInput = document.getElementById('modal-precio-ton-propio');
@@ -445,27 +490,45 @@ function applyClientUnitFieldState() {
 
     if (!unitSelect || !tonContainer || !ownPriceInput || !clientPriceInput || !ownTonInput || !clientTonInput) return;
 
+    const categoria = currentClientCategoria();
+    const includesAcopio = categoria !== 'directo';
+    const includesDirecto = categoria !== 'acopio';
+
+    if (fleteContainer) fleteContainer.classList.toggle('hidden', !includesAcopio);
+    if (directoContainer) {
+        directoContainer.classList.toggle('hidden', !includesDirecto);
+        directoContainer.classList.toggle('flex', includesDirecto);
+    }
+    if (directoInput) directoInput.required = includesDirecto;
+    ownPriceInput.required = includesAcopio;
+    clientPriceInput.required = includesAcopio;
+
     const isQuintal = unitSelect.value === 'quintal';
-    tonContainer.classList.toggle('hidden', !isQuintal);
-    ownTonInput.required = isQuintal;
-    clientTonInput.required = isQuintal;
+    const showTonContainer = isQuintal && includesAcopio;
+    tonContainer.classList.toggle('hidden', !showTonContainer);
+    ownTonInput.required = showTonContainer;
+    clientTonInput.required = showTonContainer;
 
     setQuintalPriceOverrideState('propio', isQuintal && ownPriceInput.dataset.overridden === 'true');
     setQuintalPriceOverrideState('cliente', isQuintal && clientPriceInput.dataset.overridden === 'true');
     if (ownOverrideBtn) {
-        ownOverrideBtn.classList.toggle('hidden', !isQuintal);
-        ownOverrideBtn.classList.toggle('inline-flex', isQuintal);
+        ownOverrideBtn.classList.toggle('hidden', !(isQuintal && includesAcopio));
+        ownOverrideBtn.classList.toggle('inline-flex', isQuintal && includesAcopio);
     }
     if (clientOverrideBtn) {
-        clientOverrideBtn.classList.toggle('hidden', !isQuintal);
-        clientOverrideBtn.classList.toggle('inline-flex', isQuintal);
+        clientOverrideBtn.classList.toggle('hidden', !(isQuintal && includesAcopio));
+        clientOverrideBtn.classList.toggle('inline-flex', isQuintal && includesAcopio);
     }
 
     if (ownLabel) ownLabel.textContent = isQuintal ? 'Flete NUESTRO calculado (HNL / QQ) *' : 'Flete NUESTRO (HNL / Ton) *';
     if (clientLabel) clientLabel.textContent = isQuintal ? 'Flete CLIENTE calculado (HNL / QQ) *' : 'Flete CLIENTE (HNL / Ton) *';
 
-    if (isQuintal) recalculateQuintalPrices();
+    if (showTonContainer) recalculateQuintalPrices();
     refreshJustificationVisibility();
+}
+
+function handleClientCategoriaChange() {
+    applyClientUnitFieldState();
 }
 
 function handleClientUnitChange() {
@@ -509,12 +572,14 @@ function abrirModalCliente(id = null) {
         document.getElementById('modal-telefono').value = cliente.telefono;
         document.getElementById('modal-ubicacion').value = cliente.ubicacion;
         document.getElementById('modal-identidad').value = cliente.identidad;
+        document.getElementById('modal-categoria').value = cliente.categoria || 'ambos';
         unitSelect.value = cliente.unidad;
         unitSelect.dataset.previousUnit = cliente.unidad;
         document.getElementById('modal-precio-propio').value = formatNumberForInput(cliente.precioFletePropio, cliente.unidad === 'quintal' ? 1 : 2);
         document.getElementById('modal-precio-cliente').value = formatNumberForInput(cliente.precioFleteCliente, cliente.unidad === 'quintal' ? 1 : 2);
         document.getElementById('modal-precio-ton-propio').value = formatNumberForInput(cliente.precioToneladaPropio, 2);
         document.getElementById('modal-precio-ton-cliente').value = formatNumberForInput(cliente.precioToneladaCliente, 2);
+        document.getElementById('modal-precio-directo').value = formatNumberForInput(cliente.precioToneladaDirecto, 2);
         document.getElementById('modal-justificacion').value = '';
 
         // A previously saved quintal price that doesn't match the auto-calculated
@@ -528,6 +593,7 @@ function abrirModalCliente(id = null) {
     } else {
         document.getElementById('modal-title').textContent = 'Nuevo Cliente';
         document.getElementById('modal-client-id').value = '';
+        document.getElementById('modal-categoria').value = 'acopio';
         unitSelect.value = 'tonelada';
         unitSelect.dataset.previousUnit = 'tonelada';
         document.getElementById('modal-precio-propio').dataset.overridden = 'false';
@@ -561,6 +627,9 @@ async function guardarCliente(event) {
     const clientId = getRequiredElement('modal-client-id').value;
     const justificacion = getRequiredElement('modal-justificacion').value.trim();
     const unidad = getRequiredElement('modal-unidad').value;
+    const categoria = getRequiredElement('modal-categoria').value;
+    const includesAcopio = categoria !== 'directo';
+    const includesDirecto = categoria !== 'acopio';
 
     const propioInput = getRequiredElement('modal-precio-propio');
     const clienteInput = getRequiredElement('modal-precio-cliente');
@@ -572,7 +641,7 @@ async function guardarCliente(event) {
     let precioToneladaPropio = precioFletePropio;
     let precioToneladaCliente = precioFleteCliente;
 
-    if (unidad === 'quintal') {
+    if (includesAcopio && unidad === 'quintal') {
         precioToneladaPropio = parseFormattedNumber(getRequiredElement('modal-precio-ton-propio').value);
         precioToneladaCliente = parseFormattedNumber(getRequiredElement('modal-precio-ton-cliente').value);
         precioFletePropio = propioOverridden
@@ -582,6 +651,16 @@ async function guardarCliente(event) {
             ? parseFormattedNumber(clienteInput.value)
             : pricePerQuintalFromTon(precioToneladaCliente);
     }
+    if (!includesAcopio) {
+        precioFletePropio = 0;
+        precioFleteCliente = 0;
+        precioToneladaPropio = 0;
+        precioToneladaCliente = 0;
+    }
+
+    const precioToneladaDirecto = includesDirecto
+        ? parseFormattedNumber(getRequiredElement('modal-precio-directo').value)
+        : null;
 
     const clienteData = {
         nombre: getRequiredElement('modal-nombre').value.trim().replace(/\s+/g, ' '),
@@ -589,10 +668,12 @@ async function guardarCliente(event) {
         telefono: getRequiredElement('modal-telefono').value.trim(),
         ubicacion: getRequiredElement('modal-ubicacion').value.trim(),
         identidad: getRequiredElement('modal-identidad').value.trim(),
+        categoria,
         precioFletePropio,
         precioFleteCliente,
         precioToneladaPropio,
         precioToneladaCliente,
+        precioToneladaDirecto,
         unidad,
         justificacion
     };
@@ -601,17 +682,23 @@ async function guardarCliente(event) {
     if (!['tonelada', 'quintal'].includes(clienteData.unidad)) {
         return mostrarNotificacion('La unidad seleccionada no es válida.', 'error');
     }
-    if (!Number.isFinite(clienteData.precioToneladaPropio) || clienteData.precioToneladaPropio < 0) {
+    if (!['acopio', 'directo', 'ambos'].includes(clienteData.categoria)) {
+        return mostrarNotificacion('La categoría del cliente no es válida.', 'error');
+    }
+    if (includesAcopio && (!Number.isFinite(clienteData.precioToneladaPropio) || clienteData.precioToneladaPropio < 0)) {
         return mostrarNotificacion('Precio en tonelada de flete nuestro inválido.', 'error');
     }
-    if (!Number.isFinite(clienteData.precioToneladaCliente) || clienteData.precioToneladaCliente < 0) {
+    if (includesAcopio && (!Number.isFinite(clienteData.precioToneladaCliente) || clienteData.precioToneladaCliente < 0)) {
         return mostrarNotificacion('Precio en tonelada de flete cliente inválido.', 'error');
     }
-    if (!Number.isFinite(clienteData.precioFletePropio) || clienteData.precioFletePropio < 0) {
+    if (includesAcopio && (!Number.isFinite(clienteData.precioFletePropio) || clienteData.precioFletePropio < 0)) {
         return mostrarNotificacion('Precio de flete nuestro inválido.', 'error');
     }
-    if (!Number.isFinite(clienteData.precioFleteCliente) || clienteData.precioFleteCliente < 0) {
+    if (includesAcopio && (!Number.isFinite(clienteData.precioFleteCliente) || clienteData.precioFleteCliente < 0)) {
         return mostrarNotificacion('Precio de flete del cliente inválido.', 'error');
+    }
+    if (includesDirecto && (!Number.isFinite(clienteData.precioToneladaDirecto) || clienteData.precioToneladaDirecto < 0)) {
+        return mostrarNotificacion('Precio directo por tonelada inválido.', 'error');
     }
     if (clientId && !justificacion) {
         return mostrarNotificacion('Debe ingresar una justificación para editar el cliente.', 'error');
@@ -667,6 +754,7 @@ async function eliminarClienteServidor(id, justificacion) {
 }
 
 function abrirAjusteGlobal() {
+    document.getElementById('ajuste-categoria').value = 'global';
     document.getElementById('ajuste-monto').value = '';
     document.getElementById('ajuste-razon').value = '';
     document.getElementById('global-price-modal').classList.remove('hidden');
@@ -676,9 +764,16 @@ function cerrarAjusteGlobal() {
     document.getElementById('global-price-modal').classList.add('hidden');
 }
 
+function ajusteGlobalCategoriaLabel(categoria) {
+    if (categoria === 'acopio') return 'Acopio';
+    if (categoria === 'directo') return 'Directo';
+    return 'Global';
+}
+
 async function aplicarAjusteGlobalForm() {
     if (document.getElementById('ajuste-global-save-button')?.disabled) return;
 
+    const categoria = document.getElementById('ajuste-categoria').value;
     const accion = document.getElementById('ajuste-accion').value;
     const montoBase = parseFormattedNumber(document.getElementById('ajuste-monto').value);
     const razon = document.getElementById('ajuste-razon').value.trim();
@@ -688,15 +783,36 @@ async function aplicarAjusteGlobalForm() {
     }
     if (!razon) return mostrarNotificacion('Debe ingresar una justificación.', 'error');
 
+    const applyAcopio = categoria === 'global' || categoria === 'acopio';
+    const applyDirecto = categoria === 'global' || categoria === 'directo';
     const montoTonelada = accion === 'disminuir' ? -montoBase : montoBase;
-    const invalidClient = MOCK_CLIENTES.find(cliente =>
-        cliente.precioToneladaPropio + montoTonelada < 0 ||
-        cliente.precioToneladaCliente + montoTonelada < 0
+
+    // Each client only receives the slice of the adjustment matching their own
+    // categoria — mirrors the backend filter in POST /api/clientes/ajuste-global.
+    const rowIncludesAcopio = cliente => (cliente.categoria || 'ambos') !== 'directo';
+    const rowIncludesDirecto = cliente => (cliente.categoria || 'ambos') !== 'acopio';
+
+    const matchingClients = MOCK_CLIENTES.filter(cliente =>
+        (applyAcopio && rowIncludesAcopio(cliente)) || (applyDirecto && rowIncludesDirecto(cliente))
+    );
+    if (!matchingClients.length) {
+        return mostrarNotificacion(
+            `No hay clientes registrados en la categoría ${ajusteGlobalCategoriaLabel(categoria)}.`,
+            'error'
+        );
+    }
+
+    const invalidClient = matchingClients.find(cliente =>
+        (applyAcopio && rowIncludesAcopio(cliente) && (
+            cliente.precioToneladaPropio + montoTonelada < 0 ||
+            cliente.precioToneladaCliente + montoTonelada < 0
+        )) ||
+        (applyDirecto && rowIncludesDirecto(cliente) && cliente.precioToneladaDirecto + montoTonelada < 0)
     );
 
     if (invalidClient) {
         return mostrarNotificacion(
-            `El ajuste dejaría un precio negativo para ${invalidClient.nombre}.`,
+            `El ajuste ${ajusteGlobalCategoriaLabel(categoria)} dejaría un precio negativo para ${invalidClient.nombre}.`,
             'error'
         );
     }
@@ -710,26 +826,32 @@ async function aplicarAjusteGlobalForm() {
 
         const result = await apiRequest('/api/clientes/ajuste-global', {
             method: 'POST',
-            body: { montoTonelada, monto: montoTonelada, razon }
+            body: { montoTonelada, monto: montoTonelada, razon, categoria }
         });
 
         if (Array.isArray(result?.clientes)) {
             MOCK_CLIENTES = result.clientes.map(normalizarCliente);
         } else {
             MOCK_CLIENTES = MOCK_CLIENTES.map(cliente => {
-                const precioToneladaPropio = roundToCurrency(cliente.precioToneladaPropio + montoTonelada);
-                const precioToneladaCliente = roundToCurrency(cliente.precioToneladaCliente + montoTonelada);
-                return {
-                    ...cliente,
-                    precioToneladaPropio,
-                    precioToneladaCliente,
-                    precioFletePropio: cliente.unidad === 'quintal'
+                const doAcopio = applyAcopio && rowIncludesAcopio(cliente);
+                const doDirecto = applyDirecto && rowIncludesDirecto(cliente);
+                const updated = { ...cliente };
+                if (doAcopio) {
+                    const precioToneladaPropio = roundToCurrency(cliente.precioToneladaPropio + montoTonelada);
+                    const precioToneladaCliente = roundToCurrency(cliente.precioToneladaCliente + montoTonelada);
+                    updated.precioToneladaPropio = precioToneladaPropio;
+                    updated.precioToneladaCliente = precioToneladaCliente;
+                    updated.precioFletePropio = cliente.unidad === 'quintal'
                         ? pricePerQuintalFromTon(precioToneladaPropio)
-                        : precioToneladaPropio,
-                    precioFleteCliente: cliente.unidad === 'quintal'
+                        : precioToneladaPropio;
+                    updated.precioFleteCliente = cliente.unidad === 'quintal'
                         ? pricePerQuintalFromTon(precioToneladaCliente)
-                        : precioToneladaCliente
-                };
+                        : precioToneladaCliente;
+                }
+                if (doDirecto) {
+                    updated.precioToneladaDirecto = roundToCurrency(cliente.precioToneladaDirecto + montoTonelada);
+                }
+                return updated;
             });
         }
 

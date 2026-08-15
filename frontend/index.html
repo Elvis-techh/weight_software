@@ -86,6 +86,19 @@
                     </div>
                 </div>
 
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">Categoría del Cliente *</label>
+                    <select id="modal-categoria" onchange="handleClientCategoriaChange()"
+                        class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                        required>
+                        <option value="acopio">Acopio (compra en báscula)</option>
+                        <option value="directo">Directo (entrega a empresa)</option>
+                        <option value="ambos">Ambos</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-gray-500">Determina qué precio(s) aplican a este cliente y a
+                        cuáles los alcanza el Ajuste Global.</p>
+                </div>
+
                 <div id="modal-precios-tonelada-container"
                     class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg mt-2">
                     <div class="flex items-start gap-2 mb-3">
@@ -117,7 +130,7 @@
                     </div>
                 </div>
 
-                <div class="flex gap-4 p-4 bg-gray-50 border border-gray-200 rounded-lg mt-2">
+                <div id="modal-precios-flete-container" class="flex gap-4 p-4 bg-gray-50 border border-gray-200 rounded-lg mt-2">
                     <div class="flex-1">
                         <div class="flex items-center justify-between mb-1">
                             <label id="modal-precio-propio-label" class="block text-xs font-bold text-gray-600">Flete
@@ -128,8 +141,7 @@
                                 <span class="material-icons text-[13px]">edit</span>Editar manualmente</button>
                         </div>
                         <input type="text" id="modal-precio-propio" oninput="formatDecimalThousandsInput(event)"
-                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
-                            required>
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900">
                     </div>
                     <div class="flex-1">
                         <div class="flex items-center justify-between mb-1">
@@ -141,9 +153,17 @@
                                 <span class="material-icons text-[13px]">edit</span>Editar manualmente</button>
                         </div>
                         <input type="text" id="modal-precio-cliente" oninput="formatDecimalThousandsInput(event)"
-                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900"
-                            required>
+                            class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-bold text-brand-900">
                     </div>
+                </div>
+
+                <div id="modal-precio-directo-container" class="hidden flex-col gap-1 p-4 bg-amber-50 border border-amber-200 rounded-lg mt-2">
+                    <label class="block text-xs font-bold text-amber-900 mb-1">Precio Directo (HNL / Ton) *</label>
+                    <input type="text" id="modal-precio-directo" oninput="formatDecimalThousandsInput(event)"
+                        class="w-full border border-amber-300 rounded p-2 focus:ring-2 focus:ring-amber-500 outline-none font-bold text-amber-950"
+                        placeholder="Ej. 2,400">
+                    <p class="mt-1 text-[11px] text-amber-700">Precio pagado cuando el productor entrega
+                        directamente a una empresa (Recibos Externos), sin pasar por la báscula.</p>
                 </div>
 
                 <!-- Justification box: shown when editing an existing client, or when a calculated
@@ -719,6 +739,23 @@
             </div>
 
             <div class="p-6 flex flex-col gap-4">
+
+                <div>
+
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Categoría</label>
+
+                    <select id="ajuste-categoria"
+                        class="w-full border rounded p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold">
+
+                        <option value="global">Global (Acopio y Directo)</option>
+
+                        <option value="acopio">Acopio (compra en báscula)</option>
+
+                        <option value="directo">Directo (entrega a empresa)</option>
+
+                    </select>
+
+                </div>
 
                 <div>
 
@@ -1893,6 +1930,7 @@
                                     <th class="p-3 font-semibold">Nombre del Cliente</th>
                                     <th class="p-3 font-semibold">Teléfono</th>
                                     <th class="p-3 font-semibold">Ubicación</th>
+                                    <th class="p-3 font-semibold text-center">Categoría</th>
                                     <th class="p-3 font-semibold">Flete Propio (L)</th>
                                     <th class="p-3 font-semibold">Flete Cliente (L)</th>
                                     <th class="p-3 font-semibold text-center">Unidad</th>
