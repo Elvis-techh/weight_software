@@ -577,6 +577,16 @@ function eliminarDeCola(id, event) {
 }
 
 function cargarDeCola(truckId) {
+    // Same guard as saveWeight()/guardarTransaccion(): a bruto/tara/finalizar
+    // request in flight still targets the truck that was active when it was
+    // sent. Letting the operator swap trucks underneath it means the response
+    // arrives with activeTransaction pointing at the NEW truck, so it gets
+    // credited (or its queue row removed) for a weight action it never asked
+    // for — see guardarTransaccion's use of activeTransaction.id after await.
+    if (weightRequestInProgress) {
+        return mostrarNotificacion('Ya hay una operación de peso en curso.', 'error');
+    }
+
     const queueId = String(truckId ?? '').trim();
     if (!queueId) {
         return mostrarNotificacion(

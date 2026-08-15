@@ -49,7 +49,21 @@ async function poblarPuertosScale(selectedPath) {
         });
         if (selectedPath) select.value = selectedPath;
     } catch (error) {
+        // listScalePorts() only rejects on a software failure (driver/native
+        // binding problem) — an empty scale with no ports resolves fine with [].
+        // Say so explicitly so a technician doing first-time setup doesn't read
+        // an empty dropdown as "no scale connected" and start chasing cables.
         console.error('No se pudo listar los puertos seriales:', error);
+        const errorOption = document.createElement('option');
+        errorOption.value = '';
+        errorOption.disabled = true;
+        errorOption.textContent = 'Error al escanear puertos (falla de software, no de báscula)';
+        select.appendChild(errorOption);
+        mostrarNotificacion(
+            `No se pudo escanear los puertos seriales: ${error.message || 'error desconocido'}. ` +
+            'Esto es una falla de software (controlador/driver), no necesariamente un problema con la báscula.',
+            'error'
+        );
     }
 }
 

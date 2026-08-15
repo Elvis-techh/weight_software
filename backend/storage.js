@@ -58,10 +58,23 @@ async function uploadObject(folder, buffer, fileName, mimeType) {
 }
 
 async function fetchObject(key) {
-    const result = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: key }));
-    const chunks = [];
-    for await (const chunk of result.Body) chunks.push(chunk);
-    return Buffer.concat(chunks);
+    try {
+        const result = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: key }));
+        const chunks = [];
+        for await (const chunk of result.Body) chunks.push(chunk);
+        return Buffer.concat(chunks);
+    } catch (error) {
+        // Attachment reads are deliberately unserialized (see server.js) so one slow
+        // download can't stall unrelated requests — which means a read can lose a
+        // narrow race against a concurrent replace that just deleted this same key.
+        // Flag it so the caller can turn that into a clean 404 instead of a 500.
+        if (error?.name === 'NoSuchKey' || error?.Code === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
+            const notFoundError = new Error(`Objeto no encontrado en Spaces (${key}).`);
+            notFoundError.notFound = true;
+            throw notFoundError;
+        }
+        throw error;
+    }
 }
 
 async function deleteObject(key) {

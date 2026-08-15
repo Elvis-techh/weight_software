@@ -13,9 +13,19 @@ const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
 const LBS_PER_METRIC_TON = 2204.62262185;
 const LBS_PER_QUINTAL = 100;
-const QUINTALES_PER_TON = 22.04;
+// Derived (not a rounded business convention) so quintal<->ton price
+// conversions agree with the same lbs constants the rest of the app uses —
+// the old hardcoded 22.04 was off by ~0.03% from the precise 22.0462262185,
+// a permanent bias baked into every quintal price edit/adjustment.
+const QUINTALES_PER_TON = LBS_PER_METRIC_TON / LBS_PER_QUINTAL;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const JSON_BODY_LIMIT = '30mb';
+// Sanity ceilings, not business rules — generous enough to never reject a
+// real entry, tight enough to catch a fat-fingered extra digit that no
+// server-side check currently stops (e.g. a truck weight typo). Tune here if
+// real operations ever legitimately need more.
+const MAX_WEIGHT_LBS = 200000;
+const MAX_MONEY_LEMPIRAS = 1000000;
 
 let db;
 let server;
@@ -113,7 +123,7 @@ function asText(value, { required = false, field = 'campo', maxLength = 250 } = 
     return text;
 }
 
-function asNumber(value, { required = false, min = -Infinity, field = 'valor' } = {}) {
+function asNumber(value, { required = false, min = -Infinity, max = Infinity, field = 'valor' } = {}) {
     if (value === null || value === undefined || value === '') {
         if (required) throw new HttpError(400, `${field} es obligatorio.`, 'VALIDATION_ERROR');
         return null;
@@ -121,6 +131,7 @@ function asNumber(value, { required = false, min = -Infinity, field = 'valor' } 
     const number = Number(value);
     if (!Number.isFinite(number)) throw new HttpError(400, `${field} no es válido.`, 'VALIDATION_ERROR');
     if (number < min) throw new HttpError(400, `${field} debe ser mayor o igual que ${min}.`, 'VALIDATION_ERROR');
+    if (number > max) throw new HttpError(400, `${field} debe ser menor o igual que ${max}.`, 'VALIDATION_ERROR');
     return number;
 }
 
@@ -205,7 +216,10 @@ function asWorkerPhone(value) {
 function roundToNearestWhole(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) throw new HttpError(400, 'No se pudo calcular el precio por quintal.', 'VALIDATION_ERROR');
-    return Math.round(number + Number.EPSILON);
+    // A flat Number.EPSILON only nudges past float representation error for
+    // numbers near 1 — the error itself scales with magnitude, so it needs to
+    // here too, or this is a no-op at realistic price magnitudes (hundreds+).
+    return Math.round(number + Number.EPSILON * Math.max(1, Math.abs(number)));
 }
 
 function roundToCurrency(value) {
@@ -244,11 +258,13 @@ function buildClientPricing(body, unidad) {
         const precioToneladaPropio = asNumber(body?.precioToneladaPropio, {
             required: true,
             min: 0,
+            max: MAX_MONEY_LEMPIRAS,
             field: 'El precio en tonelada de flete propio'
         });
         const precioToneladaCliente = asNumber(body?.precioToneladaCliente, {
             required: true,
             min: 0,
+            max: MAX_MONEY_LEMPIRAS,
             field: 'El precio en tonelada de flete cliente'
         });
 
@@ -257,11 +273,13 @@ function buildClientPricing(body, unidad) {
         const precioFletePropio = asNumber(body?.precioFletePropio ?? precioSugeridoPropio, {
             required: true,
             min: 0,
+            max: MAX_MONEY_LEMPIRAS,
             field: 'El precio por quintal de flete propio'
         });
         const precioFleteCliente = asNumber(body?.precioFleteCliente ?? precioSugeridoCliente, {
             required: true,
             min: 0,
+            max: MAX_MONEY_LEMPIRAS,
             field: 'El precio por quintal de flete cliente'
         });
 
@@ -276,11 +294,13 @@ function buildClientPricing(body, unidad) {
     const precioFletePropio = asNumber(body?.precioFletePropio, {
         required: true,
         min: 0,
+        max: MAX_MONEY_LEMPIRAS,
         field: 'El precio de flete propio'
     });
     const precioFleteCliente = asNumber(body?.precioFleteCliente, {
         required: true,
         min: 0,
+        max: MAX_MONEY_LEMPIRAS,
         field: 'El precio de flete cliente'
     });
 
@@ -430,7 +450,15 @@ async function storeAttachment(folder, attachment) {
 
 async function respondWithAttachment(res, { fileName, mimeType, data, key }) {
     if (key) {
-        const buffer = await storage.fetchObject(key);
+        let buffer;
+        try {
+            buffer = await storage.fetchObject(key);
+        } catch (error) {
+            if (error?.notFound) {
+                throw new HttpError(404, 'El archivo adjunto no está disponible.', 'ATTACHMENT_NOT_FOUND');
+            }
+            throw error;
+        }
         return sendStoredAttachment(res, { fileName, mimeType, data: buffer });
     }
     return sendStoredAttachment(res, { fileName, mimeType, data });
@@ -628,7 +656,7 @@ async function buildPayrollSummary(start, end, workerId = null) {
         const diasTrabajados = asistencia.filter(item => item.trabajado).length;
         const extras = Number(row.extras_periodo || 0);
         const sueldoBase = Number(row.sueldo_base || 0);
-        const totalPeriodo = (sueldoBase / 6) * diasTrabajados + extras;
+        const totalPeriodo = roundToCurrency((sueldoBase / 6) * diasTrabajados + extras);
         return {
             ...mapWorker(row),
             diasTrabajados,
@@ -642,7 +670,7 @@ async function buildPayrollSummary(start, end, workerId = null) {
         inicio: start,
         fin: end,
         trabajadores: mapped,
-        totalGeneral: mapped.reduce((sum, worker) => sum + worker.totalPeriodo, 0)
+        totalGeneral: roundToCurrency(mapped.reduce((sum, worker) => sum + worker.totalPeriodo, 0))
     };
 }
 
@@ -842,7 +870,7 @@ function validateCorapsaPaymentBody(body, { editing = false } = {}) {
         referencia: asText(body?.referencia, { maxLength: 150 }),
         destino: asDestino(body?.destino),
         toneladas: asNumber(body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas pagadas' }),
-        monto: asNumber(body?.monto, { required: true, min: 0.01, field: 'El monto pagado por Corapsa' }),
+        monto: asNumber(body?.monto, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El monto pagado por Corapsa' }),
         notas: asText(body?.notas, { maxLength: 1000 }),
         justificacion: editing ? requireJustification(body) : ''
     };
@@ -882,9 +910,16 @@ async function createQueueId() {
 const app = express();
 app.disable('x-powered-by');
 app.use(cors(corsOptions));
+// Auth runs before the body parser so an unauthenticated request (or, once
+// API_KEY is set, any request with a bad key) is rejected off req.method/path
+// alone and never gets its body buffered into memory. With API_KEY unset
+// (current MVP default) this middleware still passes everything through —
+// reordering doesn't add auth that isn't configured — but it closes the gap
+// for any deployment that does set API_KEY, and avoids paying the parse cost
+// on requests that were always going to be rejected.
+app.use(requireApiKey);
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(serializeDatabaseAccess);
-app.use(requireApiKey);
 
 app.get('/api/health', (_req, res) => {
     sendData(res, { status: 'ok' });
@@ -954,6 +989,8 @@ app.get('/api/clientes', asyncHandler(async (_req, res) => {
 app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
     const montoTonelada = asNumber(req.body?.montoTonelada ?? req.body?.monto, {
         required: true,
+        min: -MAX_MONEY_LEMPIRAS,
+        max: MAX_MONEY_LEMPIRAS,
         field: 'El monto por tonelada'
     });
     const razon = requireJustification(req.body);
@@ -1140,7 +1177,7 @@ app.patch('/api/clientes/:id/precio', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const flete = asFreightType(req.body?.flete);
     const justificacion = requireJustification(req.body);
-    const nuevoPrecio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
+    const nuevoPrecio = asNumber(req.body?.precio, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio' });
     const truckIdRaw = req.body?.truckId;
     const truckId = truckIdRaw === null || truckIdRaw === undefined || truckIdRaw === ''
         ? null
@@ -1217,8 +1254,8 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
     }
 
     const flete = asFreightType(req.body?.flete);
-    const pesoBruto = asNumber(req.body?.pesoBruto, { min: 0.01, field: 'El peso bruto' });
-    const pesoTara = asNumber(req.body?.pesoTara, { min: 0.01, field: 'El peso tara' });
+    const pesoBruto = asNumber(req.body?.pesoBruto, { min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso bruto' });
+    const pesoTara = asNumber(req.body?.pesoTara, { min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso tara' });
     if (pesoBruto == null && pesoTara == null) {
         throw new HttpError(400, 'Debe registrar al menos un peso.', 'VALIDATION_ERROR');
     }
@@ -1242,8 +1279,8 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
         clienteNombreSnapshot = asText(snapshot.nombre, { required: true, field: 'El nombre casual', maxLength: 200 });
         identidadSnapshot = asText(snapshot.identidad, { field: 'La identidad casual', maxLength: 40 });
         unidad = asUnit(snapshot.unidad);
-        const ownPrice = asNumber(snapshot.precioFletePropio, { required: true, min: 0, field: 'El precio casual' });
-        const clientPrice = asNumber(snapshot.precioFleteCliente, { required: true, min: 0, field: 'El precio casual' });
+        const ownPrice = asNumber(snapshot.precioFletePropio, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio casual' });
+        const clientPrice = asNumber(snapshot.precioFleteCliente, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio casual' });
         precioAplicado = flete === 'Propio' ? ownPrice : clientPrice;
         casualSnapshot = {
             id: 'casual',
@@ -1319,8 +1356,8 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
     const hasTara = Object.prototype.hasOwnProperty.call(req.body || {}, 'pesoTara');
     if (!hasBruto && !hasTara) throw new HttpError(400, 'No hay campos de peso para actualizar.', 'VALIDATION_ERROR');
 
-    const pesoBruto = hasBruto ? asNumber(req.body.pesoBruto, { required: true, min: 0.01, field: 'El peso bruto' }) : null;
-    const pesoTara = hasTara ? asNumber(req.body.pesoTara, { required: true, min: 0.01, field: 'El peso tara' }) : null;
+    const pesoBruto = hasBruto ? asNumber(req.body.pesoBruto, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso bruto' }) : null;
+    const pesoTara = hasTara ? asNumber(req.body.pesoTara, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso tara' }) : null;
     // Only required when overwriting an already-set peso_bruto (checked below, inside the transaction).
     const justificacion = asText(req.body?.justificacion ?? req.body?.razon, { maxLength: 500 });
 
@@ -1441,9 +1478,9 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const conductor = asText(req.body?.conductor, { field: 'El conductor', maxLength: 150 }) || 'Desconocido';
     const clienteNombre = asText(req.body?.clienteNombre, { required: true, field: 'El nombre del cliente', maxLength: 200 });
     const unidad = asUnit(req.body?.unidad);
-    const pesoBruto = asNumber(req.body?.pesoBruto, { required: true, min: 0.01, field: 'El peso bruto' });
-    const pesoTara = asNumber(req.body?.pesoTara, { required: true, min: 0.01, field: 'El peso tara' });
-    const precioAplicado = asNumber(req.body?.precioAplicado, { required: true, min: 0, field: 'El precio aplicado' });
+    const pesoBruto = asNumber(req.body?.pesoBruto, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso bruto' });
+    const pesoTara = asNumber(req.body?.pesoTara, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso tara' });
+    const precioAplicado = asNumber(req.body?.precioAplicado, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio aplicado' });
     const numeroBoletaRaw = asNumber(req.body?.numeroBoleta, { required: true, min: 1, field: 'El número de boleta' });
     if (!Number.isInteger(numeroBoletaRaw)) throw new HttpError(400, 'El número de boleta no es válido.', 'VALIDATION_ERROR');
 
@@ -1524,7 +1561,7 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const destino = asDestino(req.body?.destino);
     const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
-    const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
+    const precio = asNumber(req.body?.precio, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio' });
     const total = roundToCurrency(toneladas * precio);
     const esProductoPropio = asBoolean(req.body?.esProductoPropio ?? false);
     const archivoCliente = await storeAttachment(
@@ -1574,7 +1611,7 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const destino = asDestino(req.body?.destino);
     const aNombreDe = asText(req.body?.aNombreDe, { field: 'El campo "A nombre de"', maxLength: 200 });
     const toneladas = asNumber(req.body?.toneladas, { required: true, min: 0.01, field: 'Las toneladas' });
-    const precio = asNumber(req.body?.precio, { required: true, min: 0, field: 'El precio' });
+    const precio = asNumber(req.body?.precio, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio' });
     const total = roundToCurrency(toneladas * precio);
 
     const hasClienteUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente');
@@ -1731,7 +1768,7 @@ app.get('/api/gastos', asyncHandler(async (_req, res) => {
 app.post('/api/gastos', asyncHandler(async (req, res) => {
     const expense = {
         fecha: asIsoDate(req.body?.fecha, 'La fecha'),
-        monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
+        monto: asNumber(req.body?.monto, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
         justificacion: asText(req.body?.justificacion, { maxLength: 1000 }),
         notas: asText(req.body?.notas, { maxLength: 1000 })
@@ -1759,7 +1796,7 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
 
     const expense = {
         fecha: asIsoDate(req.body?.fecha, 'La fecha'),
-        monto: asNumber(req.body?.monto, { required: true, min: 0.01, field: 'El monto' }),
+        monto: asNumber(req.body?.monto, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
         justificacion: asText(req.body?.justificacion, { required: true, field: 'La justificación', maxLength: 1000 }),
         notas: asText(req.body?.notas, { maxLength: 1000 })
@@ -1948,7 +1985,7 @@ app.post('/api/planilla', asyncHandler(async (req, res) => {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { required: true, field: 'El apellido', maxLength: 120 }),
         telefono: asWorkerPhone(req.body?.telefono),
-        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, field: 'El sueldo base' })
+        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El sueldo base' })
     };
 
     const trabajador = await withTransaction(async () => {
@@ -2014,6 +2051,7 @@ app.put('/api/planilla/:id/periodo', asyncHandler(async (req, res) => {
     const extras = asNumber(req.body?.extras ?? 0, {
         required: true,
         min: 0,
+        max: MAX_MONEY_LEMPIRAS,
         field: 'Los extras'
     });
 
@@ -2048,7 +2086,7 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { required: true, field: 'El apellido', maxLength: 120 }),
         telefono: asWorkerPhone(req.body?.telefono),
-        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, field: 'El sueldo base' })
+        sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El sueldo base' })
     };
 
     const trabajador = await withTransaction(async () => {
@@ -2070,7 +2108,7 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
 app.patch('/api/planilla/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const dias = asNumber(req.body?.diasTrabajados, { required: true, min: 0, field: 'Los días trabajados' });
-    const extras = asNumber(req.body?.extras, { required: true, min: 0, field: 'Los extras' });
+    const extras = asNumber(req.body?.extras, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'Los extras' });
     if (dias > 31) throw new HttpError(400, 'Los días trabajados no pueden exceder 31.', 'VALIDATION_ERROR');
     const result = await db.run(`
         UPDATE planilla SET dias_trabajados = ?, extras = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
@@ -2096,18 +2134,30 @@ app.use((req, _res, next) => {
 });
 
 app.use((error, _req, res, _next) => {
-    const status = Number(error.status) || 500;
-    const production = process.env.NODE_ENV === 'production';
+    const status = Number(error?.status) || 500;
+    // Fail closed: nothing in this deployment (droplet start script, systemd
+    // unit, etc.) ever sets NODE_ENV, so gating on === 'production' left this
+    // hiding branch permanently dead and leaked raw error messages/details to
+    // callers. Hide by default and only skip hiding when a developer opts in
+    // with NODE_ENV=development. The full error is still logged below either
+    // way, so local debugging from the server console is unaffected.
+    const production = process.env.NODE_ENV !== 'development';
     if (status >= 500) console.error(error);
+
+    // express.json() throws a plain SyntaxError (no .code) for a malformed
+    // body — without this it fell through to INTERNAL_ERROR despite being a
+    // 400 the caller can actually fix.
+    const isBodyParseError = error?.type === 'entity.parse.failed';
+    const code = error?.code || (isBodyParseError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR');
 
     res.status(status).json({
         ok: false,
         error: {
-            code: error.code || 'INTERNAL_ERROR',
+            code,
             message: status >= 500 && production
                 ? 'Ocurrió un error interno en el servidor.'
-                : (error.message || 'Ocurrió un error interno en el servidor.'),
-            details: production ? null : (error.details || null)
+                : (error?.message || 'Ocurrió un error interno en el servidor.'),
+            details: production ? null : (error?.details || null)
         }
     });
 });

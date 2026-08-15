@@ -146,6 +146,16 @@ function startReading(settings, readingCallback) {
         const weight = parseWeightFromLine(String(line), settings.parsePattern);
         if (weight !== null) emitReading(weight);
     });
+    // .pipe() never forwards 'error' from source to destination, so the parser
+    // needs its own handler — without one, a parser fault is an unhandled
+    // EventEmitter error. main.js's uncaughtException handler stops it from
+    // crashing the app, but nothing here would ever call scheduleReconnect(),
+    // so the feed would stay "disconnected" forever with no retry.
+    activeParser.on('error', error => {
+        console.error('Error del parser de báscula:', error.message);
+        emitDisconnected();
+        scheduleReconnect();
+    });
 
     activePort.on('error', error => {
         console.error('Error del puerto serial:', error.message);
@@ -178,8 +188,13 @@ async function listPorts() {
         const ports = await SerialPort.list();
         return ports.map(p => ({ path: p.path, manufacturer: p.manufacturer || '' }));
     } catch (error) {
+        // Swallowing this into [] used to make a broken native binding / driver
+        // failure look exactly like "no scale plugged in" — worst possible
+        // moment to be ambiguous is first-time kiosk setup. Rethrow so the IPC
+        // call rejects and the renderer can tell the technician this is a
+        // software problem, not a hardware one.
         console.error('No se pudo listar los puertos seriales:', error.message);
-        return [];
+        throw error;
     }
 }
 
@@ -223,6 +238,7 @@ function testConnection({ comPort, baudRate, parsePattern }) {
             const parsedWeight = parseWeightFromLine(rawLine, parsePattern);
             finish({ ok: parsedWeight !== null, rawLine, parsedWeight });
         });
+        parser.once('error', error => finish({ ok: false, error: error.message }));
 
         testPort.on('error', error => finish({ ok: false, error: error.message }));
 
