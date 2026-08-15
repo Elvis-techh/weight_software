@@ -556,6 +556,8 @@ async function guardarCliente(event) {
     event?.preventDefault?.();
 
     const saveButton = event?.submitter || document.getElementById('btn-guardar-cliente');
+    if (saveButton?.disabled) return;
+
     const clientId = getRequiredElement('modal-client-id').value;
     const justificacion = getRequiredElement('modal-justificacion').value.trim();
     const unidad = getRequiredElement('modal-unidad').value;
@@ -675,6 +677,8 @@ function cerrarAjusteGlobal() {
 }
 
 async function aplicarAjusteGlobalForm() {
+    if (document.getElementById('ajuste-global-save-button')?.disabled) return;
+
     const accion = document.getElementById('ajuste-accion').value;
     const montoBase = parseFormattedNumber(document.getElementById('ajuste-monto').value);
     const razon = document.getElementById('ajuste-razon').value.trim();

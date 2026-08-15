@@ -74,13 +74,28 @@ function setPlanillaDateRange(start, end) {
 
 async function actualizarRangoPlanilla() {
     if (!getPlanillaSelectedRange({ notify: true })) return;
-    await fetchPlanilla();
+    try {
+        await fetchPlanilla();
+    } catch (error) {
+        console.error('No se pudo cargar la planilla:', error);
+        mostrarNotificacion(error.message || 'No se pudo cargar la planilla para ese rango.', 'error');
+    }
 }
 
 async function irSemanaActualPlanilla() {
+    // Captured before the programmatic date change below so a failed fetch
+    // can put the inputs back instead of leaving them showing a range the
+    // table never actually loaded.
+    const previousRange = getPlanillaSelectedRange();
     const range = getCurrentWeekRange();
     setPlanillaDateRange(range.start, range.end);
-    await fetchPlanilla();
+    try {
+        await fetchPlanilla();
+    } catch (error) {
+        console.error('No se pudo cargar la planilla:', error);
+        mostrarNotificacion(error.message || 'No se pudo cargar la planilla de esta semana.', 'error');
+        if (previousRange) setPlanillaDateRange(previousRange.start, previousRange.end);
+    }
 }
 
 async function moverRangoPlanilla(days) {
@@ -90,7 +105,15 @@ async function moverRangoPlanilla(days) {
     const start = addLocalDays(range.start, days);
     const end = addLocalDays(range.end, days);
     setPlanillaDateRange(formatLocalIsoDate(start), formatLocalIsoDate(end));
-    await fetchPlanilla();
+    try {
+        await fetchPlanilla();
+    } catch (error) {
+        console.error('No se pudo cargar la planilla:', error);
+        mostrarNotificacion(error.message || 'No se pudo cargar la planilla para ese rango.', 'error');
+        // Revert the programmatic date change so the inputs don't claim to be
+        // showing a range the table never actually loaded.
+        setPlanillaDateRange(range.start, range.end);
+    }
 }
 
 function abrirPlanillaModal(id = null) {
@@ -121,6 +144,8 @@ function cerrarPlanillaModal() {
 }
 
 async function guardarTrabajador() {
+    if (document.getElementById('planilla-save-button')?.disabled) return;
+
     const id = document.getElementById('planilla-edit-id').value;
     const telefono = document.getElementById('planilla-telefono').value.trim();
     const payload = {
@@ -262,6 +287,9 @@ async function guardarExtrasPeriodo(id) {
     const range = getPlanillaSelectedRange({ notify: true });
     if (!trabajador || !range) return;
 
+    const previousExtras = trabajador.extras;
+    const previousTotal = trabajador.totalPeriodo;
+
     recalcularFilaPlanilla(id);
 
     try {
@@ -279,7 +307,17 @@ async function guardarExtrasPeriodo(id) {
     } catch (error) {
         console.error('No se pudieron guardar los extras:', error);
         mostrarNotificacion(error.message || 'No se pudieron guardar los extras.', 'error');
-        await fetchPlanilla().catch(() => { });
+        try {
+            await fetchPlanilla();
+        } catch (resyncError) {
+            // Genuinely offline: the resync meant to undo the optimistic update
+            // above can't run either. Revert locally so the row shows the last
+            // confirmed value instead of an unsaved number that looks saved.
+            console.error('No se pudo resincronizar la planilla:', resyncError);
+            trabajador.extras = previousExtras;
+            trabajador.totalPeriodo = previousTotal;
+            renderPlanilla();
+        }
     }
 }
 

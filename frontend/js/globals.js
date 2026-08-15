@@ -10,7 +10,11 @@ const APP_CONFIG = Object.freeze({
     lbsPerQuintal: 100,
     quintalesPerTon: 22.04,
     scaleReadingMaxAgeMs: 3000,
-    maxAttachmentBytes: 10 * 1024 * 1024
+    maxAttachmentBytes: 10 * 1024 * 1024,
+    // Sanity ceiling matching the backend's MAX_WEIGHT_LBS (server.js) — not a
+    // business rule, just a fat-finger guard for "Ingreso Manual", the one
+    // weight path with no physical scale bounding it.
+    maxWeightLbs: 200000
 });
 
 let MOCK_CLIENTES = [];

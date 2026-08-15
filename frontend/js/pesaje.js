@@ -319,6 +319,16 @@ async function saveWeight(type, manualWeight = null) {
         mostrarNotificacion("El peso es 0. Use 'Ingreso Manual' si está probando sin báscula.", 'error');
         return false;
     }
+    // Only manual entry needs this: the live-scale path is already bounded by
+    // physical reality, but "Ingreso Manual" is free-typed and a stray extra
+    // digit would otherwise sail straight through.
+    if (reading.isManual && reading.weight > APP_CONFIG.maxWeightLbs) {
+        mostrarNotificacion(
+            `El peso ingresado supera el máximo razonable (${APP_CONFIG.maxWeightLbs.toLocaleString('en-US')} LBS). Verifique el valor.`,
+            'error'
+        );
+        return false;
+    }
     if (!reading.isManual && !reading.fresh) {
         mostrarNotificacion('La lectura de la báscula está desactualizada.', 'error');
         return false;
@@ -576,6 +586,17 @@ function eliminarDeCola(id, event) {
     abrirActionModal('delete_cola', queueId);
 }
 
+// True only while the clerk is mid-typing a brand-new truck (no activeTransaction.id
+// yet, so nothing about it is saved anywhere) — an already-loaded queue truck's
+// fields are safe to overwrite since that truck's data already lives on the server.
+function hasUnsavedNewTruckEntry() {
+    if (activeTransaction.id) return false;
+    const placa = document.getElementById('placa-input')?.value.trim();
+    const conductor = document.getElementById('conductor-input')?.value.trim();
+    const cliente = document.getElementById('cliente-select')?.value;
+    return Boolean(placa || conductor || cliente);
+}
+
 function cargarDeCola(truckId) {
     // Same guard as saveWeight()/guardarTransaccion(): a bruto/tara/finalizar
     // request in flight still targets the truck that was active when it was
@@ -585,6 +606,13 @@ function cargarDeCola(truckId) {
     // for — see guardarTransaccion's use of activeTransaction.id after await.
     if (weightRequestInProgress) {
         return mostrarNotificacion('Ya hay una operación de peso en curso.', 'error');
+    }
+
+    if (hasUnsavedNewTruckEntry()) {
+        return mostrarNotificacion(
+            'Hay datos sin guardar de un camión nuevo. Termine o borre esa entrada antes de abrir otro camión de la cola.',
+            'error'
+        );
     }
 
     const queueId = String(truckId ?? '').trim();
@@ -704,7 +732,12 @@ function calcularNetoYTotal() {
     const pesoBruto = toFiniteNumber(activeTransaction.pesoBruto);
     const pesoTara = toFiniteNumber(activeTransaction.pesoTara);
     const hasBothWeights = activeTransaction.pesoBruto != null && activeTransaction.pesoTara != null;
-    const neto = hasBothWeights ? Math.abs(pesoBruto - pesoTara) : 0;
+    // No Math.abs() here on purpose: a tara mistakenly captured higher than
+    // bruto must show as a negative/wrong-looking total so the saveButton's
+    // "neto <= 0" check below catches it instantly, instead of masking the
+    // mix-up as an ordinary-looking positive number until the server's own
+    // bruto >= tara check rejects it on FINALIZAR.
+    const neto = hasBothWeights ? pesoBruto - pesoTara : 0;
     const total = calculatePayment(neto, activeTransaction.precioAplicado, activeTransaction.unidad);
 
     document.getElementById('neto-display').textContent = `${neto.toLocaleString('en-US')} LBS`;
