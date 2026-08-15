@@ -5,7 +5,8 @@
 // Usage (on the droplet, with SPACES_* env vars set):
 //   node backend/scripts/migrate-attachments-to-spaces.js
 //
-// Run a database backup first: cp backend/bascula.db backend/bascula.db.bak
+// Run a database backup first (a plain `cp` can catch the WAL file mid-write):
+//   node backend/scripts/backup-database.js
 
 const path = require('path');
 const sqlite3 = require('sqlite3');

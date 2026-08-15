@@ -8,6 +8,7 @@ backend/bascula.db
 backend/bascula.db-journal
 backend/bascula.db-shm
 backend/bascula.db-wal
+backend/backups/
 
 # Ignore environment variables and logs
 .env

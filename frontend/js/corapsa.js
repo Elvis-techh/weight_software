@@ -73,6 +73,7 @@ function abrirCorapsaModal(id = null, justificacion = '') {
     if (id != null && !record) return mostrarNotificacion('Recibo externo no encontrado.', 'error');
 
     activeCorapsaEditJustification = justificacion;
+    precioAntesDeProductoPropio = null;
     document.getElementById('corapsa-modal-title').textContent = record ? 'Editar Recibo Externo' : 'Registrar Recibo Externo';
     document.getElementById('corapsa-edit-id').value = record?.id ?? '';
     document.getElementById('corapsa-fecha').value = record?.fecha || getLocalIsoDate();
@@ -113,10 +114,22 @@ function handleCorapsaClientInput() {
 
 // Defaults the price (and therefore total) to 0 when the receipt is flagged
 // as own-Acopio product, since it was already paid for at our scale. Users
-// can still override the price afterward if they need to record it.
+// can still override the price afterward if they need to record it. Restores
+// whatever was typed before checking the box if it's unchecked again, so a
+// stray click doesn't silently leave a real external receipt at L0.00.
+let precioAntesDeProductoPropio = null;
+
 function handleProductoPropioToggle() {
-    if (!document.getElementById('corapsa-es-producto-propio').checked) return;
-    document.getElementById('corapsa-precio').value = formatNumberForInput(0, 2);
+    const checked = document.getElementById('corapsa-es-producto-propio').checked;
+    const precioInput = document.getElementById('corapsa-precio');
+
+    if (checked) {
+        precioAntesDeProductoPropio = precioInput.value;
+        precioInput.value = formatNumberForInput(0, 2);
+    } else {
+        precioInput.value = precioAntesDeProductoPropio ?? '';
+        precioAntesDeProductoPropio = null;
+    }
     calcularTotalCorapsa();
 }
 
@@ -155,8 +168,15 @@ async function guardarCorapsa() {
     if (!Number.isFinite(payload.toneladas) || payload.toneladas <= 0) {
         return mostrarNotificacion('Las toneladas deben ser mayores que cero.', 'error');
     }
-    if (!Number.isFinite(payload.precio) || payload.precio < 0) {
-        return mostrarNotificacion('El precio no es válido.', 'error');
+    // Zero is only legitimate for "Producto Propio" (already paid at our own
+    // scale) — for a real external receipt it means the price field was left
+    // at 0 by mistake (e.g. the toggle above was checked and unchecked).
+    const precioMinimo = payload.esProductoPropio ? 0 : 0.01;
+    if (!Number.isFinite(payload.precio) || payload.precio < precioMinimo) {
+        return mostrarNotificacion(
+            payload.esProductoPropio ? 'El precio no es válido.' : 'El precio debe ser mayor que cero.',
+            'error'
+        );
     }
     if (id && !payload.justificacion) {
         return mostrarNotificacion('La edición requiere una justificación.', 'error');

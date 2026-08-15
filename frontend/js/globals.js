@@ -8,7 +8,12 @@ const API_KEY = '1218d8801f6281d70339d5626b60b5ca089355fee5fb3c324954849426c83ec
 const APP_CONFIG = Object.freeze({
     lbsPerMetricTon: 2204.62262185,
     lbsPerQuintal: 100,
-    quintalesPerTon: 22.04,
+    // Derived from the two constants above, not the rounded business
+    // convention (22.04) — must match the backend's QUINTALES_PER_TON
+    // (server.js) exactly, since the backend prefers whatever quintal price
+    // the frontend sends over its own recalculation. A mismatch here would
+    // silently re-introduce the ~0.03% bias that was already fixed server-side.
+    quintalesPerTon: 2204.62262185 / 100,
     scaleReadingMaxAgeMs: 3000,
     maxAttachmentBytes: 10 * 1024 * 1024,
     // Sanity ceiling matching the backend's MAX_WEIGHT_LBS (server.js) — not a

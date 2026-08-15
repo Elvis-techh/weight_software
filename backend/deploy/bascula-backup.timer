@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Bascula Central database backup daily
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 America/Tegucigalpa
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

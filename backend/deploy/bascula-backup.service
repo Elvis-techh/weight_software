@@ -1,0 +1,9 @@
+[Unit]
+Description=Bascula Central database backup (one-shot, triggered by bascula-backup.timer)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/bascula-central/backend
+EnvironmentFile=/opt/bascula-central/backend/.env
+ExecStart=/usr/bin/node scripts/backup-database.js
+User=bascula

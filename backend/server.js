@@ -3,6 +3,8 @@ require('dotenv').config();
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const initializeDB = require('./database');
 const storage = require('./storage');
 
@@ -954,9 +956,34 @@ async function createQueueId() {
     throw new HttpError(503, 'No se pudo generar un ID único para el vehículo.', 'ID_GENERATION_FAILED');
 }
 
+// Pure JSON API with no browser-rendered HTML of its own, so helmet's default
+// header set (no CSP needed) is enough defense-in-depth against the usual
+// response-header-based attacks with zero configuration cost.
+const apiLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    // Generous enough for real terminal usage (polling + normal CRUD) but caps
+    // what a leaked API_KEY (see requireApiKey above — trivial to extract from
+    // a packaged Electron installer) could scrape or abuse from one source.
+    limit: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Keys on the API key when present so every terminal sharing one office IP
+    // isn't throttled as a single client; falls back to IP for unauthenticated
+    // requests (relevant once API_KEY is actually set).
+    keyGenerator: (req) => req.get('X-API-Key') || req.ip,
+    handler: (_req, res) => {
+        res.status(429).json({
+            ok: false,
+            error: { code: 'RATE_LIMITED', message: 'Demasiadas solicitudes. Intente de nuevo en unos minutos.', details: null }
+        });
+    }
+});
+
 const app = express();
 app.disable('x-powered-by');
+app.use(helmet());
 app.use(cors(corsOptions));
+app.use('/api', apiLimiter);
 // Auth runs before the body parser so an unauthenticated request (or, once
 // API_KEY is set, any request with a bad key) is rejected off req.method/path
 // alone and never gets its body buffered into memory. With API_KEY unset
@@ -2268,15 +2295,31 @@ async function start() {
     });
 }
 
-async function shutdown(signal) {
+async function shutdown(signal, exitCode = 0) {
     console.log(`Cerrando servidor (${signal})...`);
     if (server) await new Promise(resolve => server.close(resolve));
     if (db) await db.close();
-    process.exit(0);
+    process.exit(exitCode);
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Without these, an unanticipated error (a bug in a dependency, a timer
+// callback) takes down the whole Node process with nothing to notice or
+// restart it — see main.js for the same reasoning on the Electron side.
+// uncaughtException leaves the process in a state Node no longer guarantees
+// is safe to keep running in, so this logs, attempts a clean shutdown, and
+// exits non-zero — relying on the process supervisor (see deploy/) to bring
+// it back up rather than limping on indefinitely.
+process.on('uncaughtException', (error) => {
+    console.error('Excepción no capturada:', error?.stack || error);
+    shutdown('uncaughtException', 1).catch(() => process.exit(1));
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Rechazo de promesa no manejado:', reason?.stack || reason);
+});
 
 start().catch(error => {
     console.error('No se pudo iniciar el servidor:', error);
