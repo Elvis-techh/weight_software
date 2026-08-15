@@ -64,3 +64,26 @@ pm2 stop bascula-backend   # o el nombre que tenga el proceso en pm2 list
 cp bascula-<timestamp>.db /opt/bascula-central/backend/bascula.db
 pm2 start bascula-backend
 ```
+
+## Borrar los datos de prueba antes de arrancar producción
+
+`scripts/reset-database.js` borra clientes, camiones en patio, transacciones,
+recibos externos (corapsa + corapsa_pagos), gastos, planilla (empleados,
+asistencia y períodos) y auditoría — deja intacta `companies` (CORAPSA/
+AGROTOR/DINANT son nombres de destino reales, no datos de prueba). Toma un
+respaldo automático antes de borrar (mismo mecanismo que arriba) y borra los
+adjuntos de prueba ya subidos a Spaces para que no queden huérfanos.
+
+```bash
+pm2 stop bascula-backend      # detenga el server primero — este script
+                               # escribe directo a bascula.db, sin pasar por
+                               # la cola de escritura ni la API-key del server
+cd /opt/bascula-central/backend
+node scripts/reset-database.js --confirm
+pm2 start bascula-backend
+```
+
+Es normal correrlo una sola vez, justo antes de empezar a capturar datos
+reales. El respaldo que crea automáticamente antes de borrar queda en
+`backups/` y, si `SPACES_*` está configurado, también en el bucket — ahí
+queda todo el historial de pruebas por si hace falta consultarlo después.

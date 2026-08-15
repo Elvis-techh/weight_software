@@ -73,9 +73,17 @@ async function main() {
     }
 
     await pruneOldLocalBackups();
+    return localPath;
 }
 
-main().catch(error => {
-    console.error('Falló el respaldo de la base de datos:', error);
-    process.exitCode = 1;
-});
+module.exports = { runBackup: main };
+
+// Only run automatically when invoked directly (`node backup-database.js`),
+// not when reset-database.js requires this module to take a safety snapshot
+// before wiping data.
+if (require.main === module) {
+    main().catch(error => {
+        console.error('Falló el respaldo de la base de datos:', error);
+        process.exitCode = 1;
+    });
+}
