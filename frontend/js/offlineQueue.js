@@ -25,12 +25,28 @@ function isLocalOnlyTruckId(id) {
     return /^truck-/.test(String(id ?? ''));
 }
 
+// One-shot until a save succeeds again, so a persistent disk-full/permissions
+// problem doesn't spam a toast on every single enqueue/replay while it lasts.
+let queuePersistFailureNotified = false;
+
 async function persistOfflineQueue() {
     if (typeof window.electronAPI?.saveOfflineQueue !== 'function') return;
     try {
         await window.electronAPI.saveOfflineQueue(offlineQueue);
+        queuePersistFailureNotified = false;
     } catch (error) {
         console.error('No se pudo guardar la cola local en disco:', error);
+        // Console-only was invisible on a kiosk with no DevTools open. Paired
+        // with a crash right after, that silently loses whatever was queued
+        // with no warning to anyone — surface it where an operator can see it.
+        if (!queuePersistFailureNotified) {
+            queuePersistFailureNotified = true;
+            mostrarNotificacion(
+                'No se pudo guardar en disco la cola de cambios sin sincronizar (¿espacio insuficiente o permisos?). ' +
+                'Si la aplicación se cierra ahora, esos cambios podrían perderse.',
+                'error'
+            );
+        }
     }
 }
 
@@ -204,6 +220,51 @@ async function replayOp(op) {
     throw new Error(`Tipo de operación desconocido en la cola local: ${op.type}`);
 }
 
+// A 5xx is the server's own admission that something on its end went wrong —
+// exactly as retryable as a network drop or client-side timeout, not a
+// permanent rejection. Treating it as permanent (the old behavior) meant an
+// ordinary transient 500 during replay got silently dropped instead of tried
+// again.
+function isRetryableSyncError(error) {
+    if (isConnectivityError(error)) return true;
+    const status = Number(error?.status);
+    return Number.isFinite(status) && status >= 500;
+}
+
+function isMissingTargetError(error) {
+    return Number(error?.status) === 404 || error?.code === 'NOT_FOUND';
+}
+
+// A 404 replaying 'finalize' is ambiguous: either it genuinely failed (the
+// truck was deleted out-of-band), or an earlier attempt of this SAME op
+// already succeeded server-side before the client's own request timed out
+// waiting for the response. finalize's whole job is removing the truck from
+// camiones_en_patio, so its absence — confirmed against fresh server truth,
+// not the stale local state that produced the timeout — is strong evidence
+// this op already went through. ('update' 404s don't get this treatment: the
+// truck being gone doesn't tell us whether ITS weight value made it in
+// before something else finalized the truck, so that case still needs a
+// human look — see runDrainLoop.)
+async function finalizeAlreadyApplied(op) {
+    try {
+        await fetchCamionesEnPatio();
+    } catch (_) {
+        return false;
+    }
+    if (camionesEnPatio.some(truck => sameRecordId(truck.id, op.localTruckId))) return false;
+
+    // Truck confirmed gone — pull the real transaction list so the local
+    // optimistic entry (added with pendingSync:true and a locally-predicted
+    // numero_boleta) gets replaced by the server's authoritative record
+    // instead of sitting there forever looking unsynced.
+    try {
+        await fetchTransacciones();
+    } catch (error) {
+        console.error('No se pudo confirmar la transacción tras un 404 en la cola:', error);
+    }
+    return true;
+}
+
 // Strictly sequential: a queued update/finalize can depend on the real id a
 // preceding create receives, so ops must replay — and persist — one at a time.
 //
@@ -221,27 +282,38 @@ let drainPromise = null;
 async function runDrainLoop() {
     while (offlineQueue.length > 0) {
         const op = offlineQueue[0];
+        let refreshViews = false;
         try {
             await replayOp(op);
-            offlineQueue.shift();
-            await persistOfflineQueue();
-            renderPendingSyncBadge();
+            refreshViews = true;
+        } catch (error) {
+            if (isRetryableSyncError(error)) return;
+
+            if (op.type === 'finalize' && isMissingTargetError(error) && await finalizeAlreadyApplied(op)) {
+                // Already reconciled from server truth inside finalizeAlreadyApplied()
+                // (including its own re-renders) — nothing more to do for this op.
+            } else {
+                // A real, non-retryable failure — e.g. the truck was deleted
+                // server-side by a direct DB edit while offline. Don't let one
+                // permanently-failing op block everything queued behind it;
+                // drop it, but loudly, since silently discarding it would be worse.
+                await warnOfflineSyncIssue(
+                    `No se pudo sincronizar un cambio guardado sin conexión (${op.type}). Motivo: ${error.message || 'error desconocido'}. Revise manualmente los datos del vehículo/transacción.`,
+                    { op, error }
+                );
+            }
+        }
+
+        // Re-render calls live outside the try/catch on purpose: if one of
+        // them ever threw, the catch above would misattribute the failure to
+        // `op` — including dropping it — even though `op` itself already
+        // synced fine (or was never even attempted).
+        offlineQueue.shift();
+        await persistOfflineQueue();
+        renderPendingSyncBadge();
+        if (refreshViews) {
             renderQueue();
             updateReportesTab();
-        } catch (error) {
-            if (isConnectivityError(error)) return;
-
-            // A real (non-connectivity) rejection — e.g. the truck was deleted
-            // server-side by a direct DB edit while offline. Don't let one
-            // permanently-failing op block everything queued behind it; drop
-            // it, but loudly, since silently discarding it would be worse.
-            await warnOfflineSyncIssue(
-                `No se pudo sincronizar un cambio guardado sin conexión (${op.type}). Motivo: ${error.message || 'error desconocido'}. Revise manualmente los datos del vehículo/transacción.`,
-                { op, error }
-            );
-            offlineQueue.shift();
-            await persistOfflineQueue();
-            renderPendingSyncBadge();
         }
     }
 }

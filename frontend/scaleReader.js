@@ -14,6 +14,11 @@ const STABILITY_TOLERANCE_LBS = 3;
 const STALE_AFTER_MS = 3000;
 const WATCHDOG_INTERVAL_MS = 1000;
 const RECONNECT_DELAY_MS = 5000;
+// If the configured comPort was reassigned by the OS (a second adapter,
+// device re-enumeration), reconnecting retries that same stale path forever
+// with nothing telling anyone. After this many consecutive failed opens
+// (~30s at RECONNECT_DELAY_MS=5000) flag it once instead of retrying silently.
+const MAX_SILENT_RECONNECT_ATTEMPTS = 6;
 
 let activePort = null;
 let activeParser = null;
@@ -24,6 +29,21 @@ let watchdogTimer = null;
 let staleNotified = false;
 let onReading = () => {};
 let reconnectTimer = null;
+let consecutiveOpenFailures = 0;
+let portNotFoundNoticeSent = false;
+
+function noteOpenFailure() {
+    consecutiveOpenFailures += 1;
+    if (consecutiveOpenFailures === MAX_SILENT_RECONNECT_ATTEMPTS && !portNotFoundNoticeSent) {
+        portNotFoundNoticeSent = true;
+        onReading({ weight: 0, stable: false, source: 'disconnected', preset: '', staleReason: 'port-not-found' });
+    }
+}
+
+function noteOpenSuccess() {
+    consecutiveOpenFailures = 0;
+    portNotFoundNoticeSent = false;
+}
 
 function parseWeightFromLine(line, parsePattern) {
     let regex = DEFAULT_WEIGHT_REGEX;
@@ -124,10 +144,14 @@ function startReading(settings, readingCallback) {
 
     if (settings.testModeEnabled) {
         // Test mode owns the scale-data channel via the simulator instead — stay idle.
+        consecutiveOpenFailures = 0;
+        portNotFoundNoticeSent = false;
         return;
     }
 
     if (!settings.comPort) {
+        consecutiveOpenFailures = 0;
+        portNotFoundNoticeSent = false;
         emitDisconnected();
         return;
     }
@@ -137,6 +161,7 @@ function startReading(settings, readingCallback) {
     } catch (error) {
         console.error('No se pudo crear el puerto serial:', error.message);
         emitDisconnected();
+        noteOpenFailure();
         return;
     }
 
@@ -171,9 +196,11 @@ function startReading(settings, readingCallback) {
         if (error) {
             console.error('No se pudo abrir el puerto serial:', error.message);
             emitDisconnected();
+            noteOpenFailure();
             scheduleReconnect();
             return;
         }
+        noteOpenSuccess();
         lastLineReceivedAt = 0;
         startWatchdog();
     });

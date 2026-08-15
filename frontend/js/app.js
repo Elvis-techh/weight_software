@@ -86,11 +86,27 @@ function updateSimulatorButtons(activePreset) {
     });
 }
 
+// Set once scaleReader.js gives up retrying the configured comPort silently
+// (see its MAX_SILENT_RECONNECT_ATTEMPTS) — reset on the next successful
+// reading so a later, genuinely new failure can notify again.
+let scalePortNotFoundNoticeShown = false;
+
 function renderScaleReading(data) {
     setLiveScaleData(data);
 
     const source = String(data?.source || '');
     const disconnected = source === 'disconnected';
+
+    if (!disconnected) {
+        scalePortNotFoundNoticeShown = false;
+    } else if (data?.staleReason === 'port-not-found' && !scalePortNotFoundNoticeShown) {
+        scalePortNotFoundNoticeShown = true;
+        mostrarNotificacion(
+            'La báscula no responde en el puerto configurado. Si el cable o adaptador cambió de puerto, ' +
+            'seleccione el puerto correcto en Configuración de Báscula.',
+            'error'
+        );
+    }
 
     const weightDisplay = document.getElementById('live-weight');
     const statusDisplay = document.getElementById('scale-status');
