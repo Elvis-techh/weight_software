@@ -1,6 +1,6 @@
 {
     "name": "bascula-central",
-    "version": "1.0.13",
+    "version": "1.0.14",
     "description": "Weight tracking and administration system",
     "main": "main.js",
     "author": "Báscula Central Team",
