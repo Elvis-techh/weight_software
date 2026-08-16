@@ -261,14 +261,14 @@ function renderGastos() {
 
     tbody.innerHTML = records.map(gasto => `
         <tr class="hover:bg-red-50">
-            <td class="p-4 font-mono text-gray-600">${escapeHtml(formatDateForDisplay(gasto.fecha))}</td>
-            <td class="p-4 font-bold text-gray-800">${escapeHtml(gasto.concepto)}</td>
-            <td class="p-4 text-right font-mono font-bold text-red-700">L ${formatMoney(gasto.monto)}</td>
-            <td class="p-4 text-xs text-gray-500">${escapeHtml(gasto.notas || '-')}</td>
-            <td class="p-4 text-center">
+            <td class="p-4 font-mono text-gray-600" data-label="Fecha">${escapeHtml(formatDateForDisplay(gasto.fecha))}</td>
+            <td class="p-4 font-bold text-gray-800" data-label="Concepto">${escapeHtml(gasto.concepto)}</td>
+            <td class="p-4 text-right font-mono font-bold text-red-700" data-label="Monto (L)">L ${formatMoney(gasto.monto)}</td>
+            <td class="p-4 text-xs text-gray-500" data-label="Notas">${escapeHtml(gasto.notas || '-')}</td>
+            <td class="p-4 text-center" data-label="Recibo">
                 <div class="flex justify-center">${renderGastoAttachmentThumbnail(gasto)}</div>
             </td>
-            <td class="p-4 text-center">
+            <td class="p-4 text-center" data-label="Acciones">
                 <button type="button" onclick="abrirGastosModal('${escapeHtml(gasto.id)}')" title="Editar y reemplazar archivo" class="text-blue-500 hover:text-blue-800 mx-1"><span class="material-icons text-[18px]">edit</span></button>
                 <button type="button" onclick="abrirActionModal('delete_gasto', '${escapeHtml(gasto.id)}')" class="text-red-400 hover:text-red-700 mx-1"><span class="material-icons text-[18px]">delete</span></button>
             </td>

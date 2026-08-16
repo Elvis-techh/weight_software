@@ -455,25 +455,25 @@ function renderCorapsaTab() {
 
         return `
             <tr class="hover:bg-blue-50">
-                <td class="p-3 text-sm font-mono text-gray-600 font-bold">${escapeHtml(formatDateForDisplay(record.fecha))}</td>
-                <td class="p-3 text-sm font-mono text-gray-600">${escapeHtml(record.telefono || '-')}</td>
-                <td class="p-3 font-bold text-gray-800">${escapeHtml(record.cliente)}${record.aNombreDe ? `<br><span class="text-[11px] font-semibold text-gray-400">A nombre de: ${escapeHtml(record.aNombreDe)}</span>` : ''}</td>
-                <td class="p-3"><span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-1 rounded font-bold text-xs uppercase">${escapeHtml(record.destino || '-')}</span></td>
-                <td class="p-3">${record.esProductoPropio
+                <td class="p-3 text-sm font-mono text-gray-600 font-bold" data-label="Fecha">${escapeHtml(formatDateForDisplay(record.fecha))}</td>
+                <td class="p-3 text-sm font-mono text-gray-600" data-label="Teléfono">${escapeHtml(record.telefono || '-')}</td>
+                <td class="p-3 font-bold text-gray-800" data-label="Cliente">${escapeHtml(record.cliente)}${record.aNombreDe ? `<br><span class="text-[11px] font-semibold text-gray-400">A nombre de: ${escapeHtml(record.aNombreDe)}</span>` : ''}</td>
+                <td class="p-3" data-label="Destino"><span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-1 rounded font-bold text-xs uppercase">${escapeHtml(record.destino || '-')}</span></td>
+                <td class="p-3" data-label="Origen">${record.esProductoPropio
                     ? '<span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded font-bold text-[10px] uppercase" title="Ya pagado en báscula propia; excluido de Compra Directo"><span class="material-icons text-[12px]">warehouse</span>Acopio</span>'
                     : '<span class="inline-flex items-center bg-slate-50 text-slate-500 border border-slate-200 px-2 py-1 rounded font-bold text-[10px] uppercase">Directo</span>'}</td>
-                <td class="p-3"><span class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-1 rounded font-mono font-bold text-xs"><span class="material-icons text-[14px]">receipt_long</span>${escapeHtml(record.reciboIn)}</span></td>
-                <td class="p-3 text-right text-xs text-gray-500">L ${formatMoney(record.precio)}</td>
-                <td class="p-3 text-right font-mono font-bold text-gray-600">${record.toneladas.toFixed(2)}</td>
-                <td class="p-3 text-right font-mono font-bold text-blue-700 text-lg">L ${formatMoney(record.total)}</td>
-                <td class="p-3 text-center">
+                <td class="p-3" data-label="Recibo #"><span class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-1 rounded font-mono font-bold text-xs"><span class="material-icons text-[14px]">receipt_long</span>${escapeHtml(record.reciboIn)}</span></td>
+                <td class="p-3 text-right text-xs text-gray-500" data-label="Precio/Unidad">L ${formatMoney(record.precio)}</td>
+                <td class="p-3 text-right font-mono font-bold text-gray-600" data-label="Toneladas">${record.toneladas.toFixed(2)}</td>
+                <td class="p-3 text-right font-mono font-bold text-blue-700 text-lg" data-label="Monto a Pagar">L ${formatMoney(record.total)}</td>
+                <td class="p-3 text-center" data-label="Archivos Adjuntos">
                     <div class="flex gap-2 items-center justify-center">
                         ${renderCorapsaAttachmentThumbnail(record, 'cliente')}
                         ${renderCorapsaAttachmentThumbnail(record, 'nuestro')}
                     </div>
                 </td>
-                <td class="p-3 text-center"><button type="button" onclick="togglePagoCorapsa('${id}')" class="${badgeClass} px-3 py-1 rounded-full text-[10px] font-bold border">${badgeText}</button></td>
-                <td class="p-3 text-center">
+                <td class="p-3 text-center" data-label="Estado"><button type="button" onclick="togglePagoCorapsa('${id}')" class="${badgeClass} px-3 py-1 rounded-full text-[10px] font-bold border">${badgeText}</button></td>
+                <td class="p-3 text-center" data-label="Acciones">
                     <button type="button" onclick="abrirActionModal('edit_corapsa', '${id}')" class="text-blue-500 hover:text-blue-800" title="Editar datos y reemplazar archivos"><span class="material-icons text-[18px]">edit</span></button>
                     <button type="button" onclick="abrirActionModal('delete_corapsa', '${id}')" class="text-red-400 hover:text-red-700"><span class="material-icons text-[18px]">delete</span></button>
                 </td>

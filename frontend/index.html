@@ -656,7 +656,7 @@
 
                     <span class="font-bold text-blue-900 uppercase">Total a Pagar</span>
 
-                    <span class="font-mono text-2xl font-black text-blue-700">L <span
+                    <span class="font-mono text-2xl font-black text-blue-700 whitespace-nowrap">L <span
                             id="corapsa-total-display">0.00</span></span>
 
                 </div>
@@ -1366,6 +1366,8 @@
 
     <!-- SIDEBAR NAVIGATION -->
 
+    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
+
     <nav class="sidebar shrink-0 overflow-y-auto shadow-2xl z-20">
 
         <div class="sidebar__brand">
@@ -1453,39 +1455,45 @@
         <!-- HEADER -->
 
         <header
-            class="bg-white px-6 py-4 flex justify-between items-center shadow-sm shrink-0 border-b border-gray-200">
+            class="bg-white px-4 md:px-6 py-4 flex justify-between items-center shadow-sm shrink-0 border-b border-gray-200 gap-3">
 
-            <div>
+            <div class="flex items-center gap-3 min-w-0">
 
-                <h1 class="text-xl font-bold text-gray-800 tracking-tight" id="header-title">Terminal de Pesaje</h1>
+                <button type="button" id="mobile-sidebar-toggle" onclick="openMobileSidebar()"
+                    class="md:hidden shrink-0 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg p-2 transition-colors"
+                    title="Abrir menú" aria-label="Abrir menú">
+                    <span class="material-icons">menu</span>
+                </button>
+
+                <h1 class="text-xl font-bold text-gray-800 tracking-tight truncate" id="header-title">Terminal de Pesaje</h1>
 
             </div>
 
-            <div class="flex items-center gap-6">
+            <div class="flex items-center gap-3 sm:gap-6 shrink-0">
 
                 <div class="flex flex-col items-end">
 
                     <span id="current-time" class="font-mono text-lg font-bold text-brand-900">--:--:--</span>
 
-                    <span id="current-date" class="text-xs text-gray-500">--/--/----</span>
+                    <span id="current-date" class="hidden sm:inline text-xs text-gray-500">--/--/----</span>
 
                 </div>
 
                 <div id="pending-sync-badge"
-                    class="hidden items-center gap-2 bg-amber-50 text-amber-700 px-3 py-1.5 rounded-full border border-amber-200">
+                    class="hidden items-center gap-2 bg-amber-50 text-amber-700 px-2 sm:px-3 py-1.5 rounded-full border border-amber-200">
 
                     <span class="material-icons text-[16px]">sync_problem</span>
 
-                    <span data-role="pending-sync-label" class="text-xs font-bold uppercase tracking-wide">0 cambios sin sincronizar</span>
+                    <span data-role="pending-sync-label" class="hidden sm:inline text-xs font-bold uppercase tracking-wide">0 cambios sin sincronizar</span>
 
                 </div>
 
                 <div id="server-status-indicator"
-                    class="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full border border-green-200">
+                    class="flex items-center gap-2 bg-green-50 text-green-700 px-2 sm:px-3 py-1.5 rounded-full border border-green-200">
 
                     <div data-role="status-dot" class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
 
-                    <span data-role="status-label" class="text-xs font-bold uppercase tracking-wide">Servidor Conectado</span>
+                    <span data-role="status-label" class="hidden sm:inline text-xs font-bold uppercase tracking-wide">Servidor Conectado</span>
 
                 </div>
 
@@ -1503,14 +1511,14 @@
 
             <!-- VIEW 1: PESAJE -->
 
-            <main id="view-pesaje" class="absolute inset-0 p-6 overflow-hidden">
+            <main id="view-pesaje" class="absolute inset-0 p-4 xl:p-6 overflow-y-auto xl:overflow-hidden">
 
-                <div class="h-full w-full flex gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
+                <div class="w-full xl:h-full flex flex-col xl:flex-row gap-4 xl:gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
 
-                <div class="w-1/2 flex flex-col gap-6 h-full">
+                <div class="w-full xl:w-1/2 flex flex-col gap-4 xl:gap-6 xl:h-full">
 
                     <div
-                        class="bg-gray-900 rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center relative border-4 border-gray-800 shrink-0 h-72">
+                        class="bg-gray-900 rounded-2xl shadow-xl p-5 xl:p-8 flex flex-col items-center justify-center relative border-4 border-gray-800 shrink-0 h-56 xl:h-72">
 
                         <div class="absolute top-4 left-4 flex items-center gap-2 text-gray-400">
 
@@ -1526,9 +1534,9 @@
 
                         <div class="mt-2 flex items-baseline gap-2 text-green-500 digital-glow font-mono">
 
-                            <span id="live-weight" class="text-8xl font-bold tracking-tighter">00000</span>
+                            <span id="live-weight" class="text-6xl xl:text-8xl font-bold tracking-tighter">00000</span>
 
-                            <span class="text-3xl font-bold">LBS</span>
+                            <span class="text-2xl xl:text-3xl font-bold">LBS</span>
 
                         </div>
 
@@ -1569,9 +1577,9 @@
                                 class="bg-brand-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">0</span>
                         </div>
 
-                        <div class="flex-1 overflow-y-auto">
+                        <div class="flex-1 overflow-auto">
 
-                            <table class="w-full text-left text-sm">
+                            <table class="w-full text-left text-sm responsive-table">
 
                                 <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm z-10">
                                     <tr class="text-gray-500 text-xs uppercase tracking-wider">
@@ -1604,7 +1612,7 @@
 
 
 
-                <div class="w-1/2 flex flex-col gap-6 h-full overflow-y-auto pr-2 pb-2">
+                <div class="w-full xl:w-1/2 flex flex-col gap-4 xl:gap-6 xl:h-full xl:overflow-y-auto xl:pr-2 pb-2">
 
                     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col gap-4 shrink-0">
 
@@ -1821,7 +1829,7 @@
 
 
                         <button id="btn-guardar" onclick="guardarTransaccion()" disabled
-                            class="w-full bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 text-lg mt-4">
+                            class="w-full bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-3 xl:py-4 rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 text-lg mt-4">
 
                             <span class="material-icons">cloud_upload</span> FINALIZAR Y GUARDAR
 
@@ -1848,7 +1856,7 @@
 
             <!-- VIEW 3: CLIENTES -->
 
-            <main id="view-clientes" class="absolute inset-0 p-8 hidden overflow-hidden">
+            <main id="view-clientes" class="absolute inset-0 p-4 lg:p-6 xl:p-8 hidden overflow-hidden">
 
                 <div class="h-full w-full flex flex-col 2xl:max-w-[1600px] 2xl:mx-auto">
 
@@ -1908,21 +1916,21 @@
                         <button onclick="abrirAjusteGlobal()"
                             class="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white font-bold rounded-lg shadow hover:bg-slate-700 transition-colors text-sm">
                             <span class="material-icons text-[18px]">price_change</span> <span
-                                class="hidden sm:inline">Ajuste Global</span>
+                                class="hidden lg:inline">Ajuste Global</span>
                         </button>
                         <button onclick="abrirModalCliente()"
                             class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm">
                             <span class="material-icons text-[18px]">person_add</span> <span
-                                class="hidden sm:inline">Nuevo Cliente</span>
+                                class="hidden lg:inline">Nuevo Cliente</span>
                         </button>
                     </div>
                 </div>
 
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
 
-                    <div class="overflow-y-auto flex-1 p-0">
+                    <div class="overflow-auto flex-1 p-0">
 
-                        <table class="w-full text-left">
+                        <table class="w-full text-left responsive-table">
 
                             <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm z-10">
                                 <tr class="text-gray-500 text-xs uppercase tracking-wider text-left">
@@ -1956,49 +1964,54 @@
 
             <!-- VIEW 3: REPORTES -->
 
-            <main id="view-reportes" class="absolute inset-0 p-8 hidden overflow-hidden">
+            <main id="view-reportes" class="absolute inset-0 p-4 lg:p-6 xl:p-8 hidden overflow-hidden">
 
-                <div class="h-full w-full flex flex-col gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
+                <div class="h-full w-full flex flex-col gap-3 lg:gap-4 xl:gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
 
-                <div class="flex justify-between items-center shrink-0">
+                <div class="flex flex-col gap-3 shrink-0">
 
-                    <div>
+                    <div class="flex justify-between items-center gap-3">
 
                         <h2 class="text-2xl font-bold text-gray-800">Reportes de Transacciones</h2>
 
+                        <button id="btn-imprimir-listado" onclick="imprimirListadoReportes()" disabled
+                            class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0">
+                            <span class="material-icons text-[18px]">print</span>
+                            <span>Imprimir Listado</span>
+                        </button>
 
                     </div>
 
                     <!-- DATE RANGE FILTER -->
 
-                    <div
-                        class="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-2 shadow-sm flex-wrap justify-end">
+                    <div class="flex flex-col gap-2">
 
-                        <div class="relative">
+                        <div class="relative w-full max-w-sm">
                             <span
                                 class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">search</span>
                             <input type="search" id="filter-client" oninput="updateReportesTab()"
                                 placeholder="Buscar cliente..."
-                                class="w-56 pl-8 pr-3 py-1.5 border border-gray-200 rounded font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500">
+                                class="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 shadow-sm">
                         </div>
 
-                        <span class="text-xs font-bold text-gray-500 uppercase ml-2">Desde:</span>
+                        <div
+                            class="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-2 shadow-sm self-start">
 
-                        <input type="date" id="filter-start" onchange="updateReportesTab()"
-                            class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+                            <span class="material-icons text-gray-400 text-[18px]">date_range</span>
 
-                        <span class="text-xs font-bold text-gray-500 uppercase ml-2">Hasta:</span>
+                            <span class="text-xs font-bold text-gray-500 uppercase">Desde:</span>
 
-                        <input type="date" id="filter-end" onchange="updateReportesTab()"
-                            class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+                            <input type="date" id="filter-start" onchange="updateReportesTab()"
+                                class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+
+                            <span class="text-xs font-bold text-gray-500 uppercase ml-1">Hasta:</span>
+
+                            <input type="date" id="filter-end" onchange="updateReportesTab()"
+                                class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+
+                        </div>
 
                     </div>
-
-                    <button id="btn-imprimir-listado" onclick="imprimirListadoReportes()" disabled
-                        class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 ml-2">
-                        <span class="material-icons text-[18px]">print</span>
-                        <span class="hidden sm:inline">Imprimir Listado</span>
-                    </button>
 
                 </div>
 
@@ -2072,9 +2085,9 @@
 
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
 
-                    <div class="overflow-y-auto flex-1 p-0">
+                    <div class="overflow-auto flex-1 p-0">
 
-                        <table class="w-full text-left text-sm">
+                        <table class="w-full text-left text-sm responsive-table">
 
                             <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm">
 
@@ -2120,67 +2133,69 @@
 
             <!-- VIEW 4: CORAPSA (RECIBOS EXTERNOS) -->
 
-            <main id="view-corapsa" class="absolute inset-0 p-8 hidden overflow-hidden bg-blue-50">
+            <main id="view-corapsa" class="absolute inset-0 p-4 lg:p-6 xl:p-8 hidden overflow-hidden bg-blue-50">
 
-                <div class="h-full w-full flex flex-col gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
+                <div class="h-full w-full flex flex-col gap-3 lg:gap-4 xl:gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
 
-                <div class="flex flex-wrap justify-between items-center shrink-0 gap-4">
+                <div class="flex flex-col gap-3 shrink-0">
 
-                    <div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
 
-                        <h2 class="text-2xl font-bold text-blue-900">Recibos Externos (Corapsa)</h2>
+                        <h2 class="text-2xl font-bold text-blue-900">Recibos Externos</h2>
 
-                        <div
-                            class="flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm mt-2">
+                        <div class="flex flex-wrap items-center gap-2">
 
-                            <div class="relative">
-                                <span
-                                    class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-blue-300 text-[18px]">search</span>
-                                <input type="search" id="corapsa-filter-client" oninput="renderCorapsaTab()"
-                                    placeholder="Buscar cliente, recibo # o teléfono..."
-                                    class="w-64 pl-8 pr-3 py-1.5 border border-blue-100 rounded font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500">
-                            </div>
+                            <button onclick="abrirGestionEmpresasModal()"
+                                class="flex items-center justify-center gap-2 w-11 h-11 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors text-sm shrink-0"
+                                title="Gestionar Empresas" aria-label="Gestionar Empresas">
+                                <span class="material-icons text-[20px]">business</span>
+                            </button>
 
-                            <span class="text-xs font-bold text-blue-500 uppercase ml-2">Desde:</span>
+                            <button id="btn-imprimir-listado-corapsa" onclick="imprimirListadoCorapsa()" disabled
+                                class="flex items-center justify-center w-11 h-11 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0"
+                                title="Imprimir Listado" aria-label="Imprimir Listado">
+                                <span class="material-icons text-[20px]">print</span>
+                            </button>
 
-                            <input type="date" id="corapsa-filter-start" onchange="renderCorapsaTab()"
-                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-100">
-
-                            <span class="text-xs font-bold text-blue-500 uppercase">Hasta:</span>
-
-                            <input type="date" id="corapsa-filter-end" onchange="renderCorapsaTab()"
-                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-100">
-
-                            <select id="corapsa-filter-destino" onchange="renderCorapsaTab()"
-                                class="text-sm border border-blue-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-700 ml-2">
-                                <option value="">Todos los destinos</option>
-                            </select>
+                            <button onclick="abrirCorapsaModal()"
+                                class="flex items-center justify-center w-11 h-11 bg-blue-600 hover:bg-blue-800 text-white rounded-lg shadow-md shrink-0"
+                                title="Registrar Recibo" aria-label="Registrar Recibo">
+                                <span class="material-icons text-[20px]">add_box</span>
+                            </button>
 
                         </div>
 
                     </div>
 
-                    <div class="flex flex-wrap items-center gap-2">
+                    <div
+                        class="flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm">
 
-                        <button onclick="abrirGestionEmpresasModal()"
-                            class="flex items-center gap-2 px-4 py-3 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors text-sm shrink-0 whitespace-nowrap">
-                            <span class="material-icons text-[18px]">business</span>
-                            <span class="hidden lg:inline">Gestionar Empresas</span>
-                        </button>
+                        <div class="relative flex-1 min-w-[220px] max-w-sm">
+                            <span
+                                class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-blue-300 text-[18px]">search</span>
+                            <input type="search" id="corapsa-filter-client" oninput="renderCorapsaTab()"
+                                placeholder="Buscar cliente, recibo # o teléfono..."
+                                class="w-full pl-8 pr-3 py-1.5 border border-blue-100 rounded font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
 
-                        <button id="btn-imprimir-listado-corapsa" onclick="imprimirListadoCorapsa()" disabled
-                            class="flex items-center gap-2 px-4 py-3 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0 whitespace-nowrap">
-                            <span class="material-icons text-[18px]">print</span>
-                            <span class="hidden lg:inline">Imprimir Listado</span>
-                        </button>
+                        <div class="flex items-center gap-2">
 
-                        <button onclick="abrirCorapsaModal()"
-                            class="bg-blue-600 hover:bg-blue-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 shrink-0 whitespace-nowrap">
+                            <span class="text-xs font-bold text-blue-500 uppercase">Desde:</span>
 
-                            <span class="material-icons">add_box</span>
-                            <span class="hidden lg:inline">Registrar Recibo</span>
+                            <input type="date" id="corapsa-filter-start" onchange="renderCorapsaTab()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-100">
 
-                        </button>
+                            <span class="text-xs font-bold text-blue-500 uppercase ml-1">Hasta:</span>
+
+                            <input type="date" id="corapsa-filter-end" onchange="renderCorapsaTab()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 rounded p-1 border border-blue-100">
+
+                        </div>
+
+                        <select id="corapsa-filter-destino" onchange="renderCorapsaTab()"
+                            class="text-sm border border-blue-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-700">
+                            <option value="">Todos los destinos</option>
+                        </select>
 
                     </div>
 
@@ -2190,9 +2205,9 @@
 
                 <div class="bg-white rounded-2xl shadow-sm border border-blue-200 flex-1 overflow-hidden flex flex-col">
 
-                    <div class="overflow-y-auto flex-1 p-0">
+                    <div class="overflow-auto flex-1 p-0">
 
-                        <table class="w-full text-left text-sm">
+                        <table class="w-full text-left text-sm responsive-table">
 
                             <thead class="bg-blue-100 sticky top-0 shadow-sm z-10">
 
@@ -2240,14 +2255,14 @@
 
                                 <tr>
 
-                                    <td colspan="6" class="p-4 font-bold text-right text-blue-900 uppercase">TOTALES:
+                                    <td colspan="7" class="p-4 font-bold text-right text-blue-900 uppercase">TOTALES:
 
                                     </td>
 
-                                    <td class="p-4 font-black text-right text-blue-800 font-mono text-lg"
+                                    <td class="p-4 font-black text-right text-blue-800 font-mono text-lg whitespace-nowrap"
                                         id="corapsa-total-toneladas">0.00</td>
 
-                                    <td class="p-4 font-black text-right text-green-700 font-mono text-lg">L <span
+                                    <td class="p-4 font-black text-right text-green-700 font-mono text-lg whitespace-nowrap">L <span
                                             id="corapsa-total-dinero">0.00</span></td>
 
                                     <td colspan="3"></td>
@@ -2270,9 +2285,9 @@
 
             <!-- VIEW 5: GASTOS -->
 
-            <main id="view-gastos" class="absolute inset-0 p-8 hidden overflow-hidden bg-red-50">
+            <main id="view-gastos" class="absolute inset-0 p-4 lg:p-6 xl:p-8 hidden overflow-hidden bg-red-50">
 
-                <div class="h-full w-full flex flex-col gap-5 2xl:max-w-[1600px] 2xl:mx-auto">
+                <div class="h-full w-full flex flex-col gap-3 lg:gap-4 xl:gap-5 2xl:max-w-[1600px] 2xl:mx-auto">
 
                 <div class="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-4 shrink-0">
 
@@ -2332,13 +2347,13 @@
                             class="h-[38px] px-3 rounded-lg border border-red-200 bg-white text-red-700 font-bold hover:bg-red-100 transition-colors flex items-center gap-1"
                             title="Mostrar todos los gastos">
                             <span class="material-icons text-[18px]">filter_alt_off</span>
-                            Limpiar
+                            <span class="hidden lg:inline">Limpiar</span>
                         </button>
 
                         <button type="button" onclick="abrirGastosModal()"
                             class="h-[38px] bg-red-600 hover:bg-red-800 text-white px-5 rounded-lg font-bold shadow-md flex items-center gap-2">
 
-                            <span class="material-icons">add_shopping_cart</span> Nuevo Gasto
+                            <span class="material-icons">add_shopping_cart</span> <span class="hidden lg:inline">Nuevo Gasto</span>
 
                         </button>
 
@@ -2350,7 +2365,7 @@
 
                     <div class="overflow-auto flex-1 p-0">
 
-                        <table class="w-full table-fixed text-left text-sm">
+                        <table class="w-full table-fixed text-left text-sm responsive-table">
 
                             <thead class="bg-red-100 sticky top-0 shadow-sm z-10">
 
@@ -2381,7 +2396,7 @@
                                     <td colspan="2" class="p-4 font-bold text-right text-red-900 uppercase">
                                         Totales filtrados: <span id="gastos-total-registros">0</span> gasto(s)
                                     </td>
-                                    <td class="p-4 text-right font-mono font-black text-red-700 text-lg">
+                                    <td class="p-4 text-right font-mono font-black text-red-700 text-lg whitespace-nowrap">
                                         L <span id="gastos-total-monto">0.00</span>
                                     </td>
                                     <td colspan="3" class="p-4 text-xs text-gray-500">
@@ -2405,61 +2420,64 @@
 
             <!-- VIEW 6: PLANILLA -->
 
-            <main id="view-planilla" class="absolute inset-0 p-6 hidden overflow-hidden bg-orange-50">
-                <div class="h-full w-full flex flex-col gap-4 2xl:max-w-[1600px] 2xl:mx-auto">
-                <div class="flex justify-between items-center shrink-0 gap-4">
+            <main id="view-planilla" class="absolute inset-0 p-4 xl:p-6 hidden overflow-hidden bg-orange-50">
+                <div class="h-full w-full flex flex-col gap-3 xl:gap-4 2xl:max-w-[1600px] 2xl:mx-auto">
+                <div class="flex flex-col md:flex-row md:justify-between md:items-center shrink-0 gap-3">
                     <div>
                         <h2 class="text-2xl font-bold text-orange-900">Planilla de Trabajadores</h2>
                         <p class="text-orange-700">Registre jornadas por fecha y calcule la nómina del período
                             seleccionado.</p>
                     </div>
                     <button type="button" onclick="abrirPlanillaModal()"
-                        class="bg-orange-600 hover:bg-orange-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 whitespace-nowrap">
-                        <span class="material-icons">person_add</span> Agregar Trabajador
+                        class="bg-orange-600 hover:bg-orange-800 text-white px-5 py-3 rounded-lg font-bold shadow-md flex items-center gap-2 whitespace-nowrap shrink-0 self-start md:self-auto">
+                        <span class="material-icons">person_add</span> <span>Agregar Trabajador</span>
                     </button>
                 </div>
 
-                <div
-                    class="bg-white rounded-2xl shadow-sm border border-orange-200 p-4 shrink-0 flex flex-wrap items-end gap-3">
-                    <button type="button" onclick="moverRangoPlanilla(-7)"
-                        class="h-10 w-10 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50"
-                        title="Período anterior">
-                        <span class="material-icons text-[20px]">chevron_left</span>
-                    </button>
-                    <div>
-                        <label class="block text-[10px] font-bold uppercase text-gray-500 mb-1">Desde</label>
-                        <input type="date" id="planilla-filter-start" onchange="actualizarRangoPlanilla()"
-                            class="border rounded-lg px-3 py-2 font-bold text-gray-700 focus:ring-2 focus:ring-orange-400 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-bold uppercase text-gray-500 mb-1">Hasta</label>
-                        <input type="date" id="planilla-filter-end" onchange="actualizarRangoPlanilla()"
-                            class="border rounded-lg px-3 py-2 font-bold text-gray-700 focus:ring-2 focus:ring-orange-400 outline-none">
-                    </div>
-                    <button type="button" onclick="moverRangoPlanilla(7)"
-                        class="h-10 w-10 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50"
-                        title="Período siguiente">
-                        <span class="material-icons text-[20px]">chevron_right</span>
-                    </button>
-                    <button type="button" onclick="irSemanaActualPlanilla()"
-                        class="h-10 px-4 rounded-lg bg-orange-100 text-orange-800 font-bold hover:bg-orange-200">Semana
-                        actual</button>
+                <div class="bg-white rounded-2xl shadow-sm border border-orange-200 p-4 shrink-0 flex flex-col gap-3">
 
-                    <div class="ml-auto flex flex-wrap gap-3">
-                        <div class="rounded-xl bg-gray-50 border px-4 py-2 min-w-[105px]">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <button type="button" onclick="moverRangoPlanilla(-7)"
+                            class="h-10 w-10 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 shrink-0"
+                            title="Período anterior">
+                            <span class="material-icons text-[20px]">chevron_left</span>
+                        </button>
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase text-gray-500 mb-1">Desde</label>
+                            <input type="date" id="planilla-filter-start" onchange="actualizarRangoPlanilla()"
+                                class="border rounded-lg px-3 py-2 font-bold text-gray-700 focus:ring-2 focus:ring-orange-400 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase text-gray-500 mb-1">Hasta</label>
+                            <input type="date" id="planilla-filter-end" onchange="actualizarRangoPlanilla()"
+                                class="border rounded-lg px-3 py-2 font-bold text-gray-700 focus:ring-2 focus:ring-orange-400 outline-none">
+                        </div>
+                        <button type="button" onclick="moverRangoPlanilla(7)"
+                            class="h-10 w-10 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 shrink-0"
+                            title="Período siguiente">
+                            <span class="material-icons text-[20px]">chevron_right</span>
+                        </button>
+                        <button type="button" onclick="irSemanaActualPlanilla()"
+                            class="h-10 px-4 rounded-lg bg-orange-100 text-orange-800 font-bold hover:bg-orange-200 shrink-0">Semana
+                            actual</button>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="rounded-xl bg-gray-50 border px-4 py-2">
                             <p class="text-[10px] uppercase font-bold text-gray-500">Trabajadores</p>
                             <p id="planilla-total-trabajadores" class="font-mono font-black text-gray-800 text-lg">0</p>
                         </div>
-                        <div class="rounded-xl bg-orange-50 border border-orange-200 px-4 py-2 min-w-[105px]">
+                        <div class="rounded-xl bg-orange-50 border border-orange-200 px-4 py-2">
                             <p class="text-[10px] uppercase font-bold text-orange-600">Días pagados</p>
                             <p id="planilla-total-dias" class="font-mono font-black text-orange-800 text-lg">0</p>
                         </div>
-                        <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-2 min-w-[175px]">
+                        <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-2">
                             <p class="text-[10px] uppercase font-bold text-emerald-700">Total del período</p>
                             <p id="planilla-total-pagar"
                                 class="font-mono font-black text-emerald-800 text-lg whitespace-nowrap">L 0.00</p>
                         </div>
                     </div>
+
                 </div>
 
                 <div
@@ -2474,7 +2492,7 @@
                         <table class="w-full table-fixed text-left text-sm">
                             <thead class="bg-orange-100 sticky top-0 shadow-sm z-10">
                                 <tr class="text-orange-900 text-[11px] uppercase tracking-wider">
-                                    <th class="p-3 font-semibold w-36">Trabajador</th>
+                                    <th class="p-3 font-semibold w-36 sticky left-0 z-20 bg-orange-100">Trabajador</th>
                                     <th class="p-3 font-semibold text-right w-28">Base semanal</th>
                                     <th class="p-3 font-semibold">Asistencia por día</th>
                                     <th class="p-3 font-semibold text-center w-20">Días</th>

@@ -344,8 +344,8 @@ function renderPlanilla() {
         const attendanceButtons = dates.map(fecha => renderAttendanceButton(trabajador, fecha)).join('');
 
         return `
-            <tr class="hover:bg-orange-50/60 border-b border-gray-100 align-middle">
-                <td class="p-3">
+            <tr class="group hover:bg-orange-50/60 border-b border-gray-100 align-middle">
+                <td class="p-3 sticky left-0 z-[5] bg-white group-hover:bg-orange-50/60">
                     <div class="font-bold text-gray-800 truncate" title="${escapeHtml(`${trabajador.nombre} ${trabajador.apellido}`)}">${escapeHtml(`${trabajador.nombre} ${trabajador.apellido}`)}</div>
                     <div class="text-xs text-gray-500 truncate">${escapeHtml(trabajador.telefono || 'Sin teléfono')}</div>
                 </td>

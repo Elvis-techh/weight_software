@@ -1,7 +1,7 @@
 const { dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const scaleSettings = require('./scaleSettings');
@@ -98,11 +98,16 @@ function applyScaleSettings(settings) {
 }
 
 function createWindow() {
+    // Never ask for more room than the monitor actually has — on a display
+    // smaller than the usual 1000x700 floor, Electron would otherwise still
+    // enforce that minimum and the window wouldn't fit the screen at all.
+    const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
-        minWidth: 1000,
-        minHeight: 700,
+        width: Math.min(1200, screenWidth),
+        height: Math.min(800, screenHeight),
+        minWidth: Math.min(1000, screenWidth),
+        minHeight: Math.min(700, screenHeight),
         show: false,
         backgroundColor: '#f3f4f6',
         title: 'Báscula Central - Terminal de Pesaje',

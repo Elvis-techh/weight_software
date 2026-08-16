@@ -87,13 +87,13 @@ function renderClientCategoriaBadge(categoria) {
     return `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${styles[key]}">${labels[key]}</span>`;
 }
 
-function renderClientPrice(price, tonPrice, unit, textClass) {
+function renderClientPrice(price, tonPrice, unit, textClass, label) {
     const baseTon = unit === 'quintal'
         ? `<div class="mt-1 text-[10px] font-sans font-semibold text-gray-400">Base Ton: L ${formatMoney(tonPrice)}</div>`
         : '';
 
     return `
-        <td class="p-3 text-sm font-mono font-bold ${textClass}">
+        <td class="p-3 text-sm font-mono font-bold ${textClass}" data-label="${escapeHtml(label)}">
             L ${formatClientUnitPrice(price, unit)}
             ${baseTon}
         </td>
@@ -146,15 +146,15 @@ function renderClientesTab() {
 
     tbody.innerHTML = clientesFiltrados.map(cliente => `
         <tr class="hover:bg-blue-50 border-b border-gray-100 last:border-0 transition-colors">
-            <td class="p-3 text-sm text-gray-500 font-mono">#${escapeHtml(cliente.id)}</td>
-            <td class="p-3 text-sm font-bold text-gray-800">${escapeHtml(`${cliente.nombre} ${cliente.apellido}`.trim())}</td>
-            <td class="p-3 text-sm text-gray-600">${escapeHtml(cliente.telefono || '-')}</td>
-            <td class="p-3 text-sm text-gray-600">${escapeHtml(cliente.ubicacion || '-')}</td>
-            <td class="p-3 text-center">${renderClientCategoriaBadge(cliente.categoria)}</td>
-            ${renderClientPrice(cliente.precioFletePropio, cliente.precioToneladaPropio, cliente.unidad, 'text-blue-700')}
-            ${renderClientPrice(cliente.precioFleteCliente, cliente.precioToneladaCliente, cliente.unidad, 'text-teal-700')}
-            <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase">${cliente.unidad === 'quintal' ? 'QQ' : 'TON'}</td>
-            <td class="p-3 text-center">
+            <td class="p-3 text-sm text-gray-500 font-mono" data-label="ID">#${escapeHtml(cliente.id)}</td>
+            <td class="p-3 text-sm font-bold text-gray-800" data-label="Nombre del Cliente">${escapeHtml(`${cliente.nombre} ${cliente.apellido}`.trim())}</td>
+            <td class="p-3 text-sm text-gray-600" data-label="Teléfono">${escapeHtml(cliente.telefono || '-')}</td>
+            <td class="p-3 text-sm text-gray-600" data-label="Ubicación">${escapeHtml(cliente.ubicacion || '-')}</td>
+            <td class="p-3 text-center" data-label="Categoría">${renderClientCategoriaBadge(cliente.categoria)}</td>
+            ${renderClientPrice(cliente.precioFletePropio, cliente.precioToneladaPropio, cliente.unidad, 'text-blue-700', 'Flete Propio (L)')}
+            ${renderClientPrice(cliente.precioFleteCliente, cliente.precioToneladaCliente, cliente.unidad, 'text-teal-700', 'Flete Cliente (L)')}
+            <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase" data-label="Unidad">${cliente.unidad === 'quintal' ? 'QQ' : 'TON'}</td>
+            <td class="p-3 text-center" data-label="Acciones">
                 <div class="flex justify-center gap-2">
                     <button type="button" onclick="abrirModalCliente('${escapeHtml(cliente.id)}')" class="text-blue-500 hover:text-blue-700 transition-colors" aria-label="Editar cliente">
                         <span class="material-icons text-[18px]">edit</span>

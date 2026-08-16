@@ -545,11 +545,11 @@ function renderQueue() {
 
         return `
             <tr class="hover:bg-blue-50 ${hasValidId ? 'cursor-pointer' : 'cursor-not-allowed'} group" ${rowAction}>
-                <td class="p-3 font-bold text-gray-800">${escapeHtml(truck.placa === 'S/P' ? '-' : truck.placa)}</td>
-                <td class="p-3 font-bold text-gray-800">${escapeHtml(truck.conductor === 'Desconocido' ? '-' : truck.conductor)}</td>
-                <td class="p-3 text-sm text-gray-600">${escapeHtml(nombreCliente)}${invalidIdLabel}${pendingSyncLabel}</td>
-                <td class="p-3 text-right font-mono font-bold text-gray-500">${escapeHtml(getQueueWeightLabel(truck))}</td>
-                <td class="p-3 text-center">
+                <td class="p-3 font-bold text-gray-800" data-label="Placa">${escapeHtml(truck.placa === 'S/P' ? '-' : truck.placa)}</td>
+                <td class="p-3 font-bold text-gray-800" data-label="Conductor">${escapeHtml(truck.conductor === 'Desconocido' ? '-' : truck.conductor)}</td>
+                <td class="p-3 text-sm text-gray-600" data-label="Cliente">${escapeHtml(nombreCliente)}${invalidIdLabel}${pendingSyncLabel}</td>
+                <td class="p-3 text-right font-mono font-bold text-gray-500" data-label="Peso Inicial">${escapeHtml(getQueueWeightLabel(truck))}</td>
+                <td class="p-3 text-center" data-label="Acción">
                     <div class="flex justify-center gap-1">
                         <button type="button" ${hasValidId ? '' : 'disabled'} class="${hasValidId ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'} px-3 py-1 rounded text-xs font-bold">ABRIR</button>
                         ${deleteButton}

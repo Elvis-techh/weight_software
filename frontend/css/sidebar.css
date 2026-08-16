@@ -258,3 +258,73 @@
   font-size: 10.5px;
   color: var(--sb-icon-muted);
 }
+
+/* ---- Mobile off-canvas mode ----
+   Below md (768px) the fixed 250px rail would eat too much of the viewport
+   permanently, so it becomes a hidden overlay drawer instead: fixed position,
+   slid off-screen, opened via the header hamburger + closed via backdrop tap
+   or picking a tab. See sidebar.js for the open/close wiring. */
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    width: min(var(--sb-width), 82vw);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+  }
+
+  /* The icon-only rail is pointless once the sidebar overlays content instead
+     of sharing the row with it — always show full labels when opened here,
+     regardless of the desktop collapse preference stored in localStorage. */
+  .sidebar.is-collapsed {
+    width: min(var(--sb-width), 82vw);
+  }
+
+  .sidebar.is-collapsed .nav-label,
+  .sidebar.is-collapsed .sidebar__brand-text,
+  .sidebar.is-collapsed .sidebar__label,
+  .sidebar.is-collapsed .chev,
+  .sidebar.is-collapsed .sub-wrap,
+  .sidebar.is-collapsed .sidebar__footer-text {
+    display: revert;
+  }
+
+  .sidebar.is-collapsed .sidebar__brand,
+  .sidebar.is-collapsed .nav-row,
+  .sidebar.is-collapsed .sidebar__footer {
+    justify-content: flex-start;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .sidebar.is-mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Collapsing to an icon rail has no meaning in overlay mode. */
+  .sidebar__collapse-btn {
+    display: none;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+  }
+
+  .sidebar-backdrop.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

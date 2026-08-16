@@ -27,3 +27,60 @@ button[data-busy="true"] {
     opacity: 0.65;
     cursor: wait;
 }
+
+/* ==========================================================================
+   Responsive data tables — table → stacked cards below md (768px)
+   Add class="responsive-table" to the <table>; each <td> that should show a
+   caption needs data-label="..." (added in the JS that renders the rows).
+   A <td colspan> (empty/error states, footers) is left centered with no
+   caption. This is additive only — desktop layout above 768px is untouched.
+   ========================================================================== */
+@media (max-width: 767px) {
+    .responsive-table,
+    .responsive-table tbody,
+    .responsive-table tfoot,
+    .responsive-table tr,
+    .responsive-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .responsive-table thead {
+        display: none;
+    }
+
+    .responsive-table tr {
+        border: 1px solid #e5e7eb;
+        border-top-width: 0 !important; /* overrides tbody's divide-y utility */
+        border-radius: 0.75rem;
+        padding: 0.75rem 0.875rem;
+        margin: 0.625rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+
+    .responsive-table tr + tr {
+        border-top-width: 1px !important;
+    }
+
+    .responsive-table td {
+        text-align: left;
+        padding: 0.3rem 0;
+        border: none !important;
+    }
+
+    .responsive-table td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #9ca3af;
+        margin-bottom: 0.15rem;
+    }
+
+    .responsive-table td[colspan] {
+        text-align: center;
+        padding: 0.5rem 0;
+    }
+}

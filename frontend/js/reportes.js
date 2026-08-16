@@ -98,15 +98,15 @@ function updateReportesTab() {
 
         return `
             <tr class="hover:bg-gray-50 border-b border-gray-100">
-                <td class="p-4 font-mono text-gray-500 text-xs">${escapeHtml(fila.fechaDisplay)}<br>${escapeHtml(transaction.hora)}</td>
-                <td class="p-4 font-bold text-gray-800 uppercase">${escapeHtml(fila.identification)}</td>
-                <td class="p-4 text-gray-600 text-sm">${escapeHtml(conductorLabel)}</td>
-                <td class="p-4 text-gray-600 text-sm">${escapeHtml(transaction.clienteNombre)}</td>
-                <td class="p-4 text-right font-mono font-bold text-gray-800">${escapeHtml(fila.netoLabel)}</td>
-                <td class="p-4 text-right font-mono font-bold text-brand-700">${escapeHtml(fila.toneladasLabel)}</td>
-                <td class="p-4 text-right font-mono text-gray-500 text-xs">${escapeHtml(fila.precioLabel)}</td>
-                <td class="p-4 text-right font-mono font-bold text-green-700">${escapeHtml(fila.totalLabel)}</td>
-                <td class="p-4 flex justify-center gap-2">
+                <td class="p-4 font-mono text-gray-500 text-xs" data-label="Fecha">${escapeHtml(fila.fechaDisplay)}<br>${escapeHtml(transaction.hora)}</td>
+                <td class="p-4 font-bold text-gray-800 uppercase" data-label="Placa">${escapeHtml(fila.identification)}</td>
+                <td class="p-4 text-gray-600 text-sm" data-label="Conductor">${escapeHtml(conductorLabel)}</td>
+                <td class="p-4 text-gray-600 text-sm" data-label="Cliente">${escapeHtml(transaction.clienteNombre)}</td>
+                <td class="p-4 text-right font-mono font-bold text-gray-800" data-label="Neto (LBS)">${escapeHtml(fila.netoLabel)}</td>
+                <td class="p-4 text-right font-mono font-bold text-brand-700" data-label="Tons">${escapeHtml(fila.toneladasLabel)}</td>
+                <td class="p-4 text-right font-mono text-gray-500 text-xs" data-label="Precio/Unidad">${escapeHtml(fila.precioLabel)}</td>
+                <td class="p-4 text-right font-mono font-bold text-green-700" data-label="Total Pago (L)">${escapeHtml(fila.totalLabel)}</td>
+                <td class="p-4 flex justify-center gap-2" data-label="Acciones">
                     <button type="button" onclick="imprimirRecibo('${escapeHtml(transaction.id)}')" class="text-gray-500 hover:text-gray-900 transition-colors" aria-label="Imprimir recibo"><span class="material-icons">print</span></button>
                     <button type="button" onclick="abrirReporteModal('${escapeHtml(transaction.id)}')" class="text-blue-500 hover:text-blue-800 transition-colors" aria-label="Editar reporte"><span class="material-icons">edit</span></button>
                     <button type="button" onclick="eliminarTransaccion('${escapeHtml(transaction.id)}')" class="text-red-400 hover:text-red-700 transition-colors" aria-label="Eliminar reporte"><span class="material-icons">delete</span></button>
