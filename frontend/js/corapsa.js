@@ -108,9 +108,14 @@ function cerrarCorapsaModal() {
 // Mirrors gastos.js's gastos-file-preview-* handling, but keyed by
 // 'cliente'/'nuestro' since Corapsa has two independent attachment slots.
 let corapsaFilePreviewUrls = { cliente: null, nuestro: null };
+// Bumped per-slot on every clear/re-selection — same stale-PDF-render guard
+// as gastos.js's gastosPreviewToken, kept independent per slot since cliente
+// and nuestro can each be replaced without touching the other.
+let corapsaPreviewTokens = { cliente: 0, nuestro: 0 };
 
 function limpiarCorapsaArchivoPreview(type) {
     const key = type === 'nuestro' ? 'nuestro' : 'cliente';
+    corapsaPreviewTokens[key] += 1;
     if (corapsaFilePreviewUrls[key]) {
         URL.revokeObjectURL(corapsaFilePreviewUrls[key]);
         corapsaFilePreviewUrls[key] = null;
@@ -119,7 +124,10 @@ function limpiarCorapsaArchivoPreview(type) {
     document.getElementById(`corapsa-file-preview-pdf-${key}`)?.classList.add('hidden');
 }
 
-function actualizarCorapsaArchivoPreview(type) {
+// PDFs are rasterized client-side (renderPdfPageAsImageBlobUrl in globals.js)
+// into the same <img> a real photo would use; the picture_as_pdf icon is
+// only a fallback if that rendering fails.
+async function actualizarCorapsaArchivoPreview(type) {
     const key = type === 'nuestro' ? 'nuestro' : 'cliente';
     limpiarCorapsaArchivoPreview(key);
 
@@ -127,16 +135,26 @@ function actualizarCorapsaArchivoPreview(type) {
     const file = input?.files[0] || null;
     if (!file) return;
 
-    if (file.type.startsWith('image/')) {
-        const objectUrl = URL.createObjectURL(file);
-        corapsaFilePreviewUrls[key] = objectUrl;
+    const token = corapsaPreviewTokens[key];
+    const showImage = url => {
+        if (token !== corapsaPreviewTokens[key]) { URL.revokeObjectURL(url); return; }
+        corapsaFilePreviewUrls[key] = url;
         const img = document.getElementById(`corapsa-file-preview-img-${key}`);
         if (img) {
-            img.src = objectUrl;
+            img.src = url;
             img.classList.remove('hidden');
         }
+    };
+
+    if (file.type.startsWith('image/')) {
+        showImage(URL.createObjectURL(file));
     } else if (file.type === 'application/pdf') {
-        document.getElementById(`corapsa-file-preview-pdf-${key}`)?.classList.remove('hidden');
+        try {
+            showImage(await renderPdfPageAsImageBlobUrl(file));
+        } catch (error) {
+            console.error('No se pudo generar la vista previa del PDF:', error);
+            if (token === corapsaPreviewTokens[key]) document.getElementById(`corapsa-file-preview-pdf-${key}`)?.classList.remove('hidden');
+        }
     }
 }
 
@@ -578,22 +596,15 @@ function renderCorapsaAttachmentThumbnail(record, type) {
     }
 
     const url = getCorapsaAttachmentUrl(record, type);
-    if (isImageAttachmentType(meta.mimeType)) {
-        return `
-            <button type="button" onclick="abrirVisorRecibo('${escapeHtml(record.id)}', '${type}')"
-                title="Abrir ${escapeHtml(meta.fileName)}"
-                class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
-                <img data-attachment-thumb="${escapeHtml(url)}" alt="${escapeHtml(meta.fileName)}" onerror="corapsaImagenNoDisponible(this)" class="w-full h-full object-cover">
-                <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">${meta.label}</span>
-            </button>`;
-    }
-
+    // Both images and PDFs render into the same thumbnail slot — PDFs get
+    // their first page rasterized client-side (see cargarMiniaturasAdjuntos
+    // in globals.js) instead of a generic "PDF" icon.
     return `
         <button type="button" onclick="abrirVisorRecibo('${escapeHtml(record.id)}', '${type}')"
             title="Abrir ${escapeHtml(meta.fileName)}"
-            class="w-24 h-16 rounded-lg border ${theme} flex flex-col items-center justify-center hover:shadow-md transition-shadow">
-            <span class="material-icons text-[25px]">picture_as_pdf</span>
-            <span class="text-[9px] font-bold uppercase mt-1">${meta.label}</span>
+            class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
+            <img data-attachment-thumb="${escapeHtml(url)}" data-attachment-mime="${escapeHtml(meta.mimeType)}" alt="${escapeHtml(meta.fileName)}" onerror="corapsaImagenNoDisponible(this)" class="w-full h-full object-cover">
+            <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">${meta.label}</span>
         </button>`;
 }
 

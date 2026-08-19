@@ -57,8 +57,13 @@ function cerrarGastosModal() {
 }
 
 let gastosFilePreviewUrl = null;
+// Bumped on every clear/re-selection so a slow PDF render for a file the
+// user has since replaced can't land its result after the fact — see
+// actualizarGastosArchivoPreview.
+let gastosPreviewToken = 0;
 
 function limpiarGastosArchivoPreview() {
+    gastosPreviewToken += 1;
     if (gastosFilePreviewUrl) {
         URL.revokeObjectURL(gastosFilePreviewUrl);
         gastosFilePreviewUrl = null;
@@ -68,22 +73,36 @@ function limpiarGastosArchivoPreview() {
 }
 
 // Shows a thumbnail for a newly picked/dropped file before it's saved — the
-// bare file input only ever shows its name, not what the image looks like.
-function actualizarGastosArchivoPreview() {
+// bare file input only ever shows its name, not what the image/PDF looks
+// like. PDFs are rasterized client-side (see renderPdfPageAsImageBlobUrl in
+// globals.js) into the same <img> a real photo would use; the picture_as_pdf
+// icon is only a fallback if that rendering fails.
+async function actualizarGastosArchivoPreview() {
     limpiarGastosArchivoPreview();
 
     const file = document.getElementById('gastos-file')?.files[0] || null;
     if (!file) return;
 
-    if (file.type.startsWith('image/')) {
-        gastosFilePreviewUrl = URL.createObjectURL(file);
+    const token = gastosPreviewToken;
+    const showImage = url => {
+        if (token !== gastosPreviewToken) { URL.revokeObjectURL(url); return; }
+        gastosFilePreviewUrl = url;
         const img = document.getElementById('gastos-file-preview-img');
         if (img) {
-            img.src = gastosFilePreviewUrl;
+            img.src = url;
             img.classList.remove('hidden');
         }
+    };
+
+    if (file.type.startsWith('image/')) {
+        showImage(URL.createObjectURL(file));
     } else if (file.type === 'application/pdf') {
-        document.getElementById('gastos-file-preview-pdf')?.classList.remove('hidden');
+        try {
+            showImage(await renderPdfPageAsImageBlobUrl(file));
+        } catch (error) {
+            console.error('No se pudo generar la vista previa del PDF:', error);
+            if (token === gastosPreviewToken) document.getElementById('gastos-file-preview-pdf')?.classList.remove('hidden');
+        }
     }
 }
 
@@ -261,22 +280,15 @@ function renderGastoAttachmentThumbnail(gasto) {
     }
 
     const url = getGastoAttachmentUrl(gasto);
-    if (isImageAttachmentType(gasto.fileMimeType)) {
-        return `
-            <button type="button" onclick="abrirVisorGasto('${escapeHtml(gasto.id)}')"
-                title="Abrir ${escapeHtml(gasto.fileName)}"
-                class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
-                <img data-attachment-thumb="${escapeHtml(url)}" alt="${escapeHtml(gasto.fileName)}" onerror="gastosImagenNoDisponible(this)" class="w-full h-full object-cover">
-                <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">RECIBO</span>
-            </button>`;
-    }
-
+    // Both images and PDFs render into the same thumbnail slot — PDFs get
+    // their first page rasterized client-side (see cargarMiniaturasAdjuntos
+    // in globals.js) instead of a generic "PDF" icon.
     return `
         <button type="button" onclick="abrirVisorGasto('${escapeHtml(gasto.id)}')"
             title="Abrir ${escapeHtml(gasto.fileName)}"
-            class="w-24 h-16 rounded-lg border border-red-200 bg-red-50 text-red-700 flex flex-col items-center justify-center hover:shadow-md transition-shadow">
-            <span class="material-icons text-[25px]">picture_as_pdf</span>
-            <span class="text-[9px] font-bold uppercase mt-1">PDF</span>
+            class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
+            <img data-attachment-thumb="${escapeHtml(url)}" data-attachment-mime="${escapeHtml(gasto.fileMimeType)}" alt="${escapeHtml(gasto.fileName)}" onerror="gastosImagenNoDisponible(this)" class="w-full h-full object-cover">
+            <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">RECIBO</span>
         </button>`;
 }
 

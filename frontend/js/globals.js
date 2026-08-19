@@ -388,7 +388,7 @@ function buildApiUrl(path) {
 // images. Fetching the bytes ourselves (with the header attached) and
 // handing the element a local blob: URL works around that. Mirrors
 // apiRequest()'s timeout/offline-detection but returns raw bytes, not JSON.
-async function fetchAttachmentBlobUrl(url, { timeoutMs = 15000 } = {}) {
+async function fetchAttachmentBlob(url, { timeoutMs = 15000 } = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -398,7 +398,7 @@ async function fetchAttachmentBlobUrl(url, { timeoutMs = 15000 } = {}) {
         });
         if (typeof setServerConnectionState === 'function') setServerConnectionState(true);
         if (!response.ok) throw new Error(`No se pudo cargar el archivo (HTTP ${response.status}).`);
-        return URL.createObjectURL(await response.blob());
+        return await response.blob();
     } catch (error) {
         if (error?.name === 'AbortError') {
             if (typeof setServerConnectionState === 'function') setServerConnectionState(false);
@@ -416,18 +416,78 @@ async function fetchAttachmentBlobUrl(url, { timeoutMs = 15000 } = {}) {
     }
 }
 
+async function fetchAttachmentBlobUrl(url, options) {
+    return URL.createObjectURL(await fetchAttachmentBlob(url, options));
+}
+
+// Lazily loads the vendored pdf.js build (frontend/js/vendor/pdfjs — copied
+// from the pdfjs-dist devDependency; not fetched from a CDN, since this app
+// has to work fully offline/packaged) and caches the promise so the ~1.7MB
+// worker only gets fetched once no matter how many PDF thumbnails render.
+let pdfjsLibPromise = null;
+function loadPdfJs() {
+    if (!pdfjsLibPromise) {
+        pdfjsLibPromise = import('./vendor/pdfjs/pdf.min.mjs').then(pdfjsLib => {
+            // Resolved relative to index.html (this app's only document), same
+            // as every other "js/..." path in the codebase — NOT relative to
+            // this module file, unlike the dynamic import() above.
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/vendor/pdfjs/pdf.worker.min.mjs';
+            return pdfjsLib;
+        });
+    }
+    return pdfjsLibPromise;
+}
+
+// Renders page 1 of a PDF to a small raster image and returns it as a
+// blob: URL, so a PDF receipt can drop into the exact same <img> thumbnail/
+// preview slot as a real photo instead of a generic "PDF" icon. Runs
+// entirely client-side — sized for the single-page receipts/invoices this
+// app deals with, not built for huge multi-hundred-page documents.
+async function renderPdfPageAsImageBlobUrl(blob) {
+    const pdfjsLib = await loadPdfJs();
+    const data = new Uint8Array(await blob.arrayBuffer());
+    // Real invoices/receipts routinely use the standard 14 PDF fonts
+    // (Helvetica, Times, ...) without embedding them — without this, pdf.js
+    // still renders but logs a warning and falls back to rougher glyph
+    // metrics. No cmaps/ (CJK support) since receipts here are Latin-script.
+    const pdf = await pdfjsLib.getDocument({ data, standardFontDataUrl: 'js/vendor/pdfjs/standard_fonts/' }).promise;
+    const page = await pdf.getPage(1);
+    // Render bigger than any of our thumbnail boxes so it stays crisp under
+    // CSS object-cover, the same way a real photo would be.
+    const targetLongSide = 320;
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = targetLongSide / Math.max(baseViewport.width, baseViewport.height);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+
+    const imageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!imageBlob) throw new Error('No se pudo generar la imagen de vista previa.');
+    return URL.createObjectURL(imageBlob);
+}
+
 // Loads every thumbnail placeholder inside `container` (rendered with
-// data-attachment-thumb="<url>" and no src — see renderGastoAttachmentThumbnail
-// / renderCorapsaAttachmentThumbnail) as an authenticated blob URL, swapping
-// in onFail(img) if the fetch fails.
+// data-attachment-thumb="<url>" data-attachment-mime="<mime>" and no src —
+// see renderGastoAttachmentThumbnail / renderCorapsaAttachmentThumbnail).
+// Images become a direct blob: URL; PDFs get rendered to a cover image
+// first via renderPdfPageAsImageBlobUrl. Swaps in onFail(img) on any
+// failure — a fetch error, a corrupt/unreadable PDF, whatever.
 function cargarMiniaturasAdjuntos(container, onFail) {
     container?.querySelectorAll('img[data-attachment-thumb]').forEach(async img => {
         const url = img.dataset.attachmentThumb;
+        const mime = img.dataset.attachmentMime || '';
         try {
-            const objectUrl = await fetchAttachmentBlobUrl(url);
+            const blob = await fetchAttachmentBlob(url);
+            const objectUrl = mime === 'application/pdf'
+                ? await renderPdfPageAsImageBlobUrl(blob)
+                : URL.createObjectURL(blob);
             img.src = objectUrl;
             img.dataset.objectUrl = objectUrl;
-        } catch {
+        } catch (error) {
+            console.error('No se pudo cargar la miniatura del adjunto:', error);
             if (onFail) onFail(img);
         }
     });
