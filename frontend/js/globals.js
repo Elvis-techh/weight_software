@@ -380,3 +380,64 @@ function isFileDragEvent(event) {
 function buildApiUrl(path) {
     return `${API_URL}${path}`;
 }
+
+// Every route requires X-API-Key (see requireApiKey in server.js), but a
+// plain <img src="..."> / <iframe src="..."> can't carry a custom header —
+// the browser just requests the bare URL and gets a 401, which is why
+// receipt thumbnails and the full-size viewer were rendering as broken
+// images. Fetching the bytes ourselves (with the header attached) and
+// handing the element a local blob: URL works around that. Mirrors
+// apiRequest()'s timeout/offline-detection but returns raw bytes, not JSON.
+async function fetchAttachmentBlobUrl(url, { timeoutMs = 15000 } = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, {
+            headers: { 'X-API-Key': API_KEY },
+            signal: controller.signal
+        });
+        if (typeof setServerConnectionState === 'function') setServerConnectionState(true);
+        if (!response.ok) throw new Error(`No se pudo cargar el archivo (HTTP ${response.status}).`);
+        return URL.createObjectURL(await response.blob());
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            if (typeof setServerConnectionState === 'function') setServerConnectionState(false);
+            throw new Error('El servidor tardó demasiado en responder.');
+        }
+        // fetch() throws a bare TypeError for network-level failures (offline,
+        // DNS, connection refused) — an HTTP error response above still
+        // proves the server was reachable, so only this counts as "offline".
+        if (error instanceof TypeError && typeof setServerConnectionState === 'function') {
+            setServerConnectionState(false);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+// Loads every thumbnail placeholder inside `container` (rendered with
+// data-attachment-thumb="<url>" and no src — see renderGastoAttachmentThumbnail
+// / renderCorapsaAttachmentThumbnail) as an authenticated blob URL, swapping
+// in onFail(img) if the fetch fails.
+function cargarMiniaturasAdjuntos(container, onFail) {
+    container?.querySelectorAll('img[data-attachment-thumb]').forEach(async img => {
+        const url = img.dataset.attachmentThumb;
+        try {
+            const objectUrl = await fetchAttachmentBlobUrl(url);
+            img.src = objectUrl;
+            img.dataset.objectUrl = objectUrl;
+        } catch {
+            if (onFail) onFail(img);
+        }
+    });
+}
+
+// Releases blob URLs handed out by cargarMiniaturasAdjuntos before a table
+// re-render discards the <img> elements that held them — otherwise every
+// Gastos/Corapsa filter change leaks another batch of blobs.
+function revocarMiniaturasAdjuntos(container) {
+    container?.querySelectorAll('img[data-object-url]').forEach(img => {
+        URL.revokeObjectURL(img.dataset.objectUrl);
+    });
+}

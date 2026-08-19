@@ -266,7 +266,7 @@ function renderGastoAttachmentThumbnail(gasto) {
             <button type="button" onclick="abrirVisorGasto('${escapeHtml(gasto.id)}')"
                 title="Abrir ${escapeHtml(gasto.fileName)}"
                 class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
-                <img src="${escapeHtml(url)}" alt="${escapeHtml(gasto.fileName)}" onerror="gastosImagenNoDisponible(this)" class="w-full h-full object-cover">
+                <img data-attachment-thumb="${escapeHtml(url)}" alt="${escapeHtml(gasto.fileName)}" onerror="gastosImagenNoDisponible(this)" class="w-full h-full object-cover">
                 <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">RECIBO</span>
             </button>`;
     }
@@ -377,6 +377,8 @@ function renderGastos() {
     const tbody = document.getElementById('gastos-table-body');
     if (!tbody) return;
 
+    revocarMiniaturasAdjuntos(tbody);
+
     const { records, invalidDateRange } = getFilteredAndSortedGastos();
     updateGastosTotals(records);
 
@@ -406,6 +408,8 @@ function renderGastos() {
             </td>
         </tr>
     `).join('');
+
+    cargarMiniaturasAdjuntos(tbody, gastosImagenNoDisponible);
 }
 
 async function eliminarGastoServidor(id, justificacion) {

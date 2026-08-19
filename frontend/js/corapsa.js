@@ -89,6 +89,10 @@ function abrirCorapsaModal(id = null, justificacion = '') {
     document.getElementById('corapsa-total-display').textContent = formatMoney(record?.total || 0);
     document.getElementById('corapsa-file').value = '';
     document.getElementById('corapsa-file-nuestro').value = '';
+    limpiarCorapsaArchivoPreview('cliente');
+    limpiarCorapsaArchivoPreview('nuestro');
+    setCorapsaDropzoneActive('cliente', false);
+    setCorapsaDropzoneActive('nuestro', false);
     updateCorapsaModalAttachmentState(record);
     document.getElementById('corapsa-modal').classList.remove('hidden');
 }
@@ -97,6 +101,136 @@ function cerrarCorapsaModal() {
     document.getElementById('corapsa-modal').classList.add('hidden');
     activeCorapsaEditJustification = '';
     limpiarDestinoTemporal('corapsa-destino');
+    limpiarCorapsaArchivoPreview('cliente');
+    limpiarCorapsaArchivoPreview('nuestro');
+}
+
+// Mirrors gastos.js's gastos-file-preview-* handling, but keyed by
+// 'cliente'/'nuestro' since Corapsa has two independent attachment slots.
+let corapsaFilePreviewUrls = { cliente: null, nuestro: null };
+
+function limpiarCorapsaArchivoPreview(type) {
+    const key = type === 'nuestro' ? 'nuestro' : 'cliente';
+    if (corapsaFilePreviewUrls[key]) {
+        URL.revokeObjectURL(corapsaFilePreviewUrls[key]);
+        corapsaFilePreviewUrls[key] = null;
+    }
+    document.getElementById(`corapsa-file-preview-img-${key}`)?.classList.add('hidden');
+    document.getElementById(`corapsa-file-preview-pdf-${key}`)?.classList.add('hidden');
+}
+
+function actualizarCorapsaArchivoPreview(type) {
+    const key = type === 'nuestro' ? 'nuestro' : 'cliente';
+    limpiarCorapsaArchivoPreview(key);
+
+    const input = document.getElementById(key === 'nuestro' ? 'corapsa-file-nuestro' : 'corapsa-file');
+    const file = input?.files[0] || null;
+    if (!file) return;
+
+    if (file.type.startsWith('image/')) {
+        const objectUrl = URL.createObjectURL(file);
+        corapsaFilePreviewUrls[key] = objectUrl;
+        const img = document.getElementById(`corapsa-file-preview-img-${key}`);
+        if (img) {
+            img.src = objectUrl;
+            img.classList.remove('hidden');
+        }
+    } else if (file.type === 'application/pdf') {
+        document.getElementById(`corapsa-file-preview-pdf-${key}`)?.classList.remove('hidden');
+    }
+}
+
+// Shared by both the per-slot dropzone and manual file picks: validates the
+// file the same way a manual selection is validated on save, then wires it
+// into the (hidden) file input so guardarCorapsa() picks it up unchanged.
+function asignarArchivoCorapsa(type, file) {
+    if (!file) return false;
+    try {
+        validateAttachmentFile(file);
+    } catch (error) {
+        mostrarNotificacion(error.message, 'error');
+        return false;
+    }
+
+    const key = type === 'nuestro' ? 'nuestro' : 'cliente';
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    document.getElementById(key === 'nuestro' ? 'corapsa-file-nuestro' : 'corapsa-file').files = transfer.files;
+    actualizarCorapsaArchivoPreview(key);
+    return true;
+}
+
+function setCorapsaDropzoneActive(type, active) {
+    const key = type === 'nuestro' ? 'nuestro' : 'cliente';
+    const dropzone = document.getElementById(`corapsa-dropzone-${key}`);
+    if (!dropzone) return;
+    const [onColor, onBg, offColor] = key === 'nuestro'
+        ? ['border-emerald-400', 'bg-emerald-50', 'border-emerald-200']
+        : ['border-blue-400', 'bg-blue-50', 'border-blue-200'];
+    dropzone.classList.toggle(onColor, active);
+    dropzone.classList.toggle(onBg, active);
+    dropzone.classList.toggle(offColor, !active);
+}
+
+function corapsaDropzoneDragOver(type, event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setCorapsaDropzoneActive(type, true);
+}
+
+function corapsaDropzoneDragLeave(type, event) {
+    event.stopPropagation();
+    setCorapsaDropzoneActive(type, false);
+}
+
+function corapsaDropzoneDrop(type, event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setCorapsaDropzoneActive(type, false);
+    asignarArchivoCorapsa(type, event.dataTransfer.files[0] || null);
+}
+
+// Same nested-dragenter/dragleave counting as gastos.js's page-wide drop —
+// see the comment there for why a plain enter/leave pair would flicker.
+let corapsaPageDragCounter = 0;
+
+function corapsaPageDragEnter(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    corapsaPageDragCounter += 1;
+    document.getElementById('corapsa-page-drop-overlay')?.classList.remove('hidden');
+}
+
+function corapsaPageDragOver(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+}
+
+function corapsaPageDragLeave(event) {
+    if (!isFileDragEvent(event)) return;
+    corapsaPageDragCounter = Math.max(0, corapsaPageDragCounter - 1);
+    if (corapsaPageDragCounter === 0) {
+        document.getElementById('corapsa-page-drop-overlay')?.classList.add('hidden');
+    }
+}
+
+// A page-wide drop always lands in the "Cliente" slot (the WhatsApp-sourced
+// photo of the counterpart's receipt) — the overlay text says so, and
+// "Archivo Nuestro" is still reachable via the modal's own dropzone.
+function corapsaPageDrop(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    corapsaPageDragCounter = 0;
+    document.getElementById('corapsa-page-drop-overlay')?.classList.add('hidden');
+
+    const file = event.dataTransfer.files[0] || null;
+    if (!file) return;
+
+    abrirCorapsaModal();
+    if (!asignarArchivoCorapsa('cliente', file)) return;
+    document.getElementById('corapsa-recibo-in')?.focus();
 }
 
 function handleCorapsaClientInput() {
@@ -247,35 +381,26 @@ function toggleAttachmentImageSize(image) {
     image.style.cursor = actualSize ? 'zoom-in' : 'zoom-out';
 }
 
-function openAttachmentViewer({ module, id, type, fileName, mimeType, url }) {
+// Holds the blob: URL currently shown in the viewer so it can be released
+// (and not leaked) before the next file replaces it.
+let activeReceiptObjectUrl = null;
+
+async function openAttachmentViewer({ module, id, type, fileName, mimeType, url }) {
     activeReceiptViewer = { module, id, type };
     document.getElementById('visor-file-name').textContent = fileName;
 
-    const container = document.getElementById('receipt-preview-container');
-    container.replaceChildren();
-
-    if (isImageAttachmentType(mimeType)) {
-        const image = document.createElement('img');
-        image.src = url;
-        image.alt = fileName;
-        image.title = 'Haga clic para alternar entre ajustar a pantalla y tamaño real';
-        image.dataset.actualSize = 'false';
-        image.className = 'max-w-full max-h-full h-auto object-contain rounded shadow bg-white';
-        image.style.cursor = 'zoom-in';
-        image.addEventListener('click', () => toggleAttachmentImageSize(image));
-        container.appendChild(image);
-    } else {
-        const frame = document.createElement('iframe');
-        frame.src = url;
-        frame.title = fileName;
-        frame.className = 'w-full h-full min-h-[500px] bg-white rounded border';
-        container.appendChild(frame);
+    if (activeReceiptObjectUrl) {
+        URL.revokeObjectURL(activeReceiptObjectUrl);
+        activeReceiptObjectUrl = null;
     }
 
-    const hint = document.getElementById('viewer-hint');
-    if (hint) hint.textContent = isImageAttachmentType(mimeType)
-        ? 'Haga clic sobre la imagen para verla en tamaño real.'
-        : 'Use los controles del visor PDF para ampliar el documento.';
+    const container = document.getElementById('receipt-preview-container');
+    container.replaceChildren();
+    container.innerHTML = `
+        <div class="text-center text-gray-400">
+            <span class="material-icons text-6xl">hourglass_top</span>
+            <p class="mt-3 font-bold">Cargando archivo...</p>
+        </div>`;
 
     const deleteButton = document.getElementById('viewer-delete-button');
     const replaceButton = document.getElementById('viewer-replace-button');
@@ -288,7 +413,57 @@ function openAttachmentViewer({ module, id, type, fileName, mimeType, url }) {
             : 'Reemplazar';
     }
 
+    const hint = document.getElementById('viewer-hint');
     document.getElementById('view-receipt-modal').classList.remove('hidden');
+
+    let objectUrl;
+    try {
+        objectUrl = await fetchAttachmentBlobUrl(url);
+    } catch (error) {
+        container.innerHTML = `
+            <div class="text-center text-red-400">
+                <span class="material-icons text-6xl">broken_image</span>
+                <p class="mt-3 font-bold">No se pudo cargar el archivo.</p>
+            </div>`;
+        if (hint) hint.textContent = error?.message || 'Verifique la conexión con el servidor e intente de nuevo.';
+        return;
+    }
+
+    // The viewer may have been closed, or reopened for a different file,
+    // while the fetch above was in flight — don't show a stale file under
+    // what's now a different header/title.
+    const stillActive = activeReceiptViewer.module === module
+        && sameRecordId(activeReceiptViewer.id, id)
+        && activeReceiptViewer.type === type;
+    if (!stillActive) {
+        URL.revokeObjectURL(objectUrl);
+        return;
+    }
+
+    activeReceiptObjectUrl = objectUrl;
+    container.replaceChildren();
+
+    if (isImageAttachmentType(mimeType)) {
+        const image = document.createElement('img');
+        image.src = objectUrl;
+        image.alt = fileName;
+        image.title = 'Haga clic para alternar entre ajustar a pantalla y tamaño real';
+        image.dataset.actualSize = 'false';
+        image.className = 'max-w-full max-h-full h-auto object-contain rounded shadow bg-white';
+        image.style.cursor = 'zoom-in';
+        image.addEventListener('click', () => toggleAttachmentImageSize(image));
+        container.appendChild(image);
+    } else {
+        const frame = document.createElement('iframe');
+        frame.src = objectUrl;
+        frame.title = fileName;
+        frame.className = 'w-full h-full min-h-[500px] bg-white rounded border';
+        container.appendChild(frame);
+    }
+
+    if (hint) hint.textContent = isImageAttachmentType(mimeType)
+        ? 'Haga clic sobre la imagen para verla en tamaño real.'
+        : 'Use los controles del visor PDF para ampliar el documento.';
 }
 
 function abrirVisorRecibo(id, type = 'cliente') {
@@ -312,6 +487,10 @@ function cerrarVisorRecibo() {
     document.getElementById('view-receipt-modal').classList.add('hidden');
     document.getElementById('receipt-preview-container').replaceChildren();
     activeReceiptViewer = { module: null, id: null, type: null };
+    if (activeReceiptObjectUrl) {
+        URL.revokeObjectURL(activeReceiptObjectUrl);
+        activeReceiptObjectUrl = null;
+    }
 }
 
 function solicitarEliminarArchivoActual() {
@@ -369,6 +548,18 @@ function prepararReemplazoArchivoCorapsa(ref, justificacion) {
     document.getElementById(type === 'cliente' ? 'hidden-file-cliente' : 'hidden-file-nuestro').click();
 }
 
+// Swaps the browser's default broken-image glyph for a clearer placeholder
+// when a saved receipt's image fails to load — see gastosImagenNoDisponible
+// (gastos.js) for the equivalent used by the Gastos table.
+function corapsaImagenNoDisponible(imgElement) {
+    const wrapper = imgElement.closest('button');
+    if (!wrapper) return;
+    wrapper.classList.add('flex', 'flex-col', 'items-center', 'justify-center', 'border', 'border-red-200', 'bg-red-50');
+    wrapper.innerHTML = `
+        <span class="material-icons text-[22px] text-red-400">broken_image</span>
+        <span class="text-[9px] font-bold uppercase mt-1 text-red-400">No disponible</span>`;
+}
+
 function renderCorapsaAttachmentThumbnail(record, type) {
     const meta = getCorapsaAttachmentMeta(record, type);
     const theme = type === 'nuestro'
@@ -392,7 +583,7 @@ function renderCorapsaAttachmentThumbnail(record, type) {
             <button type="button" onclick="abrirVisorRecibo('${escapeHtml(record.id)}', '${type}')"
                 title="Abrir ${escapeHtml(meta.fileName)}"
                 class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
-                <img src="${escapeHtml(url)}" alt="${escapeHtml(meta.fileName)}" class="w-full h-full object-cover">
+                <img data-attachment-thumb="${escapeHtml(url)}" alt="${escapeHtml(meta.fileName)}" onerror="corapsaImagenNoDisponible(this)" class="w-full h-full object-cover">
                 <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">${meta.label}</span>
             </button>`;
     }
@@ -416,6 +607,8 @@ let ultimoFiltroCorapsa = {
 function renderCorapsaTab() {
     const tbody = document.getElementById('corapsa-table-body');
     if (!tbody) return;
+
+    revocarMiniaturasAdjuntos(tbody);
 
     const startDate = document.getElementById('corapsa-filter-start')?.value || '';
     const endDate = document.getElementById('corapsa-filter-end')?.value || '';
@@ -479,6 +672,8 @@ function renderCorapsaTab() {
                 </td>
             </tr>`;
     }).join('');
+
+    cargarMiniaturasAdjuntos(tbody, corapsaImagenNoDisponible);
 }
 
 // Builds the pre-formatted payload for the Corapsa listado print/preview from

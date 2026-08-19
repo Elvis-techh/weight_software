@@ -98,6 +98,16 @@ function getCorapsaPaymentAttachmentUrl(record) {
     return buildApiUrl(`/api/corapsa-pagos/${encodeURIComponent(record.id)}/archivo?v=${version}`);
 }
 
+// Same fallback used by gastos.js/corapsa.js for the same failure mode.
+function overviewPaymentImagenNoDisponible(imgElement) {
+    const wrapper = imgElement.closest('button');
+    if (!wrapper) return;
+    wrapper.classList.add('flex', 'flex-col', 'items-center', 'justify-center', 'border', 'border-red-200', 'bg-red-50');
+    wrapper.innerHTML = `
+        <span class="material-icons text-[19px] text-red-400">broken_image</span>
+        <span class="text-[8px] font-bold uppercase mt-1 text-red-400">No disponible</span>`;
+}
+
 function renderCorapsaPaymentAttachment(record) {
     if (!record.hasFile) {
         return `<button type="button" onclick="abrirPagoCorapsaModal('${escapeHtml(record.id)}')"
@@ -110,7 +120,7 @@ function renderCorapsaPaymentAttachment(record) {
     if (isImageAttachmentType(record.fileMimeType)) {
         return `<button type="button" onclick="abrirVisorPagoCorapsa('${escapeHtml(record.id)}')"
             class="relative w-20 h-12 rounded-lg overflow-hidden border bg-gray-100 hover:shadow" title="Abrir ${escapeHtml(record.fileName)}">
-            <img src="${escapeHtml(getCorapsaPaymentAttachmentUrl(record))}" alt="${escapeHtml(record.fileName)}" class="w-full h-full object-cover">
+            <img data-attachment-thumb="${escapeHtml(getCorapsaPaymentAttachmentUrl(record))}" alt="${escapeHtml(record.fileName)}" onerror="overviewPaymentImagenNoDisponible(this)" class="w-full h-full object-cover">
             <span class="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[8px] font-bold">ESTADO</span>
         </button>`;
     }
@@ -124,6 +134,8 @@ function renderCorapsaPaymentAttachment(record) {
 function renderOverviewPaymentsTable() {
     const tbody = document.getElementById('overview-payments-body');
     if (!tbody) return;
+
+    revocarMiniaturasAdjuntos(tbody);
 
     if (corapsaPagosData.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-gray-400">No hay ventas/pagos cuyo período esté completamente dentro de las fechas seleccionadas.</td></tr>';
@@ -146,6 +158,8 @@ function renderOverviewPaymentsTable() {
             </td>
         </tr>
     `).join('');
+
+    cargarMiniaturasAdjuntos(tbody, overviewPaymentImagenNoDisponible);
 }
 
 function renderOverviewByDestino() {
