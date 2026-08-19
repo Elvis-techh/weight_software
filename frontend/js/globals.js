@@ -370,6 +370,13 @@ async function buildAttachmentPayload(file) {
     };
 }
 
+// Distinguishes an OS file drag (WhatsApp Web image, PDF, etc.) from a plain
+// text/element drag, which also fires dragenter/dragover/drop and must not be
+// hijacked — e.g. dragging selected text between inputs.
+function isFileDragEvent(event) {
+    return Array.from(event.dataTransfer?.types || []).includes('Files');
+}
+
 function buildApiUrl(path) {
     return `${API_URL}${path}`;
 }

@@ -45,12 +45,132 @@ function abrirGastosModal(id = null) {
     document.getElementById('gastos-justificacion').value = '';
     document.getElementById('gastos-justificacion-container').classList.toggle('hidden', !gasto);
     document.getElementById('gastos-file').value = '';
+    limpiarGastosArchivoPreview();
+    setGastosDropzoneActive(false);
     updateGastoModalAttachmentState(gasto);
     document.getElementById('gastos-modal').classList.remove('hidden');
 }
 
 function cerrarGastosModal() {
     document.getElementById('gastos-modal').classList.add('hidden');
+    limpiarGastosArchivoPreview();
+}
+
+let gastosFilePreviewUrl = null;
+
+function limpiarGastosArchivoPreview() {
+    if (gastosFilePreviewUrl) {
+        URL.revokeObjectURL(gastosFilePreviewUrl);
+        gastosFilePreviewUrl = null;
+    }
+    document.getElementById('gastos-file-preview-img')?.classList.add('hidden');
+    document.getElementById('gastos-file-preview-pdf')?.classList.add('hidden');
+}
+
+// Shows a thumbnail for a newly picked/dropped file before it's saved — the
+// bare file input only ever shows its name, not what the image looks like.
+function actualizarGastosArchivoPreview() {
+    limpiarGastosArchivoPreview();
+
+    const file = document.getElementById('gastos-file')?.files[0] || null;
+    if (!file) return;
+
+    if (file.type.startsWith('image/')) {
+        gastosFilePreviewUrl = URL.createObjectURL(file);
+        const img = document.getElementById('gastos-file-preview-img');
+        if (img) {
+            img.src = gastosFilePreviewUrl;
+            img.classList.remove('hidden');
+        }
+    } else if (file.type === 'application/pdf') {
+        document.getElementById('gastos-file-preview-pdf')?.classList.remove('hidden');
+    }
+}
+
+// Shared by both the modal dropzone and manual file picks: validates the
+// file the same way a manual selection is validated on save, then wires it
+// into the (hidden) file input so guardarGasto() picks it up unchanged.
+function asignarArchivoGastos(file) {
+    if (!file) return false;
+    try {
+        validateAttachmentFile(file);
+    } catch (error) {
+        mostrarNotificacion(error.message, 'error');
+        return false;
+    }
+
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    document.getElementById('gastos-file').files = transfer.files;
+    actualizarGastosArchivoPreview();
+    return true;
+}
+
+function setGastosDropzoneActive(active) {
+    const dropzone = document.getElementById('gastos-dropzone');
+    if (!dropzone) return;
+    dropzone.classList.toggle('border-red-400', active);
+    dropzone.classList.toggle('bg-red-50', active);
+    dropzone.classList.toggle('border-gray-200', !active);
+}
+
+function gastosDropzoneDragOver(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setGastosDropzoneActive(true);
+}
+
+function gastosDropzoneDragLeave(event) {
+    event.stopPropagation();
+    setGastosDropzoneActive(false);
+}
+
+function gastosDropzoneDrop(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setGastosDropzoneActive(false);
+    asignarArchivoGastos(event.dataTransfer.files[0] || null);
+}
+
+// Counts nested dragenter/dragleave pairs bubbling up from table rows/cells
+// so the full-page overlay doesn't flicker every time the cursor crosses a
+// child element's edge while dragging over the Gastos view.
+let gastosPageDragCounter = 0;
+
+function gastosPageDragEnter(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    gastosPageDragCounter += 1;
+    document.getElementById('gastos-page-drop-overlay')?.classList.remove('hidden');
+}
+
+function gastosPageDragOver(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+}
+
+function gastosPageDragLeave(event) {
+    if (!isFileDragEvent(event)) return;
+    gastosPageDragCounter = Math.max(0, gastosPageDragCounter - 1);
+    if (gastosPageDragCounter === 0) {
+        document.getElementById('gastos-page-drop-overlay')?.classList.add('hidden');
+    }
+}
+
+function gastosPageDrop(event) {
+    if (!isFileDragEvent(event)) return;
+    event.preventDefault();
+    gastosPageDragCounter = 0;
+    document.getElementById('gastos-page-drop-overlay')?.classList.add('hidden');
+
+    const file = event.dataTransfer.files[0] || null;
+    if (!file) return;
+
+    abrirGastosModal();
+    if (!asignarArchivoGastos(file)) return;
+    document.getElementById('gastos-concepto')?.focus();
 }
 
 async function guardarGasto() {
@@ -116,6 +236,18 @@ function abrirVisorGasto(id) {
     });
 }
 
+// Swaps the browser's default broken-image glyph for a clearer placeholder
+// when a saved receipt's image fails to load (e.g. storage hiccup) — the
+// gasto record and its filename are intact, only the pictured preview isn't.
+function gastosImagenNoDisponible(imgElement) {
+    const wrapper = imgElement.closest('button');
+    if (!wrapper) return;
+    wrapper.classList.add('flex', 'flex-col', 'items-center', 'justify-center', 'border', 'border-red-200', 'bg-red-50');
+    wrapper.innerHTML = `
+        <span class="material-icons text-[22px] text-red-400">broken_image</span>
+        <span class="text-[9px] font-bold uppercase mt-1 text-red-400">No disponible</span>`;
+}
+
 function renderGastoAttachmentThumbnail(gasto) {
     if (!gasto.hasFile) {
         const legacyName = gasto.fileName && gasto.fileName !== 'Sin Archivo' ? gasto.fileName : '';
@@ -134,7 +266,7 @@ function renderGastoAttachmentThumbnail(gasto) {
             <button type="button" onclick="abrirVisorGasto('${escapeHtml(gasto.id)}')"
                 title="Abrir ${escapeHtml(gasto.fileName)}"
                 class="group relative w-24 h-16 rounded-lg border overflow-hidden bg-gray-100 hover:shadow-md transition-shadow">
-                <img src="${escapeHtml(url)}" alt="${escapeHtml(gasto.fileName)}" class="w-full h-full object-cover">
+                <img src="${escapeHtml(url)}" alt="${escapeHtml(gasto.fileName)}" onerror="gastosImagenNoDisponible(this)" class="w-full h-full object-cover">
                 <span class="absolute inset-x-0 bottom-0 bg-black/65 text-white text-[9px] font-bold py-1">RECIBO</span>
             </button>`;
     }

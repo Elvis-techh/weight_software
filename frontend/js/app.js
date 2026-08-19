@@ -317,6 +317,15 @@ async function initApp() {
     startServerPolling();
 }
 
+// Electron's Chromium view navigates to/opens a dropped file by default,
+// replacing the whole app UI, when a file drag ends anywhere outside an
+// explicit drop zone (e.g. a near-miss drop while aiming for the Gastos
+// dropzone). Swallow file drags window-wide so a stray drop can't blank out
+// the app; specific dropzones (Gastos) still get the file first since their
+// own handlers run before this one during bubbling.
+window.addEventListener('dragover', event => { if (isFileDragEvent(event)) event.preventDefault(); });
+window.addEventListener('drop', event => { if (isFileDragEvent(event)) event.preventDefault(); });
+
 window.addEventListener('DOMContentLoaded', initApp, { once: true });
 window.addEventListener('beforeunload', () => {
     unsubscribeScaleData?.();
