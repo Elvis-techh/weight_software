@@ -18,6 +18,7 @@ function normalizarCorapsa(record = {}) {
         fileNuestroMimeType: String(record.fileNuestroMimeType ?? record.file_nuestro_mime_type ?? ''),
         hasFileNuestro: record.hasFileNuestro === true,
         pagado: record.pagado === true || Number(record.pagado) === 1,
+        excluido: record.excluido === true || Number(record.excluido) === 1,
         esProductoPropio: record.esProductoPropio === true || Number(record.esProductoPropio ?? record.es_producto_propio) === 1,
         updatedAt: String(record.updatedAt ?? record.updated_at ?? '')
     };
@@ -391,6 +392,27 @@ async function togglePagoCorapsa(id) {
     }
 }
 
+async function toggleExcluirCorapsa(id) {
+    const record = corapsaData.find(item => sameRecordId(item.id, id));
+    if (!record) return;
+
+    const previous = record.excluido;
+    record.excluido = !record.excluido;
+    renderCorapsaTab();
+
+    try {
+        const result = await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            body: { excluido: record.excluido }
+        });
+        Object.assign(record, normalizarCorapsa(result?.corapsa || result));
+    } catch (error) {
+        record.excluido = previous;
+        renderCorapsaTab();
+        mostrarNotificacion(error.message || 'No se pudo actualizar el estado.', 'error');
+    }
+}
+
 function toggleAttachmentImageSize(image) {
     const actualSize = image.dataset.actualSize === 'true';
     image.dataset.actualSize = actualSize ? 'false' : 'true';
@@ -626,8 +648,11 @@ function renderCorapsaTab() {
     const searchRaw = (document.getElementById('corapsa-filter-client')?.value || '').trim();
     const search = searchRaw.toLocaleLowerCase('es');
     const destinoFilter = document.getElementById('corapsa-filter-destino')?.value || '';
+    const sort = document.getElementById('corapsa-sort')?.value || 'fecha-desc';
+    const showExcluidos = document.getElementById('corapsa-filter-mostrar-excluidos')?.checked || false;
 
     const filtered = corapsaData.filter(record => {
+        if (!showExcluidos && record.excluido) return false;
         if (startDate && record.fecha < startDate) return false;
         if (endDate && record.fecha > endDate) return false;
         if (destinoFilter && record.destino !== destinoFilter) return false;
@@ -635,8 +660,25 @@ function renderCorapsaTab() {
         return !search || searchable.includes(search);
     });
 
-    const sumTons = filtered.reduce((sum, item) => sum + item.toneladas, 0);
-    const sumTotal = filtered.reduce((sum, item) => sum + item.total, 0);
+    filtered.sort((left, right) => {
+        switch (sort) {
+            case 'fecha-asc':
+                return left.fecha.localeCompare(right.fecha) || left.reciboIn.localeCompare(right.reciboIn, 'es', { numeric: true });
+            case 'recibo-asc':
+                return left.reciboIn.localeCompare(right.reciboIn, 'es', { numeric: true });
+            case 'recibo-desc':
+                return right.reciboIn.localeCompare(left.reciboIn, 'es', { numeric: true });
+            default:
+                return right.fecha.localeCompare(left.fecha) || right.reciboIn.localeCompare(left.reciboIn, 'es', { numeric: true });
+        }
+    });
+
+    // Excluded receipts stay out of the totals even when "Mostrar excluidos"
+    // is checked and they're visible in the table — that's the point of
+    // excluding them (hidden from totals/reports, not from existence).
+    const countedForTotals = filtered.filter(item => !item.excluido);
+    const sumTons = countedForTotals.reduce((sum, item) => sum + item.toneladas, 0);
+    const sumTotal = countedForTotals.reduce((sum, item) => sum + item.total, 0);
     document.getElementById('corapsa-total-toneladas').textContent = sumTons.toFixed(2);
     document.getElementById('corapsa-total-dinero').textContent = formatMoney(sumTotal);
 
@@ -656,9 +698,10 @@ function renderCorapsaTab() {
         const badgeClass = record.pagado ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200';
         const badgeText = record.pagado ? 'PAGADO' : 'NO PAGADO';
         const id = escapeHtml(record.id);
+        const rowClass = record.excluido ? 'hover:bg-blue-50 opacity-50' : 'hover:bg-blue-50';
 
         return `
-            <tr class="hover:bg-blue-50">
+            <tr class="${rowClass}">
                 <td class="p-3 text-sm font-mono text-gray-600 font-bold" data-label="Fecha">${escapeHtml(formatDateForDisplay(record.fecha))}</td>
                 <td class="p-3 text-sm font-mono text-gray-600" data-label="Teléfono">${escapeHtml(record.telefono || '-')}</td>
                 <td class="p-3 font-bold text-gray-800" data-label="Cliente">${escapeHtml(record.cliente)}${record.aNombreDe ? `<br><span class="text-[11px] font-semibold text-gray-400">A nombre de: ${escapeHtml(record.aNombreDe)}</span>` : ''}</td>
@@ -669,7 +712,7 @@ function renderCorapsaTab() {
                 <td class="p-3" data-label="Recibo #"><span class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-1 rounded font-mono font-bold text-xs"><span class="material-icons text-[14px]">receipt_long</span>${escapeHtml(record.reciboIn)}</span></td>
                 <td class="p-3 text-right text-xs text-gray-500" data-label="Precio/Unidad">L ${formatMoney(record.precio)}</td>
                 <td class="p-3 text-right font-mono font-bold text-gray-600" data-label="Toneladas">${record.toneladas.toFixed(2)}</td>
-                <td class="p-3 text-right font-mono font-bold text-blue-700 text-lg" data-label="Monto a Pagar">L ${formatMoney(record.total)}</td>
+                <td class="p-3 text-right font-mono font-bold text-blue-700 text-base md:text-lg" data-label="Monto a Pagar">L ${formatMoney(record.total)}</td>
                 <td class="p-3 text-center" data-label="Archivos Adjuntos">
                     <div class="flex gap-2 items-center justify-center">
                         ${renderCorapsaAttachmentThumbnail(record, 'cliente')}
@@ -679,6 +722,7 @@ function renderCorapsaTab() {
                 <td class="p-3 text-center" data-label="Estado"><button type="button" onclick="togglePagoCorapsa('${id}')" class="${badgeClass} px-3 py-1 rounded-full text-[10px] font-bold border">${badgeText}</button></td>
                 <td class="p-3 text-center" data-label="Acciones">
                     <button type="button" onclick="abrirActionModal('edit_corapsa', '${id}')" class="text-blue-500 hover:text-blue-800" title="Editar datos y reemplazar archivos"><span class="material-icons text-[18px]">edit</span></button>
+                    <button type="button" onclick="toggleExcluirCorapsa('${id}')" class="${record.excluido ? 'text-amber-500 hover:text-amber-700' : 'text-gray-400 hover:text-gray-700'}" title="${record.excluido ? 'Incluir en listados y totales' : 'Excluir de listados y totales'}"><span class="material-icons text-[18px]">${record.excluido ? 'visibility_off' : 'visibility'}</span></button>
                     <button type="button" onclick="abrirActionModal('delete_corapsa', '${id}')" class="text-red-400 hover:text-red-700"><span class="material-icons text-[18px]">delete</span></button>
                 </td>
             </tr>`;

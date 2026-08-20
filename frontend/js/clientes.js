@@ -25,6 +25,15 @@ function recoverTonPrice(unitPrice, unit) {
         : price;
 }
 
+function normalizeClientNameForDuplicateCheck(nombre, apellido) {
+    return `${nombre || ''} ${apellido || ''}`
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('es')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function normalizarCliente(record = {}) {
     const unidad = record.unidad === 'quintal' ? 'quintal' : 'tonelada';
     const precioFletePropio = toFiniteNumber(record.precioFletePropio ?? record.precio_flete_propio);
@@ -707,6 +716,18 @@ async function guardarCliente(event) {
         return mostrarNotificacion('Debe ingresar una justificación para modificar manualmente el precio calculado.', 'error');
     }
 
+    const normalizedNewName = normalizeClientNameForDuplicateCheck(clienteData.nombre, clienteData.apellido);
+    const duplicate = MOCK_CLIENTES.find(cliente =>
+        String(cliente.id) !== String(clientId) &&
+        normalizeClientNameForDuplicateCheck(cliente.nombre, cliente.apellido) === normalizedNewName
+    );
+    if (duplicate) {
+        const proceed = window.confirm(
+            `Ya existe un cliente con un nombre muy similar: "${duplicate.nombre} ${duplicate.apellido}" (ID: ${duplicate.id}).\n\n¿Desea guardar este cliente de todos modos?`
+        );
+        if (!proceed) return;
+    }
+
     try {
         if (saveButton) {
             saveButton.disabled = true;
@@ -867,29 +888,6 @@ async function aplicarAjusteGlobalForm() {
             saveButton.disabled = false;
             saveButton.textContent = 'Aplicar a Todos';
         }
-    }
-}
-
-function toggleSearchBar() {
-    const searchInput = document.getElementById('buscar-cliente');
-    if (!searchInput) return;
-
-    const opening = searchInput.classList.contains('w-0');
-    searchInput.classList.toggle('w-0', !opening);
-    searchInput.classList.toggle('opacity-0', !opening);
-    searchInput.classList.toggle('border-0', !opening);
-    searchInput.classList.toggle('px-0', !opening);
-    searchInput.classList.toggle('w-64', opening);
-    searchInput.classList.toggle('opacity-100', opening);
-    searchInput.classList.toggle('border', opening);
-    searchInput.classList.toggle('border-gray-200', opening);
-    searchInput.classList.toggle('px-4', opening);
-
-    if (opening) {
-        searchInput.focus();
-    } else {
-        searchInput.value = '';
-        renderClientesTab();
     }
 }
 

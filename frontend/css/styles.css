@@ -29,6 +29,72 @@ button[data-busy="true"] {
 }
 
 /* ==========================================================================
+   Collapsible toolbar search — icon-only until its toolbar row has enough
+   room to show the full field (and, on Gastos, the button labels) without
+   wrapping. Pair a ".search-toggle-btn" icon button with a ".search-collapse"
+   wrapper around the actual <input> inside a shared id'd container, and
+   toggle via expandInlineSearch()/collapseInlineSearch() in ui.js for the
+   below-threshold click-to-expand behavior.
+
+   This is a CSS container query (scoped to the toolbar row itself, via
+   ".corapsa-toolbar-bar" / ".gastos-toolbar-bar"), not a viewport media
+   query — a viewport breakpoint doesn't work here because the sidebar
+   (250px) eats into the window width before the toolbar ever sees it, so
+   "window is wide enough" and "this row has room to expand" are different
+   thresholds. Each row's min-width below is its measured natural width
+   (everything expanded, nothing wrapped) rounded up:
+   corapsa ~951px, gastos ~1280px (gastos also reveals button text).
+   ========================================================================== */
+.search-collapse {
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: width 0.22s ease, opacity 0.18s ease;
+}
+
+.search-collapse.is-expanded {
+    width: 15rem;
+    opacity: 1;
+}
+
+.toolbar-label {
+    display: none;
+}
+
+.corapsa-toolbar-bar {
+    container: corapsa-toolbar / inline-size;
+}
+
+.gastos-toolbar-bar {
+    container: gastos-toolbar / inline-size;
+}
+
+@container corapsa-toolbar (min-width: 980px) {
+    .search-collapse {
+        width: 16rem;
+        opacity: 1;
+        overflow: visible;
+    }
+    .search-toggle-btn {
+        display: none;
+    }
+}
+
+@container gastos-toolbar (min-width: 1310px) {
+    .search-collapse {
+        width: 16rem;
+        opacity: 1;
+        overflow: visible;
+    }
+    .search-toggle-btn {
+        display: none;
+    }
+    .toolbar-label {
+        display: inline;
+    }
+}
+
+/* ==========================================================================
    Responsive data tables — table → stacked cards below md (768px)
    Add class="responsive-table" to the <table>; each <td> that should show a
    caption needs data-label="..." (added in the JS that renders the rows).

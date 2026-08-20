@@ -43,6 +43,27 @@ function switchTab(tabName) {
     renderers[tabName]?.();
 }
 
+function expandInlineSearch(wrapId) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+
+    wrap.querySelector('.search-collapse')?.classList.add('is-expanded');
+    wrap.querySelector('.search-toggle-btn')?.classList.add('hidden');
+    const input = wrap.querySelector('input');
+    setTimeout(() => input?.focus(), 0);
+}
+
+function collapseInlineSearch(wrapId, force = false) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+
+    const input = wrap.querySelector('input');
+    if (!force && input && input.value.trim() !== '') return;
+
+    wrap.querySelector('.search-collapse')?.classList.remove('is-expanded');
+    wrap.querySelector('.search-toggle-btn')?.classList.remove('hidden');
+}
+
 function mostrarNotificacion(message, type = 'success') {
     const toast = document.getElementById('toast');
     if (!toast) return;

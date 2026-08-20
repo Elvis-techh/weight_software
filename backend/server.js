@@ -600,6 +600,7 @@ function mapCorapsa(row) {
         fileNuestroMimeType: row.file_nuestro_mime_type || '',
         hasFileNuestro: Boolean(row.has_file_nuestro) || Boolean(row.file_nuestro_key) || hasStoredAttachment(row.file_nuestro_data),
         pagado: Boolean(row.pagado),
+        excluido: Boolean(row.excluido),
         esProductoPropio: Boolean(row.es_producto_propio),
         updatedAt: row.updated_at || row.created_at || ''
     };
@@ -1664,7 +1665,7 @@ app.get('/api/corapsa', asyncHandler(async (_req, res) => {
         SELECT id, fecha, recibo_in, recibo_out, cliente, telefono, destino, a_nombre_de, toneladas, precio, total,
                file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                file_nuestro, file_nuestro_mime_type, (file_nuestro_key IS NOT NULL OR LENGTH(file_nuestro_data) > 0) AS has_file_nuestro,
-               pagado, es_producto_propio, created_at, updated_at
+               pagado, excluido, es_producto_propio, created_at, updated_at
         FROM corapsa
         ORDER BY fecha DESC, id DESC
     `);
@@ -1804,6 +1805,10 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         updates.push('pagado = ?');
         values.push(asBoolean(req.body.pagado) ? 1 : 0);
     }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'excluido')) {
+        updates.push('excluido = ?');
+        values.push(asBoolean(req.body.excluido) ? 1 : 0);
+    }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente')) {
         const attachment = await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente'));
         updates.push('file_name = ?', 'file_mime_type = ?', 'file_data = ?', 'file_key = ?');
@@ -1836,6 +1841,7 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
             justification: asText(req.body?.justificacion, { maxLength: 500 }),
             details: {
                 pagado: req.body?.pagado,
+                excluido: req.body?.excluido,
                 archivoCliente: Boolean(req.body?.archivoCliente),
                 archivoNuestro: Boolean(req.body?.archivoNuestro),
                 eliminarArchivoCliente: Boolean(req.body?.eliminarArchivoCliente),

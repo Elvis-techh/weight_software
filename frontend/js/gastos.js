@@ -382,6 +382,7 @@ function limpiarFiltrosGastos() {
     if (search) search.value = '';
     if (sort) sort.value = 'fecha-desc';
 
+    collapseInlineSearch('gastos-search-wrap', true);
     renderGastos();
 }
 

@@ -237,6 +237,10 @@ function initPhone(event) {
     if (event.target.value === '') event.target.value = '+504 ';
 }
 
+function clearEmptyPhone(event) {
+    if (String(event.target.value ?? '').trim() === '+504') event.target.value = '';
+}
+
 function formatPhone(event) {
     let value = String(event.target.value ?? '').replace(/[^\d+]/g, '');
 

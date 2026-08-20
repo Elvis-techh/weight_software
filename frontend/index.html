@@ -60,6 +60,7 @@
                     <div class="flex-1">
                         <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono (Opcional)</label>
                         <input type="text" id="modal-telefono" oninput="formatPhone(event)" onfocus="initPhone(event)"
+                            onblur="clearEmptyPhone(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none placeholder-gray-400">
                     </div>
                     <div class="flex-1">
@@ -543,6 +544,7 @@
                         <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono (Opcional)</label>
 
                         <input type="text" id="corapsa-telefono" oninput="formatPhone(event)" onfocus="initPhone(event)"
+                            onblur="clearEmptyPhone(event)"
                             class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold placeholder-gray-400">
 
                     </div>
@@ -705,7 +707,7 @@
     <!-- VIEW RECEIPT MODAL -->
 
     <div id="view-receipt-modal" role="dialog" aria-modal="true"
-        class="hidden fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-6">
+        class="hidden fixed inset-0 bg-black/70 z-[96] flex items-center justify-center p-6">
         <div class="bg-white rounded-2xl shadow-2xl w-[900px] max-w-full h-[85vh] overflow-hidden flex flex-col">
             <div class="bg-gray-800 px-6 py-4 flex justify-between items-center text-white shrink-0">
                 <div>
@@ -1212,7 +1214,7 @@
                     <div>
                         <label class="block text-xs font-bold text-gray-600 mb-1">Teléfono</label>
                         <input type="text" id="planilla-telefono" maxlength="30" onfocus="initPhone(event)"
-                            oninput="formatPhone(event)" placeholder="+504 1234-5678"
+                            oninput="formatPhone(event)" onblur="clearEmptyPhone(event)" placeholder="+504 1234-5678"
                             class="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 outline-none font-mono">
                         <p class="mt-1 text-[10px] text-gray-400">El código +504 usa automáticamente el formato
                             1234-5678.</p>
@@ -1487,7 +1489,7 @@
         <!-- HEADER -->
 
         <header
-            class="bg-white px-4 md:px-6 py-4 flex justify-between items-center shadow-sm shrink-0 border-b border-gray-200 gap-3">
+            class="bg-white px-4 md:px-6 py-2.5 flex justify-between items-center shadow-sm shrink-0 border-b border-gray-200 gap-3">
 
             <div class="flex items-center gap-3 min-w-0">
 
@@ -1903,15 +1905,18 @@
                     <div class="flex items-center gap-2">
 
                         <!-- 1. Botón y Barra de Búsqueda Expandible -->
-                        <div class="relative flex items-center">
-                            <input type="text" id="buscar-cliente" oninput="renderClientesTab()"
-                                placeholder="Buscar cliente..."
-                                class="absolute right-full mr-2 w-0 opacity-0 px-0 py-2 border-0 bg-white rounded-lg transition-all duration-300 ease-in-out focus:ring-2 focus:ring-brand-500 text-sm overflow-hidden whitespace-nowrap shadow-sm z-10">
-                            <button onclick="toggleSearchBar()"
-                                class="p-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:text-brand-600 transition-colors flex items-center shadow-sm relative z-20"
-                                title="Buscar">
+                        <div class="relative flex items-center min-w-0" id="clientes-search-wrap">
+                            <button type="button" onclick="expandInlineSearch('clientes-search-wrap')"
+                                class="search-toggle-btn p-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:text-brand-600 transition-colors flex items-center shadow-sm shrink-0"
+                                title="Buscar" aria-label="Buscar">
                                 <span class="material-icons text-[20px]">search</span>
                             </button>
+                            <div class="search-collapse">
+                                <input type="text" id="buscar-cliente" oninput="renderClientesTab()"
+                                    onblur="collapseInlineSearch('clientes-search-wrap')"
+                                    placeholder="Buscar cliente..."
+                                    class="w-full px-3 py-2 border border-gray-200 bg-white rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-sm shadow-sm">
+                            </div>
                         </div>
 
                         <!-- 2. Botón y Menú Flotante de Ordenar -->
@@ -2000,46 +2005,54 @@
 
                 <div class="h-full w-full flex flex-col gap-3 lg:gap-4 xl:gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
 
-                <div class="flex flex-col gap-3 shrink-0">
+                <div class="flex flex-col gap-2 shrink-0">
 
-                    <div class="flex justify-between items-center gap-3">
+                    <h2 class="text-2xl font-bold text-gray-800">Reportes de Transacciones</h2>
 
-                        <h2 class="text-2xl font-bold text-gray-800">Reportes de Transacciones</h2>
+                    <div class="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
 
-                        <button id="btn-imprimir-listado" onclick="imprimirListadoReportes()" disabled
-                            class="flex items-center gap-2 px-4 py-2 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0">
-                            <span class="material-icons text-[18px]">print</span>
-                            <span>Imprimir Listado</span>
-                        </button>
-
-                    </div>
-
-                    <!-- DATE RANGE FILTER -->
-
-                    <div class="flex flex-col gap-2">
-
-                        <div class="relative w-full max-w-sm">
-                            <span
-                                class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">search</span>
-                            <input type="search" id="filter-client" oninput="updateReportesTab()"
-                                placeholder="Buscar cliente..."
-                                class="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 shadow-sm">
+                        <div class="relative flex items-center min-w-0" id="reportes-search-wrap">
+                            <button type="button" onclick="expandInlineSearch('reportes-search-wrap')"
+                                class="search-toggle-btn flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors shrink-0"
+                                title="Buscar" aria-label="Buscar">
+                                <span class="material-icons text-[20px]">search</span>
+                            </button>
+                            <div class="search-collapse">
+                                <div class="relative">
+                                    <span
+                                        class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300 text-[18px] pointer-events-none">search</span>
+                                    <input type="search" id="filter-client" oninput="updateReportesTab()"
+                                        onblur="collapseInlineSearch('reportes-search-wrap')"
+                                        placeholder="Buscar cliente..."
+                                        class="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 outline-none transition-colors bg-gray-50/50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-brand-400 focus:border-brand-400">
+                                </div>
+                            </div>
                         </div>
 
-                        <div
-                            class="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-2 shadow-sm self-start">
+                        <div class="flex items-center gap-2">
 
                             <span class="material-icons text-gray-400 text-[18px]">date_range</span>
 
                             <span class="text-xs font-bold text-gray-500 uppercase">Desde:</span>
 
                             <input type="date" id="filter-start" onchange="updateReportesTab()"
-                                class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1 border border-gray-100">
 
                             <span class="text-xs font-bold text-gray-500 uppercase ml-1">Hasta:</span>
 
                             <input type="date" id="filter-end" onchange="updateReportesTab()"
-                                class="font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1">
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1 border border-gray-100">
+
+                        </div>
+
+                        <div class="flex items-center gap-2 ml-auto">
+
+                            <button id="btn-imprimir-listado" onclick="imprimirListadoReportes()" disabled
+                                class="flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-brand-700 text-white font-bold shadow hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0"
+                                title="Imprimir Listado" aria-label="Imprimir Listado">
+                                <span class="material-icons text-[20px]">print</span>
+                                <span class="hidden lg:inline">Imprimir Listado</span>
+                            </button>
 
                         </div>
 
@@ -2165,7 +2178,7 @@
 
             <!-- VIEW 4: CORAPSA (RECIBOS EXTERNOS) -->
 
-            <main id="view-corapsa" class="absolute inset-0 p-4 lg:p-6 xl:p-8 hidden overflow-hidden bg-blue-50"
+            <main id="view-corapsa" class="absolute inset-0 p-3 lg:p-4 xl:p-5 hidden overflow-hidden bg-blue-50"
                 ondragenter="corapsaPageDragEnter(event)" ondragover="corapsaPageDragOver(event)"
                 ondragleave="corapsaPageDragLeave(event)" ondrop="corapsaPageDrop(event)">
 
@@ -2178,45 +2191,29 @@
 
                 <div class="h-full w-full flex flex-col gap-3 lg:gap-4 xl:gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
 
-                <div class="flex flex-col gap-3 shrink-0">
+                <div class="flex flex-col gap-2 shrink-0">
 
-                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-
-                        <h2 class="text-2xl font-bold text-blue-900">Recibos Externos</h2>
-
-                        <div class="flex flex-wrap items-center gap-2">
-
-                            <button onclick="abrirGestionEmpresasModal()"
-                                class="flex items-center justify-center gap-2 w-11 h-11 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors text-sm shrink-0"
-                                title="Gestionar Empresas" aria-label="Gestionar Empresas">
-                                <span class="material-icons text-[20px]">business</span>
-                            </button>
-
-                            <button id="btn-imprimir-listado-corapsa" onclick="imprimirListadoCorapsa()" disabled
-                                class="flex items-center justify-center w-11 h-11 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0"
-                                title="Imprimir Listado" aria-label="Imprimir Listado">
-                                <span class="material-icons text-[20px]">print</span>
-                            </button>
-
-                            <button onclick="abrirCorapsaModal()"
-                                class="flex items-center justify-center w-11 h-11 bg-blue-600 hover:bg-blue-800 text-white rounded-lg shadow-md shrink-0"
-                                title="Registrar Recibo" aria-label="Registrar Recibo">
-                                <span class="material-icons text-[20px]">add_box</span>
-                            </button>
-
-                        </div>
-
-                    </div>
+                    <h2 class="text-2xl font-bold text-blue-900">Recibos Externos</h2>
 
                     <div
-                        class="flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm">
+                        class="corapsa-toolbar-bar flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm">
 
-                        <div class="relative flex-1 min-w-[220px] max-w-sm">
-                            <span
-                                class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-blue-300 text-[18px]">search</span>
-                            <input type="search" id="corapsa-filter-client" oninput="renderCorapsaTab()"
-                                placeholder="Buscar cliente, recibo # o teléfono..."
-                                class="w-full pl-8 pr-3 py-1.5 border border-blue-100 rounded font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500">
+                        <div class="relative flex items-center min-w-0" id="corapsa-search-wrap">
+                            <button type="button" onclick="expandInlineSearch('corapsa-search-wrap')"
+                                class="search-toggle-btn flex items-center justify-center w-9 h-9 rounded-lg text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors shrink-0"
+                                title="Buscar" aria-label="Buscar">
+                                <span class="material-icons text-[20px]">search</span>
+                            </button>
+                            <div class="search-collapse">
+                                <div class="relative">
+                                    <span
+                                        class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-300 text-[18px] pointer-events-none">search</span>
+                                    <input type="search" id="corapsa-filter-client" oninput="renderCorapsaTab()"
+                                        onblur="collapseInlineSearch('corapsa-search-wrap')"
+                                        placeholder="Buscar cliente, recibo # o teléfono..."
+                                        class="w-full pl-8 pr-3 py-1.5 border border-blue-200 rounded-lg text-sm font-medium text-gray-700 outline-none transition-colors bg-blue-50/50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400">
+                                </div>
+                            </div>
                         </div>
 
                         <div class="flex items-center gap-2">
@@ -2237,6 +2234,42 @@
                             class="text-sm border border-blue-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-700">
                             <option value="">Todos los destinos</option>
                         </select>
+
+                        <select id="corapsa-sort" onchange="renderCorapsaTab()"
+                            class="text-sm border border-blue-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-700">
+                            <option value="fecha-desc">Más recientes</option>
+                            <option value="fecha-asc">Más antiguos</option>
+                            <option value="recibo-asc">Recibo # (A - Z)</option>
+                            <option value="recibo-desc">Recibo # (Z - A)</option>
+                        </select>
+
+                        <label class="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase cursor-pointer select-none">
+                            <input type="checkbox" id="corapsa-filter-mostrar-excluidos" onchange="renderCorapsaTab()"
+                                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                            Mostrar excluidos
+                        </label>
+
+                        <div class="flex items-center gap-2 ml-auto">
+
+                            <button onclick="abrirGestionEmpresasModal()"
+                                class="flex items-center justify-center w-9 h-9 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors shrink-0"
+                                title="Gestionar Empresas" aria-label="Gestionar Empresas">
+                                <span class="material-icons text-[20px]">business</span>
+                            </button>
+
+                            <button id="btn-imprimir-listado-corapsa" onclick="imprimirListadoCorapsa()" disabled
+                                class="flex items-center justify-center w-9 h-9 bg-brand-700 text-white font-bold rounded-lg shadow hover:bg-brand-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-700 shrink-0"
+                                title="Imprimir Listado" aria-label="Imprimir Listado">
+                                <span class="material-icons text-[20px]">print</span>
+                            </button>
+
+                            <button onclick="abrirCorapsaModal()"
+                                class="flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-800 text-white rounded-lg shadow-md shrink-0"
+                                title="Registrar Recibo" aria-label="Registrar Recibo">
+                                <span class="material-icons text-[20px]">add_box</span>
+                            </button>
+
+                        </div>
 
                     </div>
 
@@ -2326,7 +2359,7 @@
 
             <!-- VIEW 5: GASTOS -->
 
-            <main id="view-gastos" class="absolute inset-0 p-4 lg:p-6 xl:p-8 hidden overflow-hidden bg-red-50"
+            <main id="view-gastos" class="absolute inset-0 p-3 lg:p-4 xl:p-5 hidden overflow-hidden bg-red-50"
                 ondragenter="gastosPageDragEnter(event)" ondragover="gastosPageDragOver(event)"
                 ondragleave="gastosPageDragLeave(event)" ondrop="gastosPageDrop(event)">
 
@@ -2338,73 +2371,76 @@
 
                 <div class="h-full w-full flex flex-col gap-3 lg:gap-4 xl:gap-5 2xl:max-w-[1600px] 2xl:mx-auto">
 
-                <div class="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-4 shrink-0">
+                <div class="flex flex-col gap-2 shrink-0">
 
                     <div>
-
                         <h2 class="text-2xl font-bold text-red-900">Control de Gastos</h2>
-
-                        <p class="text-red-700">Registro de egresos operativos y facturas.</p>
-
+                        <p class="text-red-700 text-sm">Registro de egresos operativos y facturas.</p>
                     </div>
 
-                    <div class="flex flex-wrap items-end justify-end gap-3">
+                    <div
+                        class="gastos-toolbar-bar flex flex-wrap items-center gap-2 bg-white border border-red-200 rounded-lg p-2 shadow-sm">
 
-                        <div>
-                            <label for="gastos-filter-start"
-                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Desde</label>
-                            <input type="date" id="gastos-filter-start" onchange="renderGastos()"
-                                class="border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-red-400">
-                        </div>
-
-                        <div>
-                            <label for="gastos-filter-end"
-                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Hasta</label>
-                            <input type="date" id="gastos-filter-end" onchange="renderGastos()"
-                                class="border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-red-400">
-                        </div>
-
-                        <div class="min-w-[250px]">
-                            <label for="gastos-filter-search"
-                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Buscar</label>
-                            <div class="relative">
-                                <span
-                                    class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[19px]">search</span>
-                                <input type="search" id="gastos-filter-search" oninput="renderGastos()"
-                                    placeholder="Concepto, notas o recibo..."
-                                    class="w-full border border-red-200 bg-white rounded-lg pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-400">
+                        <div class="relative flex items-center min-w-0" id="gastos-search-wrap">
+                            <button type="button" onclick="expandInlineSearch('gastos-search-wrap')"
+                                class="search-toggle-btn flex items-center justify-center w-9 h-9 rounded-lg text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors shrink-0"
+                                title="Buscar" aria-label="Buscar">
+                                <span class="material-icons text-[20px]">search</span>
+                            </button>
+                            <div class="search-collapse">
+                                <div class="relative">
+                                    <span
+                                        class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-red-300 text-[18px] pointer-events-none">search</span>
+                                    <input type="search" id="gastos-filter-search" oninput="renderGastos()"
+                                        onblur="collapseInlineSearch('gastos-search-wrap')"
+                                        placeholder="Concepto, notas o recibo..."
+                                        class="w-full pl-8 pr-3 py-1.5 border border-red-200 rounded-lg text-sm font-medium text-gray-700 outline-none transition-colors bg-red-50/50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-red-400 focus:border-red-400">
+                                </div>
                             </div>
                         </div>
 
-                        <div class="min-w-[190px]">
-                            <label for="gastos-sort"
-                                class="block text-[10px] font-bold uppercase text-red-800 mb-1">Ordenar</label>
-                            <select id="gastos-sort" onchange="renderGastos()"
-                                class="w-full border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-red-400 cursor-pointer">
-                                <option value="fecha-desc">Más recientes</option>
-                                <option value="fecha-asc">Más antiguos</option>
-                                <option value="concepto-asc">Concepto (A - Z)</option>
-                                <option value="concepto-desc">Concepto (Z - A)</option>
-                                <option value="monto-desc">Monto (Mayor a menor)</option>
-                                <option value="monto-asc">Monto (Menor a mayor)</option>
-                                <option value="recibo-asc">Recibo (A - Z)</option>
-                                <option value="recibo-desc">Recibo (Z - A)</option>
-                            </select>
+                        <div class="flex items-center gap-2">
+
+                            <span class="text-xs font-bold text-red-500 uppercase">Desde:</span>
+
+                            <input type="date" id="gastos-filter-start" onchange="renderGastos()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-400 rounded p-1 border border-red-100">
+
+                            <span class="text-xs font-bold text-red-500 uppercase ml-1">Hasta:</span>
+
+                            <input type="date" id="gastos-filter-end" onchange="renderGastos()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-red-400 rounded p-1 border border-red-100">
+
                         </div>
 
-                        <button type="button" onclick="limpiarFiltrosGastos()"
-                            class="h-[38px] px-3 rounded-lg border border-red-200 bg-white text-red-700 font-bold hover:bg-red-100 transition-colors flex items-center gap-1"
-                            title="Mostrar todos los gastos">
-                            <span class="material-icons text-[18px]">filter_alt_off</span>
-                            <span class="hidden lg:inline">Limpiar</span>
-                        </button>
+                        <select id="gastos-sort" onchange="renderGastos()"
+                            class="text-sm border border-red-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-red-400 font-semibold text-gray-700">
+                            <option value="fecha-desc">Más recientes</option>
+                            <option value="fecha-asc">Más antiguos</option>
+                            <option value="concepto-asc">Concepto (A - Z)</option>
+                            <option value="concepto-desc">Concepto (Z - A)</option>
+                            <option value="monto-desc">Monto (Mayor a menor)</option>
+                            <option value="monto-asc">Monto (Menor a mayor)</option>
+                            <option value="recibo-asc">Recibo (A - Z)</option>
+                            <option value="recibo-desc">Recibo (Z - A)</option>
+                        </select>
 
-                        <button type="button" onclick="abrirGastosModal()"
-                            class="h-[38px] bg-red-600 hover:bg-red-800 text-white px-5 rounded-lg font-bold shadow-md flex items-center gap-2">
+                        <div class="flex items-center gap-2 ml-auto">
 
-                            <span class="material-icons">add_shopping_cart</span> <span class="hidden lg:inline">Nuevo Gasto</span>
+                            <button type="button" onclick="limpiarFiltrosGastos()"
+                                class="flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-red-200 bg-white text-red-700 font-bold hover:bg-red-100 transition-colors shrink-0"
+                                title="Mostrar todos los gastos">
+                                <span class="material-icons text-[18px]">filter_alt_off</span>
+                                <span class="toolbar-label">Limpiar</span>
+                            </button>
 
-                        </button>
+                            <button type="button" onclick="abrirGastosModal()"
+                                class="flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-red-600 hover:bg-red-800 text-white font-bold shadow-md shrink-0">
+                                <span class="material-icons text-[20px]">add_shopping_cart</span>
+                                <span class="toolbar-label">Nuevo Gasto</span>
+                            </button>
+
+                        </div>
 
                     </div>
 
