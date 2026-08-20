@@ -2198,7 +2198,7 @@
                     <div
                         class="corapsa-toolbar-bar flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm">
 
-                        <div class="relative flex items-center min-w-0" id="corapsa-search-wrap">
+                        <div class="search-wrap-overlay relative flex items-center min-w-0" id="corapsa-search-wrap">
                             <button type="button" onclick="expandInlineSearch('corapsa-search-wrap')"
                                 class="search-toggle-btn flex items-center justify-center w-9 h-9 rounded-lg text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors shrink-0"
                                 title="Buscar" aria-label="Buscar">
@@ -2210,8 +2210,9 @@
                                         class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-300 text-[18px] pointer-events-none">search</span>
                                     <input type="search" id="corapsa-filter-client" oninput="renderCorapsaTab()"
                                         onblur="collapseInlineSearch('corapsa-search-wrap')"
+                                        onkeydown="if (event.key === 'Escape') this.blur()"
                                         placeholder="Buscar cliente, recibo # o teléfono..."
-                                        class="w-full pl-8 pr-3 py-1.5 border border-blue-200 rounded-lg text-sm font-medium text-gray-700 outline-none transition-colors bg-blue-50/50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400">
+                                        class="w-full pl-8 pr-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-gray-700 outline-none bg-white">
                                 </div>
                             </div>
                         </div>

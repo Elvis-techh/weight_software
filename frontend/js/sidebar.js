@@ -16,9 +16,20 @@
  * Leaf clicks call switchTab() (ui.js) instead, which shows the matching
  * view, fetches its data, and calls setActiveLeaf() itself once done.
  */
-const SIDEBAR_COLLAPSE_KEY = 'basculaCentral.sidebarCollapsed';
 
-function applySidebarCollapsed(collapsed) {
+/**
+ * Collapse state.
+ *
+ * The sidebar behaves like a menu, not a permanent rail: it starts collapsed
+ * to its icon-only width on every load, expands only when the operator asks
+ * for it ("Expandir", or opening a nav group), and folds back up as soon as
+ * they move on — "Colapsar", Escape, or a click anywhere outside it.
+ *
+ * Nothing is persisted and there is no width-based auto-collapse any more:
+ * a stored "keep it open" preference would be undone by the very first click
+ * in the work area anyway, so the start state is always the collapsed one.
+ */
+function setSidebarCollapsed(collapsed) {
   const sidebar = document.querySelector('.sidebar');
   const toggleBtn = document.getElementById('sidebar-collapse-toggle');
   if (!sidebar) return;
@@ -34,42 +45,28 @@ function applySidebarCollapsed(collapsed) {
   }
 }
 
-function setSidebarCollapsed(collapsed) {
-  applySidebarCollapsed(collapsed);
-  localStorage.setItem(SIDEBAR_COLLAPSE_KEY, collapsed ? '1' : '0');
+function initSidebarCollapse() {
+  setSidebarCollapsed(true);
+
+  document.getElementById('sidebar-collapse-toggle')?.addEventListener('click', () => {
+    const sidebar = document.querySelector('.sidebar');
+    setSidebarCollapsed(!sidebar?.classList.contains('is-collapsed'));
+  });
 }
 
-// Icon-rail auto-collapse only makes sense at desktop widths where the
-// sidebar shares the row with content — below this, the sidebar becomes an
-// off-canvas overlay instead (see the max-width: 767px block in sidebar.css)
-// and collapsing it would just hide the labels a clerk needs to reach it.
-const SIDEBAR_AUTO_COLLAPSE_QUERY = '(max-width: 1279px) and (min-width: 768px)';
+// A click that lands anywhere outside the sidebar means the operator has gone
+// back to the work area, so the sidebar gets out of the way: the desktop rail
+// folds back to icons and the mobile drawer slides shut. The hamburger is
+// exempt — its own click reaches this handler too and would otherwise close
+// the drawer it just opened. Listens on the capture phase so a row action that
+// calls stopPropagation() (or removes its own button from the table) can't
+// swallow the click on the way up.
+function handleClickOutsideSidebar(event) {
+  const target = event.target;
+  if (target instanceof Element && target.closest('.sidebar, #mobile-sidebar-toggle')) return;
 
-function initSidebarCollapse() {
-  const toggleBtn = document.getElementById('sidebar-collapse-toggle');
-  const mql = window.matchMedia(SIDEBAR_AUTO_COLLAPSE_QUERY);
-
-  const evaluate = () => {
-    const stored = localStorage.getItem(SIDEBAR_COLLAPSE_KEY);
-    // No explicit preference yet: default collapsed while the window is in
-    // the narrow-desktop range so the 250px sidebar doesn't eat a large share
-    // of a small monitor. Re-evaluated on every resize (not just at load) so
-    // dragging the window narrower/wider reacts live — an operator's manual
-    // choice, once stored, always wins after that so this never fights them
-    // mid-session.
-    const collapsed = stored === null ? mql.matches : stored === '1';
-    applySidebarCollapsed(collapsed);
-  };
-
-  evaluate();
-  mql.addEventListener('change', evaluate);
-
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      const sidebar = document.querySelector('.sidebar');
-      setSidebarCollapsed(!sidebar.classList.contains('is-collapsed'));
-    });
-  }
+  closeMobileSidebar();
+  setSidebarCollapsed(true);
 }
 
 // ---- Mobile off-canvas drawer ----
@@ -88,8 +85,12 @@ function closeMobileSidebar() {
 function initSidebar() {
   initSidebarCollapse();
 
+  document.addEventListener('click', handleClickOutsideSidebar, true);
+
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeMobileSidebar();
+    if (e.key !== 'Escape') return;
+    closeMobileSidebar();
+    setSidebarCollapsed(true);
   });
 
   document.querySelectorAll('[data-toggle]').forEach((header) => {

@@ -48,7 +48,14 @@ function expandInlineSearch(wrapId) {
     if (!wrap) return;
 
     wrap.querySelector('.search-collapse')?.classList.add('is-expanded');
-    wrap.querySelector('.search-toggle-btn')?.classList.add('hidden');
+    // The overlay variant slides over the toolbar instead of pushing it around,
+    // so its icon button stays put — hiding it would collapse the wrapper to
+    // zero width and shift the whole row while the field is open.
+    if (wrap.classList.contains('search-wrap-overlay')) {
+        wrap.querySelector('.search-toggle-btn')?.classList.remove('has-filter');
+    } else {
+        wrap.querySelector('.search-toggle-btn')?.classList.add('hidden');
+    }
     const input = wrap.querySelector('input');
     setTimeout(() => input?.focus(), 0);
 }
@@ -58,10 +65,18 @@ function collapseInlineSearch(wrapId, force = false) {
     if (!wrap) return;
 
     const input = wrap.querySelector('input');
-    if (!force && input && input.value.trim() !== '') return;
+    const isOverlay = wrap.classList.contains('search-wrap-overlay');
+    const hasValue = !!input && input.value.trim() !== '';
+
+    // An inline search stays open while it holds a filter, since the text in it
+    // is the only sign the list is filtered. The overlay one always closes so it
+    // stops covering the toolbar, and marks the still-applied filter on its icon.
+    if (!force && hasValue && !isOverlay) return;
 
     wrap.querySelector('.search-collapse')?.classList.remove('is-expanded');
-    wrap.querySelector('.search-toggle-btn')?.classList.remove('hidden');
+    const toggle = wrap.querySelector('.search-toggle-btn');
+    toggle?.classList.remove('hidden');
+    if (isOverlay) toggle?.classList.toggle('has-filter', hasValue && !force);
 }
 
 function mostrarNotificacion(message, type = 'success') {

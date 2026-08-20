@@ -41,9 +41,13 @@ button[data-busy="true"] {
    query — a viewport breakpoint doesn't work here because the sidebar
    (250px) eats into the window width before the toolbar ever sees it, so
    "window is wide enough" and "this row has room to expand" are different
-   thresholds. Each row's min-width below is its measured natural width
-   (everything expanded, nothing wrapped) rounded up:
-   corapsa ~951px, gastos ~1280px (gastos also reveals button text).
+   thresholds. The min-width below is that row's measured natural width
+   (everything expanded, nothing wrapped) rounded up: gastos ~1280px
+   (gastos also reveals button text).
+
+   Recibos Externos opts out of ever auto-expanding — see ".search-wrap-overlay"
+   further down — but still declares its container so the overlay can size
+   itself in "cqi" units against the toolbar row.
    ========================================================================== */
 .search-collapse {
     width: 0;
@@ -69,17 +73,6 @@ button[data-busy="true"] {
     container: gastos-toolbar / inline-size;
 }
 
-@container corapsa-toolbar (min-width: 980px) {
-    .search-collapse {
-        width: 16rem;
-        opacity: 1;
-        overflow: visible;
-    }
-    .search-toggle-btn {
-        display: none;
-    }
-}
-
 @container gastos-toolbar (min-width: 1310px) {
     .search-collapse {
         width: 16rem;
@@ -92,6 +85,54 @@ button[data-busy="true"] {
     .toolbar-label {
         display: inline;
     }
+}
+
+/* --------------------------------------------------------------------------
+   Overlay variant (Recibos Externos) — the search stays icon-only at every
+   width and, when clicked, slides open to a normal search-field width as an
+   absolutely positioned panel floating over the row, so none of the
+   neighbouring controls move or wrap to make room. It never spans the whole
+   header: the width is capped at 18rem and only shrinks below that ("100cqi"
+   is the toolbar row's own content width) if the row itself is narrower.
+   The icon button stays put underneath: hiding it would shrink the wrapper
+   to zero and shift the row. Because it closes on blur even while a filter
+   is still applied, ".has-filter" puts a dot on the icon to say so.
+   -------------------------------------------------------------------------- */
+.search-wrap-overlay .search-collapse {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 20;
+    background: #fff;
+    border-radius: 0.5rem;
+}
+
+.search-wrap-overlay .search-collapse.is-expanded {
+    width: min(18rem, 100cqi);
+    box-shadow: 0 4px 14px rgba(30, 58, 138, 0.18);
+}
+
+/* The panel clips its children, so the focus ring lives on the panel rather
+   than on the input, where it would be cut off at both ends. */
+.search-wrap-overlay .search-collapse:focus-within {
+    box-shadow: 0 0 0 2px #60a5fa, 0 4px 14px rgba(30, 58, 138, 0.18);
+}
+
+.search-wrap-overlay .search-toggle-btn {
+    position: relative;
+}
+
+.search-wrap-overlay .search-toggle-btn.has-filter::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    background: #2563eb;
+    box-shadow: 0 0 0 2px #fff;
 }
 
 /* ==========================================================================
