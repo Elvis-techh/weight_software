@@ -221,6 +221,13 @@ function setDefaultDateFilters() {
     if (overviewStart && !overviewStart.value) overviewStart.value = currentMonth.start;
     if (overviewEnd && !overviewEnd.value) overviewEnd.value = currentMonth.end;
 
+    // The audit log opens on the current month rather than today: a correction
+    // is usually looked up days after it was made, not the same afternoon.
+    const auditoriaStart = document.getElementById('auditoria-filter-start');
+    const auditoriaEnd = document.getElementById('auditoria-filter-end');
+    if (auditoriaStart && !auditoriaStart.value) auditoriaStart.value = currentMonth.start;
+    if (auditoriaEnd && !auditoriaEnd.value) auditoriaEnd.value = currentMonth.end;
+
     const currentWeek = getCurrentWeekRange();
     const planillaStart = document.getElementById('planilla-filter-start');
     const planillaEnd = document.getElementById('planilla-filter-end');

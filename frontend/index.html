@@ -1439,6 +1439,7 @@
             <div class="sub-wrap">
                 <button type="button" class="sub-row" data-leaf="overview">Overview</button>
                 <button type="button" class="sub-row" data-leaf="reportes">Historial de Pesajes</button>
+                <button type="button" class="sub-row" data-leaf="auditoria">Historial de Cambios</button>
             </div>
         </div>
 
@@ -2176,6 +2177,144 @@
 
 
 
+            <!-- VIEW: HISTORIAL DE CAMBIOS (AUDITORÍA) -->
+
+            <main id="view-auditoria" class="absolute inset-0 p-4 lg:p-6 xl:p-8 hidden overflow-hidden bg-slate-50">
+
+                <div class="h-full w-full flex flex-col gap-3 lg:gap-4 xl:gap-6 2xl:max-w-[1600px] 2xl:mx-auto">
+
+                <div class="flex flex-col gap-2 shrink-0">
+
+                    <h2 class="text-2xl font-bold text-gray-800">Historial de Cambios</h2>
+
+                    <div class="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+
+                        <div class="relative flex items-center min-w-0" id="auditoria-search-wrap">
+                            <button type="button" onclick="expandInlineSearch('auditoria-search-wrap')"
+                                class="search-toggle-btn flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors shrink-0"
+                                title="Buscar" aria-label="Buscar">
+                                <span class="material-icons text-[20px]">search</span>
+                            </button>
+                            <div class="search-collapse">
+                                <div class="relative">
+                                    <span
+                                        class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300 text-[18px] pointer-events-none">search</span>
+                                    <input type="search" id="auditoria-filter-search" oninput="renderAuditoria()"
+                                        onblur="collapseInlineSearch('auditoria-search-wrap')"
+                                        placeholder="Buscar campo, cliente o motivo..."
+                                        class="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 outline-none transition-colors bg-gray-50/50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-brand-400 focus:border-brand-400">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+
+                            <span class="material-icons text-gray-400 text-[18px]">date_range</span>
+
+                            <span class="text-xs font-bold text-gray-500 uppercase">Desde:</span>
+
+                            <input type="date" id="auditoria-filter-start" onchange="fetchAuditoria()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1 border border-gray-100">
+
+                            <span class="text-xs font-bold text-gray-500 uppercase ml-1">Hasta:</span>
+
+                            <input type="date" id="auditoria-filter-end" onchange="fetchAuditoria()"
+                                class="text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-brand-500 rounded p-1 border border-gray-100">
+
+                        </div>
+
+                        <div class="flex items-center gap-2 ml-auto">
+
+                            <button type="button" onclick="fetchAuditoria()"
+                                class="flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-brand-700 text-white font-bold shadow hover:bg-brand-600 transition-colors shrink-0"
+                                title="Actualizar" aria-label="Actualizar">
+                                <span class="material-icons text-[20px]">refresh</span>
+                                <span class="hidden lg:inline">Actualizar</span>
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                    <div id="auditoria-truncado"
+                        class="hidden flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 text-xs font-bold">
+                        <span class="material-icons text-[18px]">warning_amber</span>
+                        Se alcanzó el máximo de registros mostrados. Reduzca el rango de fechas para ver el resto.
+                    </div>
+
+                </div>
+
+                <div class="grid grid-cols-3 gap-4 shrink-0">
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3">
+                        <div class="bg-slate-100 text-slate-600 p-3 rounded-full"><span
+                                class="material-icons text-3xl">history</span></div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-500 uppercase">Movimientos</p>
+                            <h3 id="auditoria-total" class="text-2xl font-black text-gray-800 font-mono">0</h3>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3">
+                        <div class="bg-blue-100 text-blue-600 p-3 rounded-full"><span
+                                class="material-icons text-3xl">edit</span></div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-500 uppercase">Ediciones</p>
+                            <h3 id="auditoria-ediciones" class="text-2xl font-black text-gray-800 font-mono">0</h3>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center gap-3">
+                        <div class="bg-red-100 text-red-600 p-3 rounded-full"><span
+                                class="material-icons text-3xl">delete</span></div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-500 uppercase">Eliminaciones</p>
+                            <h3 id="auditoria-eliminaciones" class="text-2xl font-black text-gray-800 font-mono">0</h3>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col">
+
+                    <div class="overflow-auto flex-1 p-0">
+
+                        <table class="w-full text-left text-sm responsive-table">
+
+                            <thead class="bg-gray-50 sticky top-0 border-b border-gray-200 shadow-sm">
+
+                                <tr class="text-gray-500 text-xs uppercase tracking-wider">
+
+                                    <th class="p-4 font-semibold">Fecha</th>
+
+                                    <th class="p-4 font-semibold">Módulo</th>
+
+                                    <th class="p-4 font-semibold">Acción</th>
+
+                                    <th class="p-4 font-semibold">Cambios</th>
+
+                                    <th class="p-4 font-semibold">Justificación</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="auditoria-table-body" class="divide-y divide-gray-100">
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+                </div>
+
+            </main>
+
+
+
             <!-- VIEW 4: CORAPSA (RECIBOS EXTERNOS) -->
 
             <main id="view-corapsa" class="absolute inset-0 p-3 lg:p-4 xl:p-5 hidden overflow-hidden bg-blue-50"
@@ -2618,6 +2757,7 @@
     <script src="js/gastos.js" defer></script>
     <script src="js/planilla.js" defer></script>
     <script src="js/overview.js" defer></script>
+    <script src="js/auditoria.js" defer></script>
     <script src="js/scaleSettings.js" defer></script>
     <script src="js/app.js" defer></script>
 

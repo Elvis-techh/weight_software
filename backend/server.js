@@ -926,11 +926,69 @@ function validateCorapsaPaymentBody(body, { editing = false } = {}) {
     };
 }
 
-async function logAudit({ entity, entityId, action, justification = '', details = null }) {
+// Cap on rows returned by GET /api/auditoria, so a wide date range can't
+// pull the whole log into the renderer at once.
+const AUDIT_PAGE_LIMIT = 1000;
+
+// Fields that move on every write (or that are themselves the audit metadata)
+// and would otherwise show up as noise in every single change list.
+const AUDIT_IGNORED_FIELDS = new Set(['updatedAt', 'createdAt', 'justificacion']);
+
+function auditValuesEqual(a, b) {
+    // Numbers round-trip through Number()/REAL storage, so an untouched weight
+    // can come back as 12000.0000000001 and read as an edit without a tolerance.
+    if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 0.0001;
+    return (a ?? '') === (b ?? '');
+}
+
+// Compares two mapper-shaped snapshots and returns only the fields that
+// actually moved, as [{ campo, antes, despues }]. Used both when writing an
+// audit row (to record which fields were touched) and when reading it back.
+function diffSnapshots(before, after) {
+    if (!before || !after) return [];
+    const changes = [];
+    for (const campo of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        if (AUDIT_IGNORED_FIELDS.has(campo)) continue;
+        if (auditValuesEqual(before[campo], after[campo])) continue;
+        changes.push({ campo, antes: before[campo] ?? null, despues: after[campo] ?? null });
+    }
+    return changes;
+}
+
+// Local wall-clock 'YYYY-MM-DD HH:MM:SS'. See auditoria.registrado_en in
+// database.js for why CURRENT_TIMESTAMP alone is not enough.
+function localTimestamp(date = new Date()) {
+    const pad = value => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+        ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+// "before"/"after" are snapshots taken from the same mapper the API serves
+// (mapTransaction, mapCorapsa, ...), which already omit BLOB columns. Pass
+// both on an edit; pass "before" alone on a delete so the removed row stays
+// recoverable. "details" is kept for the rows written before snapshots existed.
+async function logAudit({ entity, entityId, action, justification = '', details = null, before = null, after = null }) {
+    const campos = diffSnapshots(before, after).map(change => change.campo);
+    const despuesJson = after ? JSON.stringify(after) : null;
+    const detallesJson = details ? JSON.stringify(details) : null;
     await db.run(
-        `INSERT INTO auditoria (entidad, entidad_id, accion, justificacion, detalles)
-         VALUES (?, ?, ?, ?, ?)`,
-        [entity, entityId == null ? null : String(entityId), action, justification, details ? JSON.stringify(details) : null]
+        `INSERT INTO auditoria (entidad, entidad_id, accion, justificacion, detalles, datos_antes, datos_despues, campos_cambiados, registrado_en)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            entity,
+            entityId == null ? null : String(entityId),
+            action,
+            justification,
+            // Most edit call sites pass the same object as both "details" and
+            // "after"; storing it twice would double every audit row for
+            // nothing. Kept only when it carries something extra, like the
+            // request-level context on actualizar_parcial.
+            detallesJson === despuesJson ? null : detallesJson,
+            before ? JSON.stringify(before) : null,
+            despuesJson,
+            campos.join(','),
+            localTimestamp()
+        ]
     );
 }
 
@@ -1031,12 +1089,19 @@ app.put('/api/companies/:id', asyncHandler(async (req, res) => {
         const existing = await db.get('SELECT id FROM companies WHERE UPPER(nombre) = ? AND id != ?', [nombre, id]);
         if (existing) throw new HttpError(409, 'Esa empresa ya existe.', 'COMPANY_EXISTS');
 
+        // Snapshot inside the transaction, before the UPDATE, so a concurrent
+        // write can't slip between the read and the change being audited.
+        const previo = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Empresa no encontrada.', 'NOT_FOUND');
+        const antes = mapCompany(previo);
+
         const result = await db.run('UPDATE companies SET nombre = ? WHERE id = ?', [nombre, id]);
         if (!result.changes) throw new HttpError(404, 'Empresa no encontrada.', 'NOT_FOUND');
 
         const row = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
-        await logAudit({ entity: 'company', entityId: id, action: 'editar', justification: justificacion, details: { nombre } });
-        return mapCompany(row);
+        const despues = mapCompany(row);
+        await logAudit({ entity: 'company', entityId: id, action: 'editar', justification: justificacion, details: despues, before: antes, after: despues });
+        return despues;
     });
 
     sendData(res, { company });
@@ -1047,9 +1112,11 @@ app.delete('/api/companies/:id', asyncHandler(async (req, res) => {
     const justificacion = requireJustification(req.body);
 
     await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM companies WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Empresa no encontrada.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM companies WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Empresa no encontrada.', 'NOT_FOUND');
-        await logAudit({ entity: 'company', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'company', entityId: id, action: 'eliminar', justification: justificacion, before: mapCompany(previo) });
     });
 
     sendData(res, { id });
@@ -1232,6 +1299,10 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
     };
 
     const cliente = await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
+        const antes = mapClient(previo);
+
         const result = await db.run(`
             UPDATE clientes
             SET nombre = ?, apellido = ?, telefono = ?, ubicacion = ?, identidad = ?,
@@ -1267,8 +1338,9 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
         );
 
         const row = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
-        await logAudit({ entity: 'cliente', entityId: id, action: 'editar', justification: justificacion, details: client });
-        return mapClient(row);
+        const despues = mapClient(row);
+        await logAudit({ entity: 'cliente', entityId: id, action: 'editar', justification: justificacion, details: despues, before: antes, after: despues });
+        return despues;
     });
     sendData(res, { cliente });
 }));
@@ -1281,9 +1353,11 @@ app.delete('/api/clientes/:id', asyncHandler(async (req, res) => {
         const queued = await db.get('SELECT id FROM camiones_en_patio WHERE cliente_id = ? LIMIT 1', [String(id)]);
         if (queued) throw new HttpError(409, 'No puede eliminarse un cliente con un vehículo activo en patio.', 'CLIENT_IN_USE');
 
+        const previo = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM clientes WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
-        await logAudit({ entity: 'cliente', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'cliente', entityId: id, action: 'eliminar', justification: justificacion, before: mapClient(previo) });
     });
     sendData(res, { id });
 }));
@@ -1329,6 +1403,7 @@ app.patch('/api/clientes/:id/precio', asyncHandler(async (req, res) => {
             );
         }
 
+        const antes = mapClient(clientRow);
         const cliente = mapClient(await db.get('SELECT * FROM clientes WHERE id = ?', [id]));
 
         let camion = null;
@@ -1345,7 +1420,9 @@ app.patch('/api/clientes/:id/precio', asyncHandler(async (req, res) => {
             entityId: id,
             action: 'editar_precio_pesaje',
             justification: justificacion,
-            details: { flete, unidad, precioAnteriorTonelada, precioNuevo: precioUnidad, precioTonelada, truckId }
+            details: { flete, unidad, precioAnteriorTonelada, precioNuevo: precioUnidad, precioTonelada, truckId },
+            before: antes,
+            after: cliente
         });
 
         return { cliente, camion };
@@ -1493,6 +1570,8 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
             );
         }
 
+        const antes = mapTruck(await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]));
+
         if (hasBruto) await db.run('UPDATE camiones_en_patio SET peso_bruto = ? WHERE id = ?', [pesoBruto, id]);
         if (hasTara) await db.run('UPDATE camiones_en_patio SET peso_tara = ? WHERE id = ?', [pesoTara, id]);
 
@@ -1503,7 +1582,9 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
             entityId: id,
             action: overwritingBruto ? 'sobrescribir_peso_bruto' : 'actualizar_peso',
             justification: overwritingBruto ? justificacion : '',
-            details: { pesoBruto, pesoTara }
+            details: { pesoBruto, pesoTara },
+            before: antes,
+            after: mappedTruck
         });
         return mappedTruck;
     });
@@ -1563,7 +1644,17 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         ]);
         const transactionId = insertResult.lastID;
         await db.run('DELETE FROM camiones_en_patio WHERE id = ?', [id]);
-        await logAudit({ entity: 'transaccion', entityId: transactionId, action: 'finalizar', details: { queueId: id } });
+        // Passing the finished transaction as "after" is what lets Historial de
+        // Cambios show the values the boleta was created with, instead of just
+        // the queue id it came from.
+        const creada = mapTransaction(await db.get('SELECT * FROM transacciones WHERE id = ?', [transactionId]));
+        await logAudit({
+            entity: 'transaccion',
+            entityId: transactionId,
+            action: 'finalizar',
+            details: { queueId: id },
+            after: creada
+        });
         return mapTransaction(await db.get('SELECT * FROM transacciones WHERE id = ?', [transactionId]));
     });
 
@@ -1574,9 +1665,11 @@ app.delete('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
     await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Vehículo no encontrado.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM camiones_en_patio WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Vehículo no encontrado.', 'NOT_FOUND');
-        await logAudit({ entity: 'camion_patio', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'camion_patio', entityId: id, action: 'eliminar', justification: justificacion, before: mapTruck(previo) });
     });
     sendData(res, { id });
 }));
@@ -1617,6 +1710,10 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
         );
         if (duplicate) throw new HttpError(409, 'Ya existe otra transacción con ese número de boleta.', 'DUPLICATE_BOLETA');
 
+        const previo = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
+        const antes = mapTransaction(previo);
+
         const result = await db.run(`
             UPDATE transacciones
             SET fecha = ?, hora = ?, placa = ?, conductor = ?, cliente_nombre = ?,
@@ -1627,8 +1724,9 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
         if (!result.changes) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
 
         const row = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
-        await logAudit({ entity: 'transaccion', entityId: id, action: 'editar', justification: justificacion, details: mapTransaction(row) });
-        return mapTransaction(row);
+        const despues = mapTransaction(row);
+        await logAudit({ entity: 'transaccion', entityId: id, action: 'editar', justification: justificacion, details: despues, before: antes, after: despues });
+        return despues;
     });
 
     sendData(res, { transaccion: transaction });
@@ -1638,9 +1736,11 @@ app.delete('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
     await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM transacciones WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
-        await logAudit({ entity: 'transaccion', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'transaccion', entityId: id, action: 'eliminar', justification: justificacion, before: mapTransaction(previo) });
     });
     sendData(res, { id });
 }));
@@ -1743,6 +1843,10 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
         : null;
 
     const corapsa = await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
+        const antes = mapCorapsa(previo);
+
         await db.run(`
             UPDATE corapsa
             SET fecha = ?, recibo_in = ?, cliente = ?, telefono = ?, destino = ?, a_nombre_de = ?, toneladas = ?, precio = ?, total = ?,
@@ -1766,8 +1870,9 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
         ]);
 
         const row = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
-        await logAudit({ entity: 'corapsa', entityId: id, action: 'editar', justification: justificacion, details: mapCorapsa(row) });
-        return mapCorapsa(row);
+        const despues = mapCorapsa(row);
+        await logAudit({ entity: 'corapsa', entityId: id, action: 'editar', justification: justificacion, details: despues, before: antes, after: despues });
+        return despues;
     });
 
     if (hasClienteUpload && current.file_key) await storage.deleteObject(current.file_key);
@@ -1833,6 +1938,10 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
 
     values.push(id);
     const corapsa = await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
+        const antes = mapCorapsa(previo);
+
         const result = await db.run(`UPDATE corapsa SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
         if (!result.changes) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
@@ -1846,7 +1955,9 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
                 archivoNuestro: Boolean(req.body?.archivoNuestro),
                 eliminarArchivoCliente: Boolean(req.body?.eliminarArchivoCliente),
                 eliminarArchivoNuestro: Boolean(req.body?.eliminarArchivoNuestro)
-            }
+            },
+            before: antes,
+            after: mapCorapsa(row)
         });
         return mapCorapsa(row);
     });
@@ -1862,9 +1973,11 @@ app.delete('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const justificacion = requireJustification(req.body);
     const current = await db.get('SELECT file_key, file_nuestro_key FROM corapsa WHERE id = ?', [id]);
     await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM corapsa WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
-        await logAudit({ entity: 'corapsa', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'corapsa', entityId: id, action: 'eliminar', justification: justificacion, before: mapCorapsa(previo) });
     });
     if (current?.file_key) await storage.deleteObject(current.file_key);
     if (current?.file_nuestro_key) await storage.deleteObject(current.file_nuestro_key);
@@ -1929,6 +2042,10 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
     const attachment = hasUpload ? await storeAttachment('gastos', parseAttachmentPayload(req.body.archivo, 'El recibo del gasto')) : null;
 
     const gasto = await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
+        const antes = mapExpense(previo);
+
         await db.run(`
             UPDATE gastos
             SET fecha = ?, monto = ?, concepto = ?, justificacion = ?, notas = ?,
@@ -1943,8 +2060,9 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
             id
         ]);
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
-        await logAudit({ entity: 'gasto', entityId: id, action: 'editar', justification: expense.justificacion, details: mapExpense(row) });
-        return mapExpense(row);
+        const despues = mapExpense(row);
+        await logAudit({ entity: 'gasto', entityId: id, action: 'editar', justification: expense.justificacion, details: despues, before: antes, after: despues });
+        return despues;
     });
 
     if (hasUpload && current.file_key) await storage.deleteObject(current.file_key);
@@ -1965,6 +2083,10 @@ app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
     if (!eliminar && !attachment) throw new HttpError(400, 'Seleccione un archivo.', 'VALIDATION_ERROR');
 
     const gasto = await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
+        const antes = mapExpense(previo);
+
         const result = eliminar
             ? await db.run(`
                 UPDATE gastos
@@ -1979,8 +2101,9 @@ app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
 
         if (!result.changes) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
-        await logAudit({ entity: 'gasto', entityId: id, action: 'actualizar_archivo', justification: justificacion, details: mapExpense(row) });
-        return mapExpense(row);
+        const despues = mapExpense(row);
+        await logAudit({ entity: 'gasto', entityId: id, action: 'actualizar_archivo', justification: justificacion, details: despues, before: antes, after: despues });
+        return despues;
     });
 
     if (current.file_key) await storage.deleteObject(current.file_key);
@@ -1993,9 +2116,11 @@ app.delete('/api/gastos/:id', asyncHandler(async (req, res) => {
     const justificacion = requireJustification(req.body);
     const current = await db.get('SELECT file_key FROM gastos WHERE id = ?', [id]);
     await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM gastos WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
-        await logAudit({ entity: 'gasto', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'gasto', entityId: id, action: 'eliminar', justification: justificacion, before: mapExpense(previo) });
     });
     if (current?.file_key) await storage.deleteObject(current.file_key);
     sendData(res, { id });
@@ -2051,6 +2176,10 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
         : null;
 
     const pago = await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
+        const antes = mapCorapsaPayment(previo);
+
         await db.run(`
             UPDATE corapsa_pagos
             SET fecha_pago = ?, periodo_inicio = ?, periodo_fin = ?, referencia = ?, destino = ?,
@@ -2068,11 +2197,12 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
         ]);
 
         const row = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [id]);
+        const despues = mapCorapsaPayment(row);
         await logAudit({
             entity: 'pago_corapsa', entityId: id, action: 'editar',
-            justification: payment.justificacion, details: mapCorapsaPayment(row)
+            justification: payment.justificacion, details: despues, before: antes, after: despues
         });
-        return mapCorapsaPayment(row);
+        return despues;
     });
 
     if (hasUpload && current.file_key) await storage.deleteObject(current.file_key);
@@ -2085,9 +2215,11 @@ app.delete('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
     const justificacion = requireJustification(req.body);
     const current = await db.get('SELECT file_key FROM corapsa_pagos WHERE id = ?', [id]);
     await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM corapsa_pagos WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
-        await logAudit({ entity: 'pago_corapsa', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'pago_corapsa', entityId: id, action: 'eliminar', justification: justificacion, before: mapCorapsaPayment(previo) });
     });
     if (current?.file_key) await storage.deleteObject(current.file_key);
     sendData(res, { id });
@@ -2140,6 +2272,15 @@ app.put('/api/planilla/:id/asistencia/:fecha', asyncHandler(async (req, res) => 
     if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
 
     const asistencia = await withTransaction(async () => {
+        // Upsert, so there may be nothing here yet: a first mark of the day is
+        // a creation, and leaving "antes" null keeps it out of the change list.
+        const previo = await db.get(`
+            SELECT trabajador_id, fecha, trabajado, hora_inicio, hora_fin
+            FROM planilla_asistencia
+            WHERE trabajador_id = ? AND fecha = ?
+        `, [id, fecha]);
+        const antes = previo ? mapAttendance(previo) : null;
+
         await db.run(`
             INSERT INTO planilla_asistencia
                 (trabajador_id, fecha, trabajado, hora_inicio, hora_fin)
@@ -2157,14 +2298,18 @@ app.put('/api/planilla/:id/asistencia/:fecha', asyncHandler(async (req, res) => 
             FROM planilla_asistencia
             WHERE trabajador_id = ? AND fecha = ?
         `, [id, fecha]);
+        const despues = mapAttendance(row);
 
         await logAudit({
             entity: 'asistencia',
             entityId: `${id}:${fecha}`,
             action: trabajado ? 'registrar_jornada' : 'marcar_no_trabajado',
-            details: mapAttendance(row)
+            details: despues,
+            // Null on the first mark of the day — an insert, not a correction.
+            before: antes,
+            after: despues
         });
-        return mapAttendance(row);
+        return despues;
     });
     sendData(res, { asistencia });
 }));
@@ -2183,6 +2328,13 @@ app.put('/api/planilla/:id/periodo', asyncHandler(async (req, res) => {
     if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
 
     await withTransaction(async () => {
+        // Upsert: null on the first extras entry for this period, which is a
+        // creation rather than a correction of an earlier amount.
+        const previo = await db.get(
+            'SELECT extras FROM planilla_periodos WHERE trabajador_id = ? AND fecha_inicio = ? AND fecha_fin = ?',
+            [id, range.start, range.end]
+        );
+
         await db.run(`
             INSERT INTO planilla_periodos
                 (trabajador_id, fecha_inicio, fecha_fin, extras)
@@ -2195,7 +2347,9 @@ app.put('/api/planilla/:id/periodo', asyncHandler(async (req, res) => {
             entity: 'planilla_periodo',
             entityId: `${id}:${range.start}:${range.end}`,
             action: 'actualizar_extras',
-            details: { extras }
+            details: { extras },
+            before: previo ? { extras: Number(previo.extras || 0) } : null,
+            after: { extras }
         });
     });
 
@@ -2214,6 +2368,10 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
     };
 
     const trabajador = await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
+        const antes = mapWorker(previo);
+
         const result = await db.run(`
             UPDATE planilla
             SET nombre = ?, apellido = ?, telefono = ?, sueldo_base = ?, updated_at = CURRENT_TIMESTAMP
@@ -2221,8 +2379,9 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
         `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase, id]);
         if (!result.changes) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
-        await logAudit({ entity: 'trabajador', entityId: id, action: 'editar', details: worker });
-        return mapWorker(row);
+        const despues = mapWorker(row);
+        await logAudit({ entity: 'trabajador', entityId: id, action: 'editar', details: despues, before: antes, after: despues });
+        return despues;
     });
     sendData(res, { trabajador });
 }));
@@ -2246,11 +2405,74 @@ app.delete('/api/planilla/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
     await withTransaction(async () => {
+        const previo = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM planilla WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
-        await logAudit({ entity: 'trabajador', entityId: id, action: 'eliminar', justification: justificacion });
+        await logAudit({ entity: 'trabajador', entityId: id, action: 'eliminar', justification: justificacion, before: mapWorker(previo) });
     });
     sendData(res, { id });
+}));
+
+// AUDITORIA
+function mapAudit(row) {
+    const antes = safeJsonParse(row.datos_antes);
+    const despues = safeJsonParse(row.datos_despues);
+    return {
+        id: row.id,
+        entidad: row.entidad,
+        entidadId: row.entidad_id,
+        accion: row.accion,
+        justificacion: row.justificacion || '',
+        // Local wall-clock time; see auditoria.registrado_en in database.js.
+        fecha: row.registrado_en || row.created_at || '',
+        // Derived on read rather than read from campos_cambiados, so improving
+        // diffSnapshots also improves how already-stored rows are presented.
+        cambios: diffSnapshots(antes, despues),
+        antes,
+        despues,
+        // Rows written before snapshots existed have only this.
+        detalles: safeJsonParse(row.detalles)
+    };
+}
+
+app.get('/api/auditoria', asyncHandler(async (req, res) => {
+    const range = validateOverviewRange(req.query?.inicio, req.query?.fin);
+    const entidad = asText(req.query?.entidad, { maxLength: 50 });
+    const accion = asText(req.query?.accion, { maxLength: 50 });
+    const campo = asText(req.query?.campo, { maxLength: 60 });
+
+    // registrado_en is 'YYYY-MM-DD HH:MM:SS', so a plain string comparison
+    // against the end date plus a time of 23:59:59 covers the whole final day.
+    const params = [`${range.start} 00:00:00`, `${range.end} 23:59:59`];
+    let filtro = 'WHERE registrado_en BETWEEN ? AND ?';
+    if (entidad) {
+        filtro += ' AND entidad = ?';
+        params.push(entidad);
+    }
+    if (accion) {
+        filtro += ' AND accion = ?';
+        params.push(accion);
+    }
+    if (campo) {
+        // campos_cambiados is a comma-separated list; the commas around the
+        // needle keep "precio" from matching "precioAplicado".
+        filtro += " AND (',' || campos_cambiados || ',') LIKE ?";
+        params.push(`%,${campo},%`);
+    }
+
+    const rows = await db.all(
+        `SELECT * FROM auditoria ${filtro} ORDER BY id DESC LIMIT ${AUDIT_PAGE_LIMIT + 1}`,
+        params
+    );
+
+    // One row over the limit is fetched purely to tell the UI the list was cut.
+    const truncated = rows.length > AUDIT_PAGE_LIMIT;
+    sendData(res, {
+        movimientos: rows.slice(0, AUDIT_PAGE_LIMIT).map(mapAudit),
+        truncado: truncated,
+        limite: AUDIT_PAGE_LIMIT
+    });
 }));
 
 app.use((req, _res, next) => {

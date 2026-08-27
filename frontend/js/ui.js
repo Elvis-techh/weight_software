@@ -18,7 +18,7 @@ function startClock() {
 }
 
 function switchTab(tabName) {
-    ['pesaje', 'overview', 'clientes', 'reportes', 'corapsa', 'gastos', 'planilla'].forEach(name => {
+    ['pesaje', 'overview', 'clientes', 'reportes', 'auditoria', 'corapsa', 'gastos', 'planilla'].forEach(name => {
         const view = document.getElementById(`view-${name}`);
         if (!view) return;
 
@@ -35,6 +35,9 @@ function switchTab(tabName) {
         // dashboard/Corapsa-payments code is kept for a future revival but has
         // no live DOM to render into, so there's nothing to call here.
         reportes: updateReportesTab,
+        // Unlike the other tabs, the audit log isn't held in memory from boot:
+        // it's fetched per date range each time the tab is opened.
+        auditoria: fetchAuditoria,
         corapsa: renderCorapsaTab,
         clientes: renderClientesTab,
         gastos: renderGastos,

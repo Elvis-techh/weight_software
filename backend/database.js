@@ -298,6 +298,10 @@ async function initializeDB() {
             accion TEXT NOT NULL,
             justificacion TEXT NOT NULL DEFAULT '',
             detalles TEXT,
+            datos_antes TEXT,
+            datos_despues TEXT,
+            campos_cambiados TEXT NOT NULL DEFAULT '',
+            registrado_en TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -420,6 +424,23 @@ async function initializeDB() {
     await ensureColumn(db, 'planilla', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'planilla', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
+    // Full before/after snapshots of the edited row, as JSON produced by the
+    // same mapper the API serves (so BLOB columns are already excluded).
+    // Storing whole snapshots instead of a precomputed diff lets the change
+    // list be re-derived with better formatting later, and gives a deletion
+    // something to be restored from.
+    await ensureColumn(db, 'auditoria', 'datos_antes', 'TEXT');
+    await ensureColumn(db, 'auditoria', 'datos_despues', 'TEXT');
+    // Comma-separated field names touched by the change. Redundant with the
+    // snapshots above, but lets Historial de Cambios filter by field ("every
+    // price edit") without parsing JSON inside SQL.
+    await ensureColumn(db, 'auditoria', 'campos_cambiados', "TEXT NOT NULL DEFAULT ''");
+    // Local wall-clock timestamp ('YYYY-MM-DD HH:MM:SS'). created_at defaults to
+    // SQLite's CURRENT_TIMESTAMP, which is UTC — six hours ahead of Honduras, so
+    // an evening edit lands on the next calendar day and would be filed under the
+    // wrong date by the Historial de Cambios date filter.
+    await ensureColumn(db, 'auditoria', 'registrado_en', "TEXT NOT NULL DEFAULT ''");
+
     // Each backfill below is scoped with a WHERE clause so it only rewrites rows
     // that still need repair — after the first run on a given database, these
     // become no-op scans instead of a full-table rewrite on every server start.
@@ -482,6 +503,10 @@ async function initializeDB() {
            OR created_at IS NULL OR TRIM(created_at) = ''
            OR updated_at IS NULL OR TRIM(updated_at) = '';
 
+        UPDATE auditoria
+        SET registrado_en = COALESCE(NULLIF(TRIM(registrado_en), ''), datetime(created_at, 'localtime'))
+        WHERE registrado_en IS NULL OR TRIM(registrado_en) = '';
+
         UPDATE gastos
         SET file_name = COALESCE(NULLIF(TRIM(file_name), ''), 'Sin Archivo'),
             file_mime_type = COALESCE(file_mime_type, ''),
@@ -496,6 +521,8 @@ async function initializeDB() {
     await repairLegacyQueueIds(db);
     await migrateLegacyPayrollAttendance(db);
     await db.exec('CREATE INDEX IF NOT EXISTS idx_camiones_created_at ON camiones_en_patio(created_at);');
+    await db.exec('CREATE INDEX IF NOT EXISTS idx_auditoria_registrado_en ON auditoria(registrado_en);');
+    await db.exec('CREATE INDEX IF NOT EXISTS idx_auditoria_entidad ON auditoria(entidad, entidad_id);');
 
     // numero_boleta is scanned via MAX() on every truck finalize (the busiest
     // write path) and can be hand-edited to an arbitrary value via PUT
