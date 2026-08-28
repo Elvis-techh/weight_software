@@ -49,6 +49,35 @@ function formatearFilaReporte(transaction) {
     };
 }
 
+// Reportes only holds the range currently selected (see fetchTransacciones),
+// so changing the dates has to go back to the server; changing the client
+// search box does not, since that filters within what is already loaded.
+function buildReportesRangeQuery() {
+    const inicio = document.getElementById('filter-start')?.value || '';
+    const fin = document.getElementById('filter-end')?.value || '';
+    if (!inicio || !fin || inicio > fin) return '';
+    return `?inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`;
+}
+
+async function aplicarFiltroReportes() {
+    const inicio = document.getElementById('filter-start')?.value || '';
+    const fin = document.getElementById('filter-end')?.value || '';
+    // An inverted range has nothing to fetch — updateReportesTab() shows its own
+    // message for it, and asking the server would just return the uncapped
+    // recent set behind a table that says the range is invalid.
+    if (inicio && fin && inicio > fin) return updateReportesTab();
+
+    try {
+        await fetchTransacciones();
+    } catch (error) {
+        console.error('No se pudieron cargar las transacciones del período:', error);
+        mostrarNotificacion(error.message || 'No se pudieron cargar las transacciones.', 'error');
+        // Still re-render: an inverted range has its own message to show, and
+        // leaving the previous range's rows up would misrepresent the filter.
+        updateReportesTab();
+    }
+}
+
 function updateReportesTab() {
     const tbody = document.getElementById('reports-table-body');
     if (!tbody) return;

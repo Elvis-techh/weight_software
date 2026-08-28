@@ -28,6 +28,7 @@ async function apiRequest(path, {
             headers: {
                 Accept: 'application/json',
                 'X-API-Key': API_KEY,
+                'X-Terminal-Id': TERMINAL_ID,
                 ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
                 ...headers
             },

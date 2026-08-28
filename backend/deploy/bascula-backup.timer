@@ -1,8 +1,12 @@
 [Unit]
-Description=Run Bascula Central database backup daily
+Description=Run Bascula Central database backup hourly
 
 [Timer]
-OnCalendar=*-*-* 04:00:00 America/Tegucigalpa
+# Hourly, not daily: a daily 04:00 backup means a disk failure at 15:00 loses a
+# full working day of weighings, receipts and payroll. The snapshot is a few
+# seconds of VACUUM INTO and runs safely alongside the live server, so the cost
+# of the tighter cadence is negligible next to the loss window it closes.
+OnCalendar=hourly
 Persistent=true
 RandomizedDelaySec=300
 

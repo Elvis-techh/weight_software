@@ -7,3 +7,8 @@ WorkingDirectory=/opt/bascula-central/backend
 EnvironmentFile=/opt/bascula-central/backend/.env
 ExecStart=/usr/bin/node scripts/backup-database.js
 User=bascula
+# A backup that fails silently looks exactly like one that worked, right up
+# until a restore is needed. The script already exits non-zero on failure;
+# this turns that into something `systemctl is-failed` and the alert below can
+# actually see.
+ExecStopPost=/bin/sh -c '[ "$EXIT_STATUS" = "0" ] || logger -p daemon.err -t bascula-backup "FALLÓ EL RESPALDO (estado $EXIT_STATUS)"'

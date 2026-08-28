@@ -5,6 +5,26 @@ const API_URL = window.electronAPI?.apiUrl || 'https://api.basculacentral.com';
 // Not a cryptographic secret once this app is packaged/distributed — see MVP plan notes.
 const API_KEY = '1218d8801f6281d70339d5626b60b5ca089355fee5fb3c324954849426c83ec1';
 
+// Stable per-install id sent as X-Terminal-Id so the backend's rate limiter can
+// budget each terminal separately (they all share the one API_KEY above, so
+// keying on that made every terminal share a single bucket). Not a credential
+// and never treated as one server-side — forging it only splits the forger's
+// own allowance. Falls back to a per-session value if storage is unavailable,
+// which still separates this terminal from the others.
+const TERMINAL_ID = (() => {
+    const fresh = () => `term-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    try {
+        let stored = localStorage.getItem('bascula.terminalId');
+        if (!stored) {
+            stored = fresh();
+            localStorage.setItem('bascula.terminalId', stored);
+        }
+        return stored;
+    } catch (_) {
+        return fresh();
+    }
+})();
+
 const APP_CONFIG = Object.freeze({
     lbsPerMetricTon: 2204.62262185,
     lbsPerQuintal: 100,
@@ -24,7 +44,11 @@ const APP_CONFIG = Object.freeze({
     // above this many rows, printing embeds the whole set into an offscreen
     // print window with no progress indicator (the same hang failure mode as
     // an unbounded fetch, just needing months of accumulated data to trigger).
-    maxListadoPrintRows: 2000
+    maxListadoPrintRows: 2000,
+    // Mirrors LIST_PAGE_LIMIT in server.js — the server refuses to return more
+    // than this from any list endpoint, so hitting it exactly means the result
+    // was cut short rather than genuinely being that size.
+    listPageLimit: 5000
 });
 
 let MOCK_CLIENTES = [];
@@ -38,6 +62,11 @@ let lastScaleUpdateAt = 0;
 
 let camionesEnPatio = [];
 let transaccionesData = [];
+// Highest numero_boleta the SERVER has confirmed. Kept separately because
+// transaccionesData now only holds the date range currently on screen (see
+// fetchTransacciones), so it is no longer a reliable place to run a MAX() for
+// the offline queue's ticket-number prediction.
+let maxNumeroBoletaConfirmado = 0;
 let corapsaData = [];
 let gastosData = [];
 let planillaData = [];
@@ -279,6 +308,16 @@ function sameRecordId(left, right) {
     return String(left) === String(right);
 }
 
+// Call with any transaction the server has actually confirmed, so the offline
+// queue keeps predicting from real ground truth. Never call it with a locally
+// predicted number — that would let a prediction bootstrap off itself.
+function registrarNumeroBoletaConfirmado(numeroBoleta) {
+    const numero = Number(numeroBoleta);
+    if (Number.isFinite(numero) && numero > maxNumeroBoletaConfirmado) {
+        maxNumeroBoletaConfirmado = numero;
+    }
+}
+
 function setLiveScaleData(data) {
     const weight = Number(data?.weight);
     currentLiveWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
@@ -397,7 +436,7 @@ async function fetchAttachmentBlob(url, { timeoutMs = 15000 } = {}) {
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
         const response = await fetch(url, {
-            headers: { 'X-API-Key': API_KEY },
+            headers: { 'X-API-Key': API_KEY, 'X-Terminal-Id': TERMINAL_ID },
             signal: controller.signal
         });
         if (typeof setServerConnectionState === 'function') setServerConnectionState(true);

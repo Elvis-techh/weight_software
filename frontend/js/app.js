@@ -27,10 +27,32 @@ async function fetchCamionesEnPatio() {
     renderQueue();
 }
 
+// Scoped to the range the Reportes filter is showing, not the whole table.
+// Unbounded, this was a 25 MB response and ~620 MB of server RSS after two
+// years of weighing — enough to OOM the droplet, and past the 10s request
+// timeout, which would have left the app permanently unable to load history.
+// The filter already defaults to today (see setDefaultDateFilters), so this
+// fetches exactly what is on screen rather than everything ever recorded.
 async function fetchTransacciones() {
-    const records = await apiRequest('/api/transacciones');
+    const records = await apiRequest(`/api/transacciones${buildReportesRangeQuery()}`);
     transaccionesData = Array.isArray(records) ? records.map(normalizarTransaccion) : [];
+    transaccionesData.forEach(item => registrarNumeroBoletaConfirmado(item.numeroBoleta));
+    // The server caps any list response (LIST_PAGE_LIMIT in server.js). Say so
+    // rather than showing a silently short list that looks complete.
+    if (transaccionesData.length >= APP_CONFIG.listPageLimit) {
+        mostrarNotificacion(
+            `Se muestran las ${APP_CONFIG.listPageLimit.toLocaleString('en-US')} transacciones más recientes del período. Reduzca el rango de fechas para verlas todas.`,
+            'error'
+        );
+    }
     updateReportesTab();
+}
+
+// The ticket-number high-water mark, fetched separately so the offline queue
+// can predict the next boleta without the renderer holding every transaction.
+async function fetchMaxNumeroBoleta() {
+    const result = await apiRequest('/api/transacciones/max-boleta');
+    registrarNumeroBoletaConfirmado(result?.maximo);
 }
 
 async function fetchCorapsa() {
@@ -286,6 +308,7 @@ async function initApp() {
         ['companies', fetchCompanies],
         ['camiones en patio', fetchCamionesEnPatio],
         ['transacciones', fetchTransacciones],
+        ['número de boleta', fetchMaxNumeroBoleta],
         ['Corapsa', fetchCorapsa],
         ['gastos', fetchGastos],
         ['planilla', fetchPlanilla]

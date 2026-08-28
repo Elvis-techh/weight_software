@@ -244,9 +244,18 @@ function updateOverviewCurrentFile(record) {
     }
 }
 
+// One id per "new record" form session, minted when the modal opens and kept
+// until the record actually saves — so a manual retry after a timeout replays
+// the SAME operation instead of creating a second row. See client_op_id in
+// backend/database.js: the server returns the row the first attempt already
+// committed rather than inserting again.
+let pagoCorapsaCreateOpId = null;
+
 function abrirPagoCorapsaModal(id = null) {
     const record = id == null ? null : corapsaPagosData.find(item => sameRecordId(item.id, id));
     if (id != null && !record) return mostrarNotificacion('Pago no encontrado.', 'error');
+
+    pagoCorapsaCreateOpId = record ? null : generateLocalId('op');
 
     document.getElementById('overview-payment-modal-title').textContent = record ? 'Editar Venta / Pago Recibido' : 'Registrar Venta / Pago Recibido';
     document.getElementById('overview-payment-id').value = record?.id ?? '';
@@ -300,6 +309,7 @@ async function guardarPagoCorapsa() {
     button.textContent = 'Guardando...';
     try {
         if (file) payload.archivo = await buildAttachmentPayload(file);
+        if (!id) payload.clientOpId = pagoCorapsaCreateOpId;
         await apiRequest(id ? `/api/corapsa-pagos/${encodeURIComponent(id)}` : '/api/corapsa-pagos', {
             method: id ? 'PUT' : 'POST',
             body: payload,

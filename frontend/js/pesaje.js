@@ -827,6 +827,7 @@ async function guardarTransaccion() {
                     { method: 'POST', body: { fecha, hora, clientOpId: opId } }
                 );
                 savedTransaction = normalizarTransaccion(result?.transaccion || result);
+                registrarNumeroBoletaConfirmado(savedTransaction.numeroBoleta);
             } catch (error) {
                 if (!isConnectivityError(error)) throw error;
                 wentOffline = true;

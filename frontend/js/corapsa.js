@@ -69,10 +69,18 @@ function updateCorapsaModalAttachmentState(record) {
     });
 }
 
+// One id per "new record" form session, minted when the modal opens and kept
+// until the record actually saves — so a manual retry after a timeout replays
+// the SAME operation instead of creating a second row. See client_op_id in
+// backend/database.js: the server returns the row the first attempt already
+// committed rather than inserting again.
+let corapsaCreateOpId = null;
+
 function abrirCorapsaModal(id = null, justificacion = '') {
     const record = id == null ? null : corapsaData.find(item => sameRecordId(item.id, id));
     if (id != null && !record) return mostrarNotificacion('Recibo externo no encontrado.', 'error');
 
+    corapsaCreateOpId = record ? null : generateLocalId('op');
     activeCorapsaEditJustification = justificacion;
     precioAntesDeProductoPropio = null;
     document.getElementById('corapsa-modal-title').textContent = record ? 'Editar Recibo Externo' : 'Registrar Recibo Externo';
@@ -349,6 +357,7 @@ async function guardarCorapsa() {
         if (archivoCliente) payload.archivoCliente = archivoCliente;
         if (archivoNuestro) payload.archivoNuestro = archivoNuestro;
 
+        if (!id) payload.clientOpId = corapsaCreateOpId;
         const result = id
             ? await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, { method: 'PUT', body: payload, timeoutMs: 30000 })
             : await apiRequest('/api/corapsa', { method: 'POST', body: payload, timeoutMs: 30000 });

@@ -28,9 +28,18 @@ function updateGastoModalAttachmentState(gasto) {
     button.onclick = gasto?.hasFile ? () => abrirVisorGasto(gasto.id) : null;
 }
 
+// One id per "new record" form session, minted when the modal opens and kept
+// until the record actually saves — so a manual retry after a timeout replays
+// the SAME operation instead of creating a second row. See client_op_id in
+// backend/database.js: the server returns the row the first attempt already
+// committed rather than inserting again.
+let gastoCreateOpId = null;
+
 function abrirGastosModal(id = null) {
     const gasto = id == null ? null : gastosData.find(item => sameRecordId(item.id, id));
     if (id != null && !gasto) return mostrarNotificacion('Gasto no encontrado.', 'error');
+
+    gastoCreateOpId = gasto ? null : generateLocalId('op');
 
     document.getElementById('gastos-modal-title').textContent = gasto ? 'Editar Gasto' : 'Nuevo Gasto';
     document.getElementById('gastos-edit-id').value = gasto?.id ?? '';
@@ -218,6 +227,7 @@ async function guardarGasto() {
         const archivo = await buildAttachmentPayload(selectedFile);
         if (archivo) payload.archivo = archivo;
 
+        if (!id) payload.clientOpId = gastoCreateOpId;
         const result = id
             ? await apiRequest(`/api/gastos/${encodeURIComponent(id)}`, { method: 'PUT', body: payload, timeoutMs: 30000 })
             : await apiRequest('/api/gastos', { method: 'POST', body: payload, timeoutMs: 30000 });

@@ -48,6 +48,15 @@ mismo bucket, carpeta `backups/`. Sin `SPACES_*`, el respaldo solo protege
 contra un `rm` accidental o una migración fallida, no contra la pérdida del
 droplet.
 
+Los scripts ahora leen `backend/.env` por su cuenta, así que también funcionan
+corriéndolos a mano (antes solo el timer de systemd les pasaba las variables, y
+un `node scripts/backup-database.js` manual subía nada en silencio).
+
+El timer corre **cada hora**, no una vez al día: con un respaldo diario a las
+04:00, una falla de disco a las 15:00 se lleva un día entero de pesajes.
+Localmente solo se guardan 2 días de copias (`BACKUP_LOCAL_RETENTION_DAYS`);
+el historial completo vive en Spaces.
+
 ### Verificar
 
 ```bash
@@ -58,12 +67,44 @@ journalctl -u bascula-backup.service         # resultado de la última corrida
 
 ### Restaurar desde un respaldo
 
+**Use siempre `scripts/restore-database.js`. NO copie el archivo a mano.**
+
 ```bash
 pm2 stop bascula-backend   # o el nombre que tenga el proceso en pm2 list
+cd /opt/bascula-central/backend
 # Desde Spaces: descargue el objeto backups/bascula-<timestamp>.db del bucket.
-cp bascula-<timestamp>.db /opt/bascula-central/backend/bascula.db
+node scripts/restore-database.js backups/bascula-<timestamp>.db --confirm
 pm2 start bascula-backend
 ```
+
+El script imprime cuántas filas trae el respaldo, reemplaza `bascula.db`
+(guardando la anterior como `bascula.db.reemplazada-<fecha>`) y vuelve a leer
+el archivo restaurado para confirmar que las filas coinciden. Si no coinciden,
+sale con error y le dice que NO inicie el servidor.
+
+> **Por qué no basta con `cp`.** La base corre en modo WAL. Si el servidor
+> murió de forma sucia (corte de luz, OOM kill, `kill -9`), queda un
+> `bascula.db-wal` "caliente" en disco. Copiar el respaldo encima de
+> `bascula.db` sin borrar ese `-wal` hace que SQLite lo reproduzca sobre el
+> archivo recién restaurado: **el contenido del respaldo se descarta y vuelve
+> el de la instancia que se cayó**, y `PRAGMA integrity_check` sigue diciendo
+> `ok`. Medido con un respaldo real: 73,000 transacciones restauradas
+> quedaron en 0, sin ningún error visible. El script borra `-wal`/`-shm`
+> antes de copiar, que es exactamente lo que faltaba.
+
+### Probar la restauración (hágalo periódicamente)
+
+Un respaldo que nunca se restauró no es un respaldo comprobado. Una vez al mes:
+
+```bash
+# En una copia, NO en producción.
+mkdir -p /tmp/prueba-restauracion && cd /tmp/prueba-restauracion
+# ...descargue un respaldo de Spaces aquí y ábralo:
+sqlite3 bascula-<timestamp>.db "SELECT COUNT(*) FROM transacciones;"
+```
+
+Si el número no se parece al que muestra Reportes en producción, el respaldo
+no sirve y hay que averiguar por qué antes de necesitarlo de verdad.
 
 ## Borrar los datos de prueba antes de arrancar producción
 
@@ -82,6 +123,11 @@ cd /opt/bascula-central/backend
 node scripts/reset-database.js --confirm
 pm2 start bascula-backend
 ```
+
+Si `SPACES_*` no está configurado, el script ahora **se niega a correr**: el
+respaldo de seguridad quedaría únicamente en el disco que está por vaciarse.
+Configure `SPACES_*`, o acepte el riesgo explícitamente agregando
+`--allow-local-only-backup`.
 
 Es normal correrlo una sola vez, justo antes de empezar a capturar datos
 reales. El respaldo que crea automáticamente antes de borrar queda en

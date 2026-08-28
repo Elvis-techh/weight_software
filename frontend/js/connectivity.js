@@ -75,12 +75,23 @@ async function pollServerAndQueue() {
         // fetch itself, so connectivity is confirmed before anything queued
         // locally gets drained, and before a full refetch can clobber it.
         await apiRequest('/api/health');
-        setServerConnectionState(true);
+    } catch (error) {
+        setServerConnectionState(false);
+        pollInFlight = false;
+        return;
+    }
+
+    // Past this point the server is provably reachable, so a failure below is
+    // about that specific call — not connectivity. Keeping these inside the
+    // catch above meant any one of them failing flipped the header to "Sin
+    // Conexión" and fired a false toast while the server was fine.
+    setServerConnectionState(true);
+    try {
         await drainOfflineQueue?.();
         await retryFailedInitialLoads?.();
         await fetchCamionesEnPatio();
     } catch (error) {
-        setServerConnectionState(false);
+        console.error('Fallo al sincronizar tras confirmar la conexión:', error);
     } finally {
         pollInFlight = false;
     }

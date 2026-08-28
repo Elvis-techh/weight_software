@@ -403,6 +403,18 @@ async function initializeDB() {
     await ensureColumn(db, 'corapsa_pagos', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'corapsa_pagos', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 
+    // Client-generated id for the create request, same idempotency key already
+    // proven on camiones_en_patio/transacciones above. These three routes are
+    // the slowest writes in the app — each carries a base64 attachment through
+    // a Spaces upload under a 30s client timeout — so they are the ones most
+    // likely to commit server-side after the client has already given up.
+    // Without this, the operator sees an error, saves again, and the receipt or
+    // expense is recorded twice, with both copies flowing into Overview totals.
+    await ensureColumn(db, 'corapsa', 'client_op_id', 'TEXT');
+    await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_corapsa_client_op_id ON corapsa(client_op_id) WHERE client_op_id IS NOT NULL;');
+    await ensureColumn(db, 'corapsa_pagos', 'client_op_id', 'TEXT');
+    await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_corapsa_pagos_client_op_id ON corapsa_pagos(client_op_id) WHERE client_op_id IS NOT NULL;');
+
     await ensureColumn(db, 'gastos', 'file_mime_type', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'gastos', 'file_data', 'BLOB');
     await ensureColumn(db, 'gastos', 'file_key', 'TEXT');
@@ -419,6 +431,9 @@ async function initializeDB() {
     }
     await ensureColumn(db, 'gastos', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'gastos', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    // See the corapsa/corapsa_pagos note above.
+    await ensureColumn(db, 'gastos', 'client_op_id', 'TEXT');
+    await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_gastos_client_op_id ON gastos(client_op_id) WHERE client_op_id IS NOT NULL;');
 
     await ensureColumn(db, 'planilla', 'asistencia_migrada', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(db, 'planilla', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");

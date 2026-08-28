@@ -1,10 +1,10 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const initializeDB = require('./database');
 const storage = require('./storage');
 
@@ -65,8 +65,21 @@ const UNSERIALIZED_ATTACHMENT_READS = [
     /^\/api\/corapsa-pagos\/[^/]+\/archivo$/
 ];
 
+// The liveness probe must never be able to queue behind a slow write (a 10 MB
+// attachment going to Spaces can hold the lock for ~20s). It touches no table,
+// and the frontend polls it every 15s with a 10s timeout — queueing it meant
+// every upload guaranteed at least one aborted health check.
+const UNSERIALIZED_PATHS = new Set(['/api/health']);
+
+// Last-resort ceiling on how long one request may hold the global lock. Nothing
+// should ever reach it (Spaces is bounded at ~20s, SQLite at busy_timeout), but
+// without it any future handler that neither responds nor closes its socket
+// would stall every other terminal until the process is restarted.
+const QUEUE_LOCK_TIMEOUT_MS = 60000;
+
 function serializeDatabaseAccess(req, res, next) {
     if (req.method === 'OPTIONS') return next();
+    if (UNSERIALIZED_PATHS.has(req.path)) return next();
     if (req.method === 'GET' && UNSERIALIZED_ATTACHMENT_READS.some(pattern => pattern.test(req.path))) {
         return next();
     }
@@ -77,11 +90,32 @@ function serializeDatabaseAccess(req, res, next) {
 
     previous.finally(() => {
         let released = false;
+        let timer = null;
         const unlock = () => {
             if (released) return;
             released = true;
+            if (timer) clearTimeout(timer);
             release();
         };
+
+        // The socket can already be gone by the time this request reaches the
+        // front of the queue — the client gave up while it was waiting (api.js
+        // aborts at 10s) and destroyed the connection. 'finish'/'close' have
+        // then ALREADY fired, so registering the listeners below would never
+        // release the lock and every request behind this one would hang
+        // forever, with the process still alive so PM2 never restarts it.
+        // Nobody is left to receive a response, so drop the request instead of
+        // spending a DB write on it: the caller either replays it from the
+        // offline queue (patio ops carry a clientOpId) or reports the failure.
+        if (res.writableEnded || res.destroyed) return unlock();
+
+        timer = setTimeout(() => {
+            console.error(`Liberando la cola de escritura por tiempo excedido: ${req.method} ${req.path}`);
+            unlock();
+        }, QUEUE_LOCK_TIMEOUT_MS);
+        // Node keeps the event loop alive for pending timers; this one must
+        // never be the reason the process refuses to exit on shutdown.
+        timer.unref?.();
 
         res.once('finish', unlock);
         res.once('close', unlock);
@@ -173,7 +207,11 @@ function validatePayrollRange(startValue, endValue) {
     return { start, end, days };
 }
 
-function validateOverviewRange(startValue, endValue) {
+// `label` names the period in the error the operator actually sees. This guard
+// started out serving only /api/overview, but the list endpoints share it now,
+// and "El período del Overview..." is meaningless when it surfaces in Reportes
+// or Gastos.
+function validateOverviewRange(startValue, endValue, label = 'del Overview') {
     const start = asIsoDate(startValue, 'La fecha inicial');
     const end = asIsoDate(endValue, 'La fecha final');
     if (start > end) {
@@ -181,7 +219,7 @@ function validateOverviewRange(startValue, endValue) {
     }
     const days = getDateRangeLength(start, end);
     if (days > 3660) {
-        throw new HttpError(400, 'El período del Overview no puede superar 10 años.', 'VALIDATION_ERROR');
+        throw new HttpError(400, `El período ${label} no puede superar 10 años.`, 'VALIDATION_ERROR');
     }
     return { start, end, days };
 }
@@ -482,6 +520,20 @@ function sendStoredAttachment(res, { fileName, mimeType, data }) {
     res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName || 'archivo')}`);
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.send(buffer);
+}
+
+// The column values that mean "there is no attachment here", matching what the
+// explicit delete paths (eliminarArchivo*) write.
+const CLEARED_ATTACHMENT = Object.freeze({ fileName: 'Sin Archivo', mimeType: '', data: null, key: null });
+
+// An attachment field carrying an explicit null means "clear it"; the field
+// being absent entirely means "leave whatever is stored alone" (the callers
+// test that with hasOwnProperty). Both cases used to reach the UPDATE as a
+// bare `attachment.fileName`, so a `{"archivo": null}` body — which every
+// route below accepted as valid input — threw a TypeError and returned a 500
+// instead of doing the obvious thing.
+function resolveAttachmentUpdate(attachment) {
+    return attachment || CLEARED_ATTACHMENT;
 }
 
 // Uploads to Spaces when configured; otherwise falls back to storing the raw
@@ -926,6 +978,29 @@ function validateCorapsaPaymentBody(body, { editing = false } = {}) {
     };
 }
 
+// Ceiling on rows any list endpoint will return. Not a business rule — a
+// safety net so a single request can never load an unbounded table into
+// memory. Measured before this existed: 73,000 transacciones (about two years
+// at 100 trucks/day) produced a 25 MB response and ~620 MB of server RSS,
+// which is OOM-kill range on a 1 GB droplet and well past the 10s timeout
+// api.js gives the request — meaning the app would eventually be unable to
+// load its own history at all.
+const LIST_PAGE_LIMIT = 5000;
+
+// Optional ?inicio=&fin= on a list endpoint. Absent means "no date filter",
+// which is still bounded by LIST_PAGE_LIMIT above. Both or neither: half a
+// range is a client bug, and silently ignoring it would quietly return the
+// wrong set.
+function optionalDateRange(query, label = 'consultado') {
+    const inicio = String(query?.inicio || '').trim();
+    const fin = String(query?.fin || '').trim();
+    if (!inicio && !fin) return null;
+    if (!inicio || !fin) {
+        throw new HttpError(400, 'Debe indicar la fecha inicial y la fecha final.', 'VALIDATION_ERROR');
+    }
+    return validateOverviewRange(inicio, fin, label);
+}
+
 // Cap on rows returned by GET /api/auditoria, so a wide date range can't
 // pull the whole log into the renderer at once.
 const AUDIT_PAGE_LIMIT = 1000;
@@ -1004,6 +1079,19 @@ async function withTransaction(callback) {
     }
 }
 
+// Reads the clientOpId a create request carries. Callers use it to recognize a
+// replay of an attempt that already committed — see client_op_id in database.js.
+function readClientOpId(body) {
+    return asText(body?.clientOpId, { field: 'El identificador de operación', maxLength: 100 }) || null;
+}
+
+// The row a previous attempt of this same client operation already created, if
+// any. `table` is always a literal from this file, never request input.
+async function findByClientOpId(table, clientOpId) {
+    if (!clientOpId) return null;
+    return db.get(`SELECT * FROM ${table} WHERE client_op_id = ?`, [clientOpId]);
+}
+
 async function createQueueId() {
     for (let attempt = 0; attempt < 20; attempt += 1) {
         queueIdSequence = (queueIdSequence + 1) % 1000;
@@ -1020,16 +1108,21 @@ async function createQueueId() {
 // response-header-based attacks with zero configuration cost.
 const apiLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
-    // Generous enough for real terminal usage (polling + normal CRUD) but caps
-    // what a leaked API_KEY (see requireApiKey above — trivial to extract from
-    // a packaged Electron installer) could scrape or abuse from one source.
-    limit: 600,
+    // Every terminal ships the SAME compiled-in API key (see globals.js), so
+    // keying on it alone made this one shared bucket for the whole station
+    // rather than a per-client one — the opposite of the intent. An idle
+    // terminal already spends ~40 requests per window just polling
+    // (/api/health + the patio refetch, every 15s), before anyone weighs
+    // anything, so the old 600 was a few busy terminals away from throttling
+    // real work. Raised, and keyed per terminal below.
+    limit: Number(process.env.RATE_LIMIT_PER_WINDOW || 3000),
     standardHeaders: true,
     legacyHeaders: false,
-    // Keys on the API key when present so every terminal sharing one office IP
-    // isn't throttled as a single client; falls back to IP for unauthenticated
-    // requests (relevant once API_KEY is actually set).
-    keyGenerator: (req) => req.get('X-API-Key') || req.ip,
+    // X-Terminal-Id is a per-install identifier the client sends (see api.js);
+    // it is NOT an auth credential — a forged one only splits an abuser's own
+    // budget. Falling back to ipKeyGenerator keeps IPv6 ranges normalized,
+    // which a bare req.ip does not (the ERR_ERL_KEY_GEN_IPV6 warning at boot).
+    keyGenerator: (req) => req.get('X-Terminal-Id') || ipKeyGenerator(req.ip || 'desconocido'),
     handler: (_req, res) => {
         res.status(429).json({
             ok: false,
@@ -1040,6 +1133,16 @@ const apiLimiter = rateLimit({
 
 const app = express();
 app.disable('x-powered-by');
+// Behind nginx (which is how api.basculacentral.com terminates TLS) every
+// request otherwise looks like it came from 127.0.0.1, so the rate limiter's
+// IP fallback lumps all unauthenticated callers into one bucket. Set
+// TRUST_PROXY=1 on any deployment with a reverse proxy in front — left unset
+// it stays off, because trusting X-Forwarded-For with no proxy present would
+// let a caller spoof its own address.
+if (process.env.TRUST_PROXY) {
+    const hops = Number(process.env.TRUST_PROXY);
+    app.set('trust proxy', Number.isFinite(hops) ? hops : process.env.TRUST_PROXY);
+}
 app.use(helmet());
 app.use(cors(corsOptions));
 app.use('/api', apiLimiter);
@@ -1675,8 +1778,23 @@ app.delete('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
 }));
 
 // TRANSACCIONES
-app.get('/api/transacciones', asyncHandler(async (_req, res) => {
-    const rows = await db.all('SELECT * FROM transacciones ORDER BY id DESC');
+// The highest ticket number issued so far, on its own so the offline queue can
+// predict the next one (see getNextPredictedBoletaNumber in offlineQueue.js)
+// without the renderer having to hold every transaction ever recorded in
+// memory just to run a MAX() over it.
+app.get('/api/transacciones/max-boleta', asyncHandler(async (_req, res) => {
+    const row = await db.get('SELECT COALESCE(MAX(numero_boleta), 0) AS maximo FROM transacciones');
+    sendData(res, { maximo: Number(row?.maximo || 0) });
+}));
+
+app.get('/api/transacciones', asyncHandler(async (req, res) => {
+    const range = optionalDateRange(req.query, 'de transacciones');
+    const rows = range
+        ? await db.all(
+            'SELECT * FROM transacciones WHERE fecha BETWEEN ? AND ? ORDER BY id DESC LIMIT ?',
+            [range.start, range.end, LIST_PAGE_LIMIT]
+        )
+        : await db.all('SELECT * FROM transacciones ORDER BY id DESC LIMIT ?', [LIST_PAGE_LIMIT]);
     sendData(res, rows.map(mapTransaction));
 }));
 
@@ -1760,19 +1878,28 @@ app.get('/api/corapsa/:id/archivo/:type', asyncHandler(async (req, res) => {
         : { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data, key: row.file_key });
 }));
 
-app.get('/api/corapsa', asyncHandler(async (_req, res) => {
+app.get('/api/corapsa', asyncHandler(async (req, res) => {
+    const range = optionalDateRange(req.query, 'de recibos externos');
     const rows = await db.all(`
         SELECT id, fecha, recibo_in, recibo_out, cliente, telefono, destino, a_nombre_de, toneladas, precio, total,
                file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                file_nuestro, file_nuestro_mime_type, (file_nuestro_key IS NOT NULL OR LENGTH(file_nuestro_data) > 0) AS has_file_nuestro,
                pagado, excluido, es_producto_propio, created_at, updated_at
         FROM corapsa
+        ${range ? 'WHERE fecha BETWEEN ? AND ?' : ''}
         ORDER BY fecha DESC, id DESC
-    `);
+        LIMIT ?
+    `, range ? [range.start, range.end, LIST_PAGE_LIMIT] : [LIST_PAGE_LIMIT]);
     sendData(res, rows.map(mapCorapsa));
 }));
 
 app.post('/api/corapsa', asyncHandler(async (req, res) => {
+    // Checked before the Spaces upload below, so a replay doesn't re-upload the
+    // attachment and orphan the object it uploaded the first time.
+    const clientOpId = readClientOpId(req.body);
+    const replayed = await findByClientOpId('corapsa', clientOpId);
+    if (replayed) return sendData(res, { corapsa: mapCorapsa(replayed) }, 200);
+
     const fecha = asIsoDate(req.body?.fecha, 'La fecha');
     const reciboIn = asText(req.body?.reciboIn, { required: true, field: 'El recibo Corapsa', maxLength: 100 });
     const cliente = asText(req.body?.cliente, { required: true, field: 'El cliente', maxLength: 200 });
@@ -1798,14 +1925,15 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
                 fecha, recibo_in, cliente, telefono, destino, a_nombre_de, toneladas, precio, total,
                 file_name, file_mime_type, file_data, file_key,
                 file_nuestro, file_nuestro_mime_type, file_nuestro_data, file_nuestro_key, pagado, es_producto_propio,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                client_op_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             fecha, reciboIn, cliente, telefono, destino, aNombreDe, toneladas, precio, total,
             archivoCliente?.fileName || 'Sin Archivo', archivoCliente?.mimeType || '', archivoCliente?.data || null, archivoCliente?.key || null,
             archivoNuestro?.fileName || 'Sin Archivo', archivoNuestro?.mimeType || '', archivoNuestro?.data || null, archivoNuestro?.key || null,
             asBoolean(req.body?.pagado ?? false) ? 1 : 0,
-            esProductoPropio ? 1 : 0
+            esProductoPropio ? 1 : 0,
+            clientOpId
         ]);
 
         const reciboOut = `CRX-${String(result.lastID).padStart(6, '0')}`;
@@ -1836,10 +1964,10 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const hasClienteUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente');
     const hasNuestroUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro');
     const archivoCliente = hasClienteUpload
-        ? await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente'))
+        ? resolveAttachmentUpdate(await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente')))
         : null;
     const archivoNuestro = hasNuestroUpload
-        ? await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro'))
+        ? resolveAttachmentUpdate(await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro')))
         : null;
 
     const corapsa = await withTransaction(async () => {
@@ -1915,13 +2043,13 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         values.push(asBoolean(req.body.excluido) ? 1 : 0);
     }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente')) {
-        const attachment = await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente'));
+        const attachment = resolveAttachmentUpdate(await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente')));
         updates.push('file_name = ?', 'file_mime_type = ?', 'file_data = ?', 'file_key = ?');
         values.push(attachment.fileName, attachment.mimeType, attachment.data, attachment.key);
         oldClienteKeyToRemove = current.file_key;
     }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro')) {
-        const attachment = await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro'));
+        const attachment = resolveAttachmentUpdate(await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro')));
         updates.push('file_nuestro = ?', 'file_nuestro_mime_type = ?', 'file_nuestro_data = ?', 'file_nuestro_key = ?');
         values.push(attachment.fileName, attachment.mimeType, attachment.data, attachment.key);
         oldNuestroKeyToRemove = current.file_nuestro_key;
@@ -1991,18 +2119,25 @@ app.get('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
     await respondWithAttachment(res, { fileName: row.file_name, mimeType: row.file_mime_type, data: row.file_data, key: row.file_key });
 }));
 
-app.get('/api/gastos', asyncHandler(async (_req, res) => {
+app.get('/api/gastos', asyncHandler(async (req, res) => {
+    const range = optionalDateRange(req.query, 'de gastos');
     const rows = await db.all(`
         SELECT id, fecha, monto, concepto, justificacion, notas,
                file_name, file_mime_type, (file_key IS NOT NULL OR LENGTH(file_data) > 0) AS has_file,
                created_at, updated_at
         FROM gastos
+        ${range ? 'WHERE fecha BETWEEN ? AND ?' : ''}
         ORDER BY fecha DESC, id DESC
-    `);
+        LIMIT ?
+    `, range ? [range.start, range.end, LIST_PAGE_LIMIT] : [LIST_PAGE_LIMIT]);
     sendData(res, rows.map(mapExpense));
 }));
 
 app.post('/api/gastos', asyncHandler(async (req, res) => {
+    const clientOpId = readClientOpId(req.body);
+    const replayed = await findByClientOpId('gastos', clientOpId);
+    if (replayed) return sendData(res, { gasto: mapExpense(replayed) }, 200);
+
     const expense = {
         fecha: asIsoDate(req.body?.fecha, 'La fecha'),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El monto' }),
@@ -2013,11 +2148,12 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
     const attachment = await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
     const gasto = await withTransaction(async () => {
         const result = await db.run(`
-            INSERT INTO gastos (fecha, monto, concepto, justificacion, notas, file_name, file_mime_type, file_data, file_key, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO gastos (fecha, monto, concepto, justificacion, notas, file_name, file_mime_type, file_data, file_key, client_op_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             expense.fecha, expense.monto, expense.concepto, expense.justificacion, expense.notas,
-            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null
+            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null,
+            clientOpId
         ]);
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [result.lastID]);
         await logAudit({ entity: 'gasto', entityId: result.lastID, action: 'crear', details: mapExpense(row) });
@@ -2039,7 +2175,9 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
         notas: asText(req.body?.notas, { maxLength: 1000 })
     };
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
-    const attachment = hasUpload ? await storeAttachment('gastos', parseAttachmentPayload(req.body.archivo, 'El recibo del gasto')) : null;
+    const attachment = hasUpload
+        ? resolveAttachmentUpdate(await storeAttachment('gastos', parseAttachmentPayload(req.body.archivo, 'El recibo del gasto')))
+        : null;
 
     const gasto = await withTransaction(async () => {
         const previo = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
@@ -2142,6 +2280,10 @@ app.get('/api/corapsa-pagos/:id/archivo', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
+    const clientOpId = readClientOpId(req.body);
+    const replayed = await findByClientOpId('corapsa_pagos', clientOpId);
+    if (replayed) return sendData(res, { pago: mapCorapsaPayment(replayed) }, 200);
+
     const payment = validateCorapsaPaymentBody(req.body);
     const attachment = await storeAttachment('corapsa-pagos', parseAttachmentPayload(req.body?.archivo, 'El estado de cuenta de Corapsa'));
 
@@ -2149,12 +2291,13 @@ app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
         const result = await db.run(`
             INSERT INTO corapsa_pagos (
                 fecha_pago, periodo_inicio, periodo_fin, referencia, destino, toneladas,
-                monto, notas, file_name, file_mime_type, file_data, file_key, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                monto, notas, file_name, file_mime_type, file_data, file_key, client_op_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             payment.fechaPago, payment.periodoInicio, payment.periodoFin,
             payment.referencia, payment.destino, payment.toneladas, payment.monto, payment.notas,
-            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null
+            attachment?.fileName || 'Sin Archivo', attachment?.mimeType || '', attachment?.data || null, attachment?.key || null,
+            clientOpId
         ]);
 
         const row = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [result.lastID]);
@@ -2172,7 +2315,7 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
     const payment = validateCorapsaPaymentBody(req.body, { editing: true });
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
     const attachment = hasUpload
-        ? await storeAttachment('corapsa-pagos', parseAttachmentPayload(req.body.archivo, 'El estado de cuenta de Corapsa'))
+        ? resolveAttachmentUpdate(await storeAttachment('corapsa-pagos', parseAttachmentPayload(req.body.archivo, 'El estado de cuenta de Corapsa')))
         : null;
 
     const pago = await withTransaction(async () => {

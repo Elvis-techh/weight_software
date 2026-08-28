@@ -101,8 +101,11 @@ function getClienteIdentidadLocal(clienteId, casualSnapshot) {
 // queue — so two offline finalizes in the same outage still get distinct,
 // correctly-ordered numbers instead of colliding.
 function getNextPredictedBoletaNumber() {
+    // maxNumeroBoletaConfirmado is the server's own high-water mark; the reduce
+    // over transaccionesData stays as a floor, since that list may hold a newer
+    // confirmed row than the last time the max was fetched.
     const confirmedMax = transaccionesData.reduce(
-        (max, t) => Math.max(max, Number(t.numeroBoleta) || 0), 0
+        (max, t) => Math.max(max, Number(t.numeroBoleta) || 0), maxNumeroBoletaConfirmado
     );
     const queuedMax = offlineQueue.reduce((max, op) => {
         return op.type === 'finalize' && Number.isFinite(op.predictedNumeroBoleta)
@@ -200,6 +203,7 @@ async function replayOp(op) {
             { method: 'POST', body: { ...op.payload, clientOpId: op.opId } }
         );
         const confirmed = normalizarTransaccion(result?.transaccion || result);
+        registrarNumeroBoletaConfirmado(confirmed.numeroBoleta);
 
         const index = transaccionesData.findIndex(t => sameRecordId(t.id, op.localTransactionId));
         if (index >= 0) transaccionesData[index] = confirmed;
@@ -225,10 +229,21 @@ async function replayOp(op) {
 // permanent rejection. Treating it as permanent (the old behavior) meant an
 // ordinary transient 500 during replay got silently dropped instead of tried
 // again.
+//
+// 429 and 401 are transient for the same reason, and dropping them was worse
+// than dropping a 500: a reconnect after a long outage replays the whole
+// backlog in one burst, which is exactly when the rate limiter trips — so the
+// ops most likely to be discarded were the ones that had been waiting longest.
+// A 401 is the same story during an API-key rotation: the key changes on the
+// server minutes before the terminals are updated, and every queued weighing
+// in that window would have been thrown away.
+const RETRYABLE_SYNC_STATUSES = new Set([401, 408, 425, 429]);
+
 function isRetryableSyncError(error) {
     if (isConnectivityError(error)) return true;
     const status = Number(error?.status);
-    return Number.isFinite(status) && status >= 500;
+    if (!Number.isFinite(status)) return false;
+    return status >= 500 || RETRYABLE_SYNC_STATUSES.has(status);
 }
 
 function isMissingTargetError(error) {
@@ -246,6 +261,14 @@ function isMissingTargetError(error) {
 // before something else finalized the truck, so that case still needs a
 // human look — see runDrainLoop.)
 async function finalizeAlreadyApplied(op) {
+    // A still-local id was never sent to the server under that name, so its
+    // absence from the patio list proves nothing — it was never going to be
+    // there. This happens when the truck's own 'create' failed permanently and
+    // was dropped: every op queued behind it then 404s, and without this guard
+    // the finalize would read that as "already applied" and silently discard a
+    // completed weighing instead of warning about it.
+    if (isLocalOnlyTruckId(op.localTruckId)) return false;
+
     try {
         await fetchCamionesEnPatio();
     } catch (_) {

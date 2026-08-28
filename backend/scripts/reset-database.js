@@ -16,6 +16,10 @@
 // bascula.db outside the app's write-queue/API-key gates.
 
 const path = require('path');
+// Before ../storage — see the same note in backup-database.js. It matters more
+// here: without it, the safety backup this script takes before wiping every
+// table would only ever land on the same disk it is about to wipe.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true });
 const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
 const storage = require('../storage');
@@ -64,6 +68,20 @@ async function main() {
             'Esto borra TODOS los clientes, transacciones, recibos externos, gastos, planilla y auditoría ' +
             '(deja intacta la tabla "companies"). Vuelva a correr con --confirm para proceder.\n' +
             'Ejemplo: node scripts/reset-database.js --confirm'
+        );
+        process.exitCode = 1;
+        return;
+    }
+
+    // Fail closed rather than printing a warning nobody reads in the middle of
+    // a wall of delete counts: without Spaces, the "safety backup" below lands
+    // only on the disk this script is about to wipe, which is not a backup at
+    // all if the reason for restoring is that the droplet is gone.
+    if (!storage.isConfigured() && !process.argv.includes('--allow-local-only-backup')) {
+        console.error(
+            'SPACES_* no está configurado, así que el respaldo de seguridad quedaría ÚNICAMENTE en este disco.\n' +
+            'Configure SPACES_* en backend/.env (ver .env.example) y vuelva a intentarlo, o acepte el riesgo\n' +
+            'explícitamente: node scripts/reset-database.js --confirm --allow-local-only-backup'
         );
         process.exitCode = 1;
         return;

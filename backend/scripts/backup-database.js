@@ -14,6 +14,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Must run BEFORE ../storage is required — storage.js reads every SPACES_*
+// var at module load. The systemd unit supplies them via EnvironmentFile, but
+// a manual `node scripts/backup-database.js` got none of them, so the upload
+// silently no-op'd and the "backup" never left the droplet.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true });
 const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
 const storage = require('../storage');
@@ -22,8 +27,10 @@ const DB_PATH = path.join(__dirname, '..', 'bascula.db');
 const LOCAL_BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups');
 // Local copies are a stopgap for same-disk failures only (a bad deploy, a
 // fat-fingered delete) — they die with the droplet, unlike the Spaces upload
-// below. Kept short to avoid quietly filling the disk over months.
-const LOCAL_RETENTION_DAYS = Number(process.env.BACKUP_LOCAL_RETENTION_DAYS || 7);
+// below. Two days rather than seven because the timer now runs hourly: at 7
+// days that would be ~168 snapshots sitting on the droplet's disk. Spaces
+// keeps the long tail; local only needs to cover "undo the last few hours".
+const LOCAL_RETENTION_DAYS = Number(process.env.BACKUP_LOCAL_RETENTION_DAYS || 2);
 
 function timestampForFilename(date) {
     return date.toISOString().replace(/[:.]/g, '-');
