@@ -3,12 +3,15 @@ Description=Bascula Central database backup (one-shot, triggered by bascula-back
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/bascula-central/backend
-EnvironmentFile=/opt/bascula-central/backend/.env
+# These three paths must match where the app actually lives on the droplet.
+# They are NOT generic defaults — check them against `pm2 jlist | grep pm_cwd`
+# before installing, and re-check after any move. A wrong path here does not
+# degrade gracefully: the unit fails to start and no backup runs at all.
+WorkingDirectory=/root/weight_software/backend
+EnvironmentFile=/root/weight_software/backend/.env
 ExecStart=/usr/bin/node scripts/backup-database.js
-User=bascula
-# A backup that fails silently looks exactly like one that worked, right up
-# until a restore is needed. The script already exits non-zero on failure;
-# this turns that into something `systemctl is-failed` and the alert below can
-# actually see.
-ExecStopPost=/bin/sh -c '[ "$EXIT_STATUS" = "0" ] || logger -p daemon.err -t bascula-backup "FALLÓ EL RESPALDO (estado $EXIT_STATUS)"'
+# No User= on purpose. The app runs as root under pm2 out of /root, which is
+# mode 700 — a dedicated unprivileged user could not read the database or the
+# .env, so inventing one here only produces a unit that fails to start.
+# A failed backup is invisible until the day it is needed.
+ExecStopPost=/bin/sh -c '[ "$EXIT_STATUS" = "0" ] || logger -p daemon.err -t bascula-backup "FALLO EL RESPALDO (estado $EXIT_STATUS)"'

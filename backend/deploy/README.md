@@ -29,9 +29,14 @@ puntual, no un proceso de larga duración).
 
 ### Instalación (en el droplet, como root)
 
+El despliegue actual vive en **`/root/weight_software/backend`** (confírmelo con
+`pm2 jlist | grep -o '"pm_cwd":"[^"]*"'`), y los archivos `.service`/`.timer`
+ya apuntan ahí. Si el código se mueve, hay que actualizar `WorkingDirectory` y
+`EnvironmentFile` en el `.service` **y** volver a copiarlo: una ruta equivocada
+no degrada, simplemente hace que la unidad falle y que no se respalde nada.
+
 ```bash
-# Ajuste WorkingDirectory/ExecStart en el .service si el código no vive en
-# /opt/bascula-central, y el User si no existe un usuario "bascula".
+# Verifique primero que las rutas del .service coincidan con el despliegue real.
 cp backend/deploy/bascula-backup.service /etc/systemd/system/
 cp backend/deploy/bascula-backup.timer /etc/systemd/system/
 
@@ -62,7 +67,13 @@ el historial completo vive en Spaces.
 ```bash
 systemctl status bascula-backup.timer
 systemctl list-timers bascula-backup.timer   # próxima ejecución
-journalctl -u bascula-backup.service         # resultado de la última corrida
+
+# IMPORTANTE: que el timer arranque NO prueba que el respaldo funcione — el
+# timer solo agenda. Dispare el servicio una vez a mano y confirme que terminó
+# en 0 y que subió a Spaces:
+systemctl start bascula-backup.service
+systemctl status bascula-backup.service --no-pager
+journalctl -u bascula-backup.service -n 30 --no-pager
 ```
 
 ### Restaurar desde un respaldo
@@ -71,7 +82,7 @@ journalctl -u bascula-backup.service         # resultado de la última corrida
 
 ```bash
 pm2 stop bascula-backend   # o el nombre que tenga el proceso en pm2 list
-cd /opt/bascula-central/backend
+cd /root/weight_software/backend
 # Desde Spaces: descargue el objeto backups/bascula-<timestamp>.db del bucket.
 node scripts/restore-database.js backups/bascula-<timestamp>.db --confirm
 pm2 start bascula-backend
@@ -119,7 +130,7 @@ adjuntos de prueba ya subidos a Spaces para que no queden huérfanos.
 pm2 stop bascula-backend      # detenga el server primero — este script
                                # escribe directo a bascula.db, sin pasar por
                                # la cola de escritura ni la API-key del server
-cd /opt/bascula-central/backend
+cd /root/weight_software/backend
 node scripts/reset-database.js --confirm
 pm2 start bascula-backend
 ```
