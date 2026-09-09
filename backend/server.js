@@ -518,7 +518,14 @@ function sendStoredAttachment(res, { fileName, mimeType, data }) {
     res.setHeader('Content-Type', isAllowedAttachmentMime(mimeType) ? mimeType : 'application/octet-stream');
     res.setHeader('Content-Length', String(buffer.length));
     res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName || 'archivo')}`);
-    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    // Every attachment URL carries a ?v=<updatedAt> stamp (see
+    // getCorapsaAttachmentUrl / getGastoAttachmentUrl) and replacing a file
+    // always bumps updated_at, so a given URL's bytes never change — the
+    // client can cache them forever. Before this, `no-store` forced every
+    // table re-render to re-download every visible full-size receipt, which
+    // on a large list timed out under its own parallel load. `private`
+    // because the response is gated behind the caller's API key.
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     res.send(buffer);
 }
 
