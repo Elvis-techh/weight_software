@@ -424,6 +424,45 @@ function buildApiUrl(path) {
     return `${API_URL}${path}`;
 }
 
+// Attachment bytes are immutable for a given URL: getCorapsaAttachmentUrl /
+// getGastoAttachmentUrl stamp a ?v=<updatedAt> onto every URL, so replacing a
+// file always produces a fresh URL. That lets us keep downloaded blobs in
+// memory and reuse them across renders. Without this cache every table
+// re-render (a payment toggle, a filter change, a sort) re-downloaded every
+// visible full-size receipt from scratch — the server sends
+// Cache-Control: no-store — and a large list fired dozens of parallel ~10 MB
+// downloads at once, the ones at the back of the browser's connection queue
+// timing out with "El servidor tardó demasiado en responder."
+//
+// Raw bytes can be up to 10 MB each, so that cache stays small; the
+// rasterized/served thumbnails are tens of KB and can be kept in bulk.
+const ATTACHMENT_BLOB_CACHE_LIMIT = 24;
+const ATTACHMENT_THUMB_CACHE_LIMIT = 120;
+const attachmentBlobCache = new Map(); // url -> Promise<Blob> (raw downloaded bytes)
+const attachmentThumbCache = new Map(); // url -> Promise<Blob> (display-ready thumbnail image)
+
+// Insertion-ordered Map used as a tiny LRU: a hit is re-inserted so it counts
+// as most-recently-used, and a rejected promise is dropped so the next render
+// retries instead of replaying the failure forever.
+function readBlobCache(cache, url) {
+    const hit = cache.get(url);
+    if (!hit) return null;
+    cache.delete(url);
+    cache.set(url, hit);
+    return hit;
+}
+
+function writeBlobCache(cache, url, blobPromise, limit) {
+    cache.set(url, blobPromise);
+    blobPromise.catch(() => {
+        if (cache.get(url) === blobPromise) cache.delete(url);
+    });
+    while (cache.size > limit) {
+        cache.delete(cache.keys().next().value);
+    }
+    return blobPromise;
+}
+
 // Every route requires X-API-Key (see requireApiKey in server.js), but a
 // plain <img src="..."> / <iframe src="..."> can't carry a custom header —
 // the browser just requests the bare URL and gets a 401, which is why
@@ -431,36 +470,47 @@ function buildApiUrl(path) {
 // images. Fetching the bytes ourselves (with the header attached) and
 // handing the element a local blob: URL works around that. Mirrors
 // apiRequest()'s timeout/offline-detection but returns raw bytes, not JSON.
-async function fetchAttachmentBlob(url, { timeoutMs = 15000 } = {}) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const response = await fetch(url, {
-            headers: { 'X-API-Key': API_KEY, 'X-Terminal-Id': TERMINAL_ID },
-            signal: controller.signal
-        });
-        if (typeof setServerConnectionState === 'function') setServerConnectionState(true);
-        if (!response.ok) throw new Error(`No se pudo cargar el archivo (HTTP ${response.status}).`);
-        return await response.blob();
-    } catch (error) {
-        if (error?.name === 'AbortError') {
-            if (typeof setServerConnectionState === 'function') setServerConnectionState(false);
-            throw new Error('El servidor tardó demasiado en responder.');
-        }
-        // fetch() throws a bare TypeError for network-level failures (offline,
-        // DNS, connection refused) — an HTTP error response above still
-        // proves the server was reachable, so only this counts as "offline".
-        if (error instanceof TypeError && typeof setServerConnectionState === 'function') {
-            setServerConnectionState(false);
-        }
-        throw error;
-    } finally {
-        clearTimeout(timeoutId);
+// Pass { cache: true } for immutable attachment URLs so repeat views reuse
+// the already-downloaded bytes instead of hitting the network again.
+async function fetchAttachmentBlob(url, { timeoutMs = 15000, cache = false } = {}) {
+    if (cache) {
+        const hit = readBlobCache(attachmentBlobCache, url);
+        if (hit) return hit;
     }
+
+    const download = (async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, {
+                headers: { 'X-API-Key': API_KEY, 'X-Terminal-Id': TERMINAL_ID },
+                signal: controller.signal
+            });
+            if (typeof setServerConnectionState === 'function') setServerConnectionState(true);
+            if (!response.ok) throw new Error(`No se pudo cargar el archivo (HTTP ${response.status}).`);
+            return await response.blob();
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                if (typeof setServerConnectionState === 'function') setServerConnectionState(false);
+                throw new Error('El servidor tardó demasiado en responder.');
+            }
+            // fetch() throws a bare TypeError for network-level failures (offline,
+            // DNS, connection refused) — an HTTP error response above still
+            // proves the server was reachable, so only this counts as "offline".
+            if (error instanceof TypeError && typeof setServerConnectionState === 'function') {
+                setServerConnectionState(false);
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    })();
+
+    return cache ? writeBlobCache(attachmentBlobCache, url, download, ATTACHMENT_BLOB_CACHE_LIMIT) : download;
 }
 
 async function fetchAttachmentBlobUrl(url, options) {
-    return URL.createObjectURL(await fetchAttachmentBlob(url, options));
+    return URL.createObjectURL(await fetchAttachmentBlob(url, { cache: true, ...options }));
 }
 
 // Lazily loads the vendored pdf.js build (frontend/js/vendor/pdfjs — copied
@@ -487,6 +537,10 @@ function loadPdfJs() {
 // entirely client-side — sized for the single-page receipts/invoices this
 // app deals with, not built for huge multi-hundred-page documents.
 async function renderPdfPageAsImageBlobUrl(blob) {
+    return URL.createObjectURL(await renderPdfPageAsImageBlob(blob));
+}
+
+async function renderPdfPageAsImageBlob(blob) {
     const pdfjsLib = await loadPdfJs();
     const data = new Uint8Array(await blob.arrayBuffer());
     // Real invoices/receipts routinely use the standard 14 PDF fonts
@@ -509,31 +563,57 @@ async function renderPdfPageAsImageBlobUrl(blob) {
 
     const imageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     if (!imageBlob) throw new Error('No se pudo generar la imagen de vista previa.');
-    return URL.createObjectURL(imageBlob);
+    return imageBlob;
 }
+
+// How many thumbnails to download at once. The browser already caps parallel
+// connections per host, but a big Corapsa/Gastos list still queued every
+// receipt (2 per row, full-size) behind that cap the instant the table
+// rendered; throttling here keeps any single request from waiting out its
+// timeout while 30 others hog the pipe.
+const THUMBNAIL_FETCH_CONCURRENCY = 4;
 
 // Loads every thumbnail placeholder inside `container` (rendered with
 // data-attachment-thumb="<url>" data-attachment-mime="<mime>" and no src —
 // see renderGastoAttachmentThumbnail / renderCorapsaAttachmentThumbnail).
-// Images become a direct blob: URL; PDFs get rendered to a cover image
-// first via renderPdfPageAsImageBlobUrl. Swaps in onFail(img) on any
-// failure — a fetch error, a corrupt/unreadable PDF, whatever.
+// Images become a direct blob: URL; PDFs get their first page rendered to a
+// cover image via renderPdfPageAsImageBlob. The display-ready blob is cached
+// per URL (attachmentThumbCache), so re-renders — a payment toggle, a filter
+// or sort change — reuse it instead of re-downloading and re-rasterizing.
+// Swaps in onFail(img) on any failure — a fetch error, a corrupt/unreadable
+// PDF, whatever.
 function cargarMiniaturasAdjuntos(container, onFail) {
-    container?.querySelectorAll('img[data-attachment-thumb]').forEach(async img => {
-        const url = img.dataset.attachmentThumb;
-        const mime = img.dataset.attachmentMime || '';
-        try {
-            const blob = await fetchAttachmentBlob(url);
-            const objectUrl = mime === 'application/pdf'
-                ? await renderPdfPageAsImageBlobUrl(blob)
-                : URL.createObjectURL(blob);
-            img.src = objectUrl;
-            img.dataset.objectUrl = objectUrl;
-        } catch (error) {
-            console.error('No se pudo cargar la miniatura del adjunto:', error);
-            if (onFail) onFail(img);
+    const images = Array.from(container?.querySelectorAll('img[data-attachment-thumb]') || []);
+    if (images.length === 0) return;
+
+    let cursor = 0;
+    const loadNext = async () => {
+        while (cursor < images.length) {
+            const img = images[cursor++];
+            const url = img.dataset.attachmentThumb;
+            const mime = img.dataset.attachmentMime || '';
+            try {
+                let thumbBlob = readBlobCache(attachmentThumbCache, url);
+                if (!thumbBlob) {
+                    thumbBlob = (async () => {
+                        const raw = await fetchAttachmentBlob(url, { cache: true });
+                        return mime === 'application/pdf' ? renderPdfPageAsImageBlob(raw) : raw;
+                    })();
+                    writeBlobCache(attachmentThumbCache, url, thumbBlob, ATTACHMENT_THUMB_CACHE_LIMIT);
+                }
+                const objectUrl = URL.createObjectURL(await thumbBlob);
+                img.src = objectUrl;
+                img.dataset.objectUrl = objectUrl;
+            } catch (error) {
+                console.error('No se pudo cargar la miniatura del adjunto:', error);
+                if (onFail) onFail(img);
+            }
         }
-    });
+    };
+
+    for (let worker = 0; worker < Math.min(THUMBNAIL_FETCH_CONCURRENCY, images.length); worker++) {
+        loadNext();
+    }
 }
 
 // Releases blob URLs handed out by cargarMiniaturasAdjuntos before a table
