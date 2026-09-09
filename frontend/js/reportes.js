@@ -316,6 +316,8 @@ function abrirReporteModal(id) {
     if (!transaction) return mostrarNotificacion('Transacción no encontrada.', 'error');
 
     document.getElementById('reporte-edit-id').value = transaction.id;
+    document.getElementById('reporte-fecha-entrada').value = transaction.fechaEntrada;
+    document.getElementById('reporte-hora-entrada').value = transaction.horaEntrada;
     document.getElementById('reporte-fecha').value = transaction.fecha;
     document.getElementById('reporte-hora').value = transaction.hora;
     document.getElementById('reporte-placa').value = transaction.placa === 'S/P' ? '' : transaction.placa;
@@ -356,6 +358,8 @@ function calcularPreviewReporte() {
 async function guardarReporteEdit() {
     const id = document.getElementById('reporte-edit-id').value;
     const payload = {
+        fechaEntrada: document.getElementById('reporte-fecha-entrada').value,
+        horaEntrada: document.getElementById('reporte-hora-entrada').value.trim(),
         fecha: document.getElementById('reporte-fecha').value,
         hora: document.getElementById('reporte-hora').value.trim(),
         placa: document.getElementById('reporte-placa').value.trim().toUpperCase(),
@@ -369,7 +373,13 @@ async function guardarReporteEdit() {
         justificacion: document.getElementById('reporte-justificacion').value.trim()
     };
 
-    if (!payload.fecha || !payload.hora) return mostrarNotificacion('Complete la fecha y la hora.', 'error');
+    if (!payload.fecha || !payload.hora) return mostrarNotificacion('Complete la fecha y la hora de salida.', 'error');
+    if (Boolean(payload.fechaEntrada) !== Boolean(payload.horaEntrada)) {
+        return mostrarNotificacion('Complete la fecha y la hora de entrada, o deje ambas vacías.', 'error');
+    }
+    if (payload.fechaEntrada && payload.fechaEntrada > payload.fecha) {
+        return mostrarNotificacion('La fecha de entrada no puede ser posterior a la fecha de salida.', 'error');
+    }
     if (!payload.clienteNombre) return mostrarNotificacion('El nombre del cliente es obligatorio.', 'error');
     if (!Number.isInteger(payload.numeroBoleta) || payload.numeroBoleta <= 0) return mostrarNotificacion('Ingrese un número de boleta válido.', 'error');
     if (!Number.isFinite(payload.pesoBruto) || payload.pesoBruto <= 0) return mostrarNotificacion('Ingrese un peso bruto válido.', 'error');

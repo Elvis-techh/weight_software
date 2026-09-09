@@ -1802,8 +1802,19 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
 
-    const fecha = asIsoDate(req.body?.fecha, 'La fecha');
-    const hora = asText(req.body?.hora, { required: true, field: 'La hora', maxLength: 20 });
+    const fecha = asIsoDate(req.body?.fecha, 'La fecha de salida');
+    const hora = asText(req.body?.hora, { required: true, field: 'La hora de salida', maxLength: 20 });
+    // Entry date/time is optional: legacy transactions finalized before the
+    // column existed have none, and the operator may clear both fields.
+    const fechaEntradaInput = asText(req.body?.fechaEntrada, { field: 'La fecha de entrada', maxLength: 10 });
+    const horaEntrada = asText(req.body?.horaEntrada, { field: 'La hora de entrada', maxLength: 20 });
+    const fechaEntrada = fechaEntradaInput ? asIsoDate(fechaEntradaInput, 'La fecha de entrada') : '';
+    if (Boolean(fechaEntrada) !== Boolean(horaEntrada)) {
+        throw new HttpError(400, 'Complete la fecha y la hora de entrada, o deje ambas vacías.', 'VALIDATION_ERROR');
+    }
+    if (fechaEntrada && fechaEntrada > fecha) {
+        throw new HttpError(409, 'La fecha de entrada no puede ser posterior a la fecha de salida.', 'INVALID_DATE_RANGE');
+    }
     const placa = asText(req.body?.placa, { field: 'La placa', maxLength: 30 }) || 'S/P';
     const conductor = asText(req.body?.conductor, { field: 'El conductor', maxLength: 150 }) || 'Desconocido';
     const clienteNombre = asText(req.body?.clienteNombre, { required: true, field: 'El nombre del cliente', maxLength: 200 });
@@ -1834,11 +1845,11 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
 
         const result = await db.run(`
             UPDATE transacciones
-            SET fecha = ?, hora = ?, placa = ?, conductor = ?, cliente_nombre = ?,
+            SET fecha = ?, hora = ?, fecha_entrada = ?, hora_entrada = ?, placa = ?, conductor = ?, cliente_nombre = ?,
                 peso_bruto = ?, peso_tara = ?, neto = ?, precio_aplicado = ?, total = ?, unidad = ?,
                 numero_boleta = ?
             WHERE id = ?
-        `, [fecha, hora, placa, conductor, clienteNombre, pesoBruto, pesoTara, neto, precioAplicado, total, unidad, numeroBoletaRaw, id]);
+        `, [fecha, hora, fechaEntrada, horaEntrada, placa, conductor, clienteNombre, pesoBruto, pesoTara, neto, precioAplicado, total, unidad, numeroBoletaRaw, id]);
         if (!result.changes) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
 
         const row = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
