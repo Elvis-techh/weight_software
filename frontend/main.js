@@ -40,6 +40,16 @@ let scaleSimulationTimer = null;
 let simulationPreset = 'loaded';
 let currentScaleSettings = null;
 
+// A renderer crash is the one failure the two handlers above can't see: the
+// main process survives it, so nothing logs and no dialog appears — the
+// operator is just left with a blank window while the app still looks alive.
+// Recovery is a reload (the offline outbox lives on disk and the scale is
+// owned by the main process, so nothing pending is lost), but only one per
+// cooldown: a page that crashes during load would otherwise reload forever
+// and bury the very fault we added this to surface.
+const RENDERER_CRASH_RELOAD_COOLDOWN_MS = 60000;
+let lastRendererCrashAt = 0;
+
 const SCALE_PRESETS = Object.freeze({
     loaded: { weight: 20500, label: 'CARGADO' },
     empty: { weight: 8500, label: 'VACÍO' }
@@ -120,8 +130,48 @@ function createWindow() {
     });
 
     mainWindow.once('ready-to-show', () => mainWindow?.show());
-    mainWindow.webContents.once('did-finish-load', () => applyScaleSettings(currentScaleSettings));
+    // `on`, not `once`: after a crash-reload below, the fresh renderer needs the
+    // scale re-wired too, otherwise it comes back looking healthy with a dead
+    // weight display. applyScaleSettings stops the simulator and closes the
+    // active port before re-opening, so running it again is safe.
+    mainWindow.webContents.on('did-finish-load', () => applyScaleSettings(currentScaleSettings));
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+    mainWindow.webContents.on('render-process-gone', (_event, details) => {
+        // Also fires on normal teardown (quit, window close) — not a crash.
+        if (details?.reason === 'clean-exit') return;
+
+        logUpdate(`Renderer process gone: reason=${details?.reason || 'unknown'}, exitCode=${details?.exitCode}`);
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+
+        const now = Date.now();
+        const crashedAgainImmediately = now - lastRendererCrashAt < RENDERER_CRASH_RELOAD_COOLDOWN_MS;
+        lastRendererCrashAt = now;
+
+        if (crashedAgainImmediately) {
+            dialog.showMessageBox(mainWindow, {
+                type: 'error',
+                title: 'La aplicación no pudo recuperarse',
+                message: 'La pantalla volvió a fallar inmediatamente después de recuperarse.',
+                detail: 'Cierre y vuelva a abrir Báscula Central. Los pesajes guardados sin conexión no se pierden al reiniciar. Si sigue ocurriendo, envíe el archivo update.log de la carpeta de datos de la aplicación.',
+                buttons: ['Entendido']
+            });
+            return;
+        }
+
+        mainWindow.reload();
+        // After the reload, not instead of it. A silent recovery would reset the
+        // form under the operator mid-pesaje and look like their own mistyping;
+        // this is the same must-acknowledge treatment as the offline-sync
+        // warning, and for the same reason — it must not go unseen.
+        dialog.showMessageBox(mainWindow, {
+            type: 'warning',
+            title: 'La pantalla se reinició',
+            message: 'Báscula Central se recuperó de una falla en la pantalla.',
+            detail: 'Verifique el pesaje que estaba capturando antes de continuar: lo que no se había guardado debe ingresarse de nuevo.',
+            buttons: ['Entendido']
+        });
+    });
 
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -133,6 +183,16 @@ function waitForLoad(win) {
         win.webContents.once('did-finish-load', () => resolve());
         win.webContents.once('did-fail-load', (_event, _errorCode, errorDescription) => {
             reject(new Error(errorDescription || 'No se pudo cargar la boleta para imprimir.'));
+        });
+        // A crashed renderer fires neither of the two above, so without this the
+        // await never settles: the caller's `finally` never runs, the offscreen
+        // window leaks, and the print silently hangs forever. Rejecting turns it
+        // into a normal failure the caller already knows how to report and clean
+        // up after. (Only covers a crash during load — one during the print call
+        // itself still hangs; that path has no timeout either way.)
+        win.webContents.once('render-process-gone', (_event, details) => {
+            if (details?.reason === 'clean-exit') return;
+            reject(new Error(`La ventana de impresión falló (${details?.reason || 'desconocido'}).`));
         });
     });
 }
