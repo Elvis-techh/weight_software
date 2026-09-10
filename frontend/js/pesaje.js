@@ -862,6 +862,19 @@ async function guardarTransaccion() {
                 : 'Transacción finalizada y guardada exitosamente.',
             wentOffline ? 'error' : 'success'
         );
+
+        // Finalizing is nearly always followed by "print the boleta", so open
+        // the same preview the print button in Historial de Pesajes opens, on
+        // the record just saved — the operator confirms or cancels from there,
+        // so nothing prints without a deliberate click. A transaction
+        // finalized offline carries a provisional boleta number;
+        // imprimirRecibo() says so before the preview, exactly as it does for
+        // the manual button. Skipped outside the desktop app, where
+        // imprimirRecibo() can only report that printing is unavailable — an
+        // error toast after every save that nobody asked for.
+        if (typeof window.electronAPI?.printReceipt === 'function') {
+            imprimirRecibo(savedTransaction.id);
+        }
     } catch (error) {
         console.error('No se pudo finalizar la transacción:', error);
         mostrarNotificacion(error.message || 'No se pudo finalizar la transacción.', 'error');
