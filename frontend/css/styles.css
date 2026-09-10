@@ -191,3 +191,17 @@ button[data-busy="true"] {
         padding: 0.5rem 0;
     }
 }
+
+/* ==========================================================================
+   Directorio de Clientes — three money columns (Flete Propio, Flete Cliente,
+   Directo) plus six others don't fit a narrow window without squeezing every
+   price into a wrap. Give the table a floor width so the wrapper's
+   overflow-auto scrolls it sideways instead. Only above 768px: below that the
+   responsive-table rules turn each row into a full-width card, which needs no
+   scrolling at all.
+   ========================================================================== */
+@media (min-width: 768px) {
+    .clientes-table {
+        min-width: 1120px;
+    }
+}

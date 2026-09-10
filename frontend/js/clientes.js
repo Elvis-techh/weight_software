@@ -96,7 +96,19 @@ function renderClientCategoriaBadge(categoria) {
     return `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${styles[key]}">${labels[key]}</span>`;
 }
 
-function renderClientPrice(price, tonPrice, unit, textClass, label) {
+// A money column the client's categoría excludes holds no real figure: saving
+// a Directo-only client zeroes both Acopio fletes, and an Acopio-only client
+// falls back to the ton-propio price for Directo. Printing either would read as
+// a pricing mistake at a glance, so the cell is muted instead.
+function renderEmptyPriceCell(label) {
+    return `
+        <td class="p-3 text-sm font-mono text-gray-300" data-label="${escapeHtml(label)}" title="No aplica para esta categoría">—</td>
+    `;
+}
+
+function renderClientPrice(price, tonPrice, unit, textClass, label, applies = true) {
+    if (!applies) return renderEmptyPriceCell(label);
+
     const baseTon = unit === 'quintal'
         ? `<div class="mt-1 text-[10px] font-sans font-semibold text-gray-400">Base Ton: L ${formatMoney(tonPrice)}</div>`
         : '';
@@ -105,6 +117,18 @@ function renderClientPrice(price, tonPrice, unit, textClass, label) {
         <td class="p-3 text-sm font-mono font-bold ${textClass}" data-label="${escapeHtml(label)}">
             L ${formatClientUnitPrice(price, unit)}
             ${baseTon}
+        </td>
+    `;
+}
+
+// Directo is always priced per tonelada, whatever unit the Acopio fletes use,
+// so this cell never carries the "Base Ton" sub-line.
+function renderClientDirectoPrice(price, label, applies) {
+    if (!applies) return renderEmptyPriceCell(label);
+
+    return `
+        <td class="p-3 text-sm font-mono font-bold text-amber-700" data-label="${escapeHtml(label)}">
+            L ${formatClientUnitPrice(price, 'tonelada')}
         </td>
     `;
 }
@@ -149,19 +173,28 @@ function renderClientesTab() {
         });
 
     if (clientesFiltrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-gray-500">No se encontraron clientes.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-gray-500">No se encontraron clientes.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = clientesFiltrados.map(cliente => `
+    tbody.innerHTML = clientesFiltrados.map(cliente => {
+        // 'ambos' clients show all three money columns side by side, which is
+        // the whole point of the third one: a wrong figure in any of them is
+        // visible without opening the modal.
+        const categoria = cliente.categoria || 'ambos';
+        const incluyeAcopio = categoria !== 'directo';
+        const incluyeDirecto = categoria !== 'acopio';
+
+        return `
         <tr class="hover:bg-blue-50 border-b border-gray-100 last:border-0 transition-colors">
             <td class="p-3 text-sm text-gray-500 font-mono" data-label="ID">#${escapeHtml(cliente.id)}</td>
             <td class="p-3 text-sm font-bold text-gray-800" data-label="Nombre del Cliente">${escapeHtml(`${cliente.nombre} ${cliente.apellido}`.trim())}</td>
             <td class="p-3 text-sm text-gray-600" data-label="Teléfono">${escapeHtml(cliente.telefono || '-')}</td>
             <td class="p-3 text-sm text-gray-600" data-label="Ubicación">${escapeHtml(cliente.ubicacion || '-')}</td>
             <td class="p-3 text-center" data-label="Categoría">${renderClientCategoriaBadge(cliente.categoria)}</td>
-            ${renderClientPrice(cliente.precioFletePropio, cliente.precioToneladaPropio, cliente.unidad, 'text-blue-700', 'Flete Propio (L)')}
-            ${renderClientPrice(cliente.precioFleteCliente, cliente.precioToneladaCliente, cliente.unidad, 'text-teal-700', 'Flete Cliente (L)')}
+            ${renderClientPrice(cliente.precioFletePropio, cliente.precioToneladaPropio, cliente.unidad, 'text-blue-700', 'Flete Propio (L)', incluyeAcopio)}
+            ${renderClientPrice(cliente.precioFleteCliente, cliente.precioToneladaCliente, cliente.unidad, 'text-teal-700', 'Flete Cliente (L)', incluyeAcopio)}
+            ${renderClientDirectoPrice(cliente.precioToneladaDirecto, 'Directo (L/Ton)', incluyeDirecto)}
             <td class="p-3 text-center text-sm font-bold text-gray-600 uppercase" data-label="Unidad">${cliente.unidad === 'quintal' ? 'QQ' : 'TON'}</td>
             <td class="p-3 text-center" data-label="Acciones">
                 <div class="flex justify-center gap-2">
@@ -174,7 +207,8 @@ function renderClientesTab() {
                 </div>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // Directo-only clients don't weigh at our scale — they have no Acopio flete
