@@ -133,7 +133,7 @@ function updateReportesTab() {
                 <td class="p-4 text-gray-600 text-sm" data-label="Cliente">${escapeHtml(transaction.clienteNombre)}</td>
                 <td class="p-4 text-right font-mono font-bold text-gray-800" data-label="Neto (LBS)">${escapeHtml(fila.netoLabel)}</td>
                 <td class="p-4 text-right font-mono font-bold text-brand-700" data-label="Tons">${escapeHtml(fila.toneladasLabel)}</td>
-                <td class="p-4 text-right font-mono text-gray-500 text-xs" data-label="Precio/Unidad">${escapeHtml(fila.precioLabel)}</td>
+                <td class="p-4 text-right font-mono text-gray-500" data-label="Precio/Unidad">${escapeHtml(fila.precioLabel)}</td>
                 <td class="p-4 text-right font-mono font-bold text-green-700" data-label="Total Pago (L)">${escapeHtml(fila.totalLabel)}</td>
                 <td class="p-4 flex justify-center gap-2" data-label="Acciones">
                     <button type="button" onclick="imprimirRecibo('${escapeHtml(transaction.id)}')" class="text-gray-500 hover:text-gray-900 transition-colors" aria-label="Imprimir recibo"><span class="material-icons">print</span></button>

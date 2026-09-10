@@ -45,6 +45,17 @@
         src: url('../fonts/share-tech-mono-400-latin.woff2') format('woff2');
     }
 
+    /* Share Tech Mono draws '0' as its '8' with the waist removed, so at table
+       sizes the two are nearly the same blob — an expensive kind of ambiguity
+       when the figures are weights and money being read out loud. The bundled
+       face carries a slashed-zero variant (the standard OpenType 'zero'
+       feature, added to the stock font); turn it on wherever the mono face is
+       used. Printed receipts set their own Arial/Times stacks and are
+       unaffected. */
+    .font-mono {
+        font-variant-numeric: slashed-zero;
+    }
+
     @font-face {
         font-family: 'Material Icons';
         font-style: normal;
