@@ -113,7 +113,7 @@ const AUDITORIA_ETIQUETAS_ACCION = Object.freeze({
     eliminar: 'Eliminado',
     finalizar: 'Finalizado',
     actualizar_peso: 'Peso actualizado',
-    sobrescribir_peso_bruto: 'Peso bruto sobrescrito',
+    sobrescribir_peso_bruto: 'Primer peso sobrescrito',
     actualizar_archivo: 'Archivo actualizado',
     actualizar_parcial: 'Actualizado',
     editar_precio_pesaje: 'Precio editado en Pesaje',

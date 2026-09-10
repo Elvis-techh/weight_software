@@ -200,25 +200,25 @@ async function confirmarPriceEditModal() {
 function manualWeight(tipo) {
     const normalizedType = tipo === 'tara' ? 'tara' : 'bruto';
 
-    // Once a truck is loaded from the queue and its gross weight exists,
-    // only the tare may be replaced before finalization.
+    // Once a truck is loaded from the queue and its first weighing exists,
+    // only the second one may be replaced before finalization.
     if (
         normalizedType === 'bruto' &&
         activeTransaction.id &&
         activeTransaction.pesoBruto != null
     ) {
         mostrarNotificacion(
-            'El peso bruto ya está registrado y queda bloqueado. Solo puede actualizar la tara antes de finalizar.',
+            'El primer peso ya está registrado y queda bloqueado. Solo puede actualizar el segundo peso antes de finalizar.',
             'error'
         );
         return;
     }
 
-    // Tare can never start a transaction on its own — it only applies to a
-    // truck whose gross weight was already captured via BRUTO.
+    // The second weighing can never start a transaction on its own — it only
+    // applies to a truck whose first weighing was already captured.
     if (normalizedType === 'tara' && (!activeTransaction.id || activeTransaction.pesoBruto == null)) {
         mostrarNotificacion(
-            'Debe registrar primero el peso bruto antes de capturar la tara.',
+            'Debe registrar primero el primer peso antes de capturar el segundo.',
             'error'
         );
         return;
@@ -257,8 +257,8 @@ function updateWeightDisplay(type, weight) {
     display.classList.add('text-gray-800');
 }
 
-// Mirrors the live scale reading into whichever of the bruto/tara boxes is
-// still unlocked, so the clerk watches the same number that BRUTO/TARA would
+// Mirrors the live scale reading into whichever of the two weight boxes is
+// still unlocked, so the clerk watches the same number that PESO 1/PESO 2 would
 // capture instead of a static placeholder. Locked boxes are left untouched.
 function updateLiveWeightPreview() {
     const brutoDisplay = document.getElementById('bruto-display');
@@ -290,25 +290,25 @@ async function saveWeight(type, manualWeight = null) {
         return false;
     }
 
-    // Protect the original gross weight of an open yard transaction.
-    // Tare remains intentionally editable until the transaction is finalized.
+    // Protect the first weighing of an open yard transaction. The second one
+    // remains intentionally editable until the transaction is finalized.
     if (
         type === 'bruto' &&
         activeTransaction.id &&
         activeTransaction.pesoBruto != null
     ) {
         mostrarNotificacion(
-            'El peso bruto ya está registrado y no puede modificarse. Actualice la tara o finalice la transacción.',
+            'El primer peso ya está registrado y no puede modificarse. Actualice el segundo peso o finalice la transacción.',
             'error'
         );
         return false;
     }
 
-    // Tare can never start a transaction on its own — it only applies to a
-    // truck whose gross weight was already captured via BRUTO.
+    // The second weighing can never start a transaction on its own — it only
+    // applies to a truck whose first weighing was already captured.
     if (type === 'tara' && (!activeTransaction.id || activeTransaction.pesoBruto == null)) {
         mostrarNotificacion(
-            'Debe registrar primero el peso bruto antes de capturar la tara.',
+            'Debe registrar primero el primer peso antes de capturar el segundo.',
             'error'
         );
         return false;
@@ -402,8 +402,8 @@ async function saveWeight(type, manualWeight = null) {
             wentOffline
                 ? 'Sin conexión: peso guardado localmente. Se sincronizará automáticamente al reconectar.'
                 : wasReplacingTara
-                    ? 'Peso tara actualizado exitosamente.'
-                    : `Peso ${type === 'bruto' ? 'bruto' : 'tara'} guardado exitosamente.`,
+                    ? 'Segundo peso actualizado exitosamente.'
+                    : `${type === 'bruto' ? 'Primer' : 'Segundo'} peso guardado exitosamente.`,
             wentOffline ? 'error' : 'success'
         );
         return true;
@@ -498,8 +498,8 @@ function getQueueWeightLabel(truck) {
     if (truck.pesoBruto != null && truck.pesoTara != null) {
         return `Completo: ${Math.abs(truck.pesoBruto - truck.pesoTara).toLocaleString('en-US')} LBS netas`;
     }
-    if (truck.pesoBruto != null) return `Bruto: ${truck.pesoBruto.toLocaleString('en-US')} LBS`;
-    if (truck.pesoTara != null) return `Tara: ${truck.pesoTara.toLocaleString('en-US')} LBS`;
+    if (truck.pesoBruto != null) return `1er peso: ${truck.pesoBruto.toLocaleString('en-US')} LBS`;
+    if (truck.pesoTara != null) return `2do peso: ${truck.pesoTara.toLocaleString('en-US')} LBS`;
     return 'Sin peso registrado';
 }
 
@@ -598,7 +598,7 @@ function hasUnsavedNewTruckEntry() {
 }
 
 function cargarDeCola(truckId) {
-    // Same guard as saveWeight()/guardarTransaccion(): a bruto/tara/finalizar
+    // Same guard as saveWeight()/guardarTransaccion(): a weight/finalizar
     // request in flight still targets the truck that was active when it was
     // sent. Letting the operator swap trucks underneath it means the response
     // arrives with activeTransaction pointing at the NEW truck, so it gets
@@ -671,8 +671,8 @@ function actualizarEstadoBotonesPeso() {
     const hasOpenTransaction = Boolean(activeTransaction.id);
     const brutoIsLocked = hasOpenTransaction && activeTransaction.pesoBruto != null;
     const taraAlreadyExists = hasOpenTransaction && activeTransaction.pesoTara != null;
-    // Tare can only be captured for a truck whose gross weight is already
-    // registered — it must never be the one that opens a new transaction.
+    // The second weighing can only be captured for a truck whose first one is
+    // already registered — it must never be the one that opens a transaction.
     const taraIsLocked = !hasOpenTransaction || activeTransaction.pesoBruto == null;
 
     // Fail closed: if the scale is disconnected or its last reading is stale, a live
@@ -682,9 +682,9 @@ function actualizarEstadoBotonesPeso() {
     const liveReading = getLiveScaleReading();
     const scaleUnavailable = liveReading.source === 'disconnected' || !liveReading.isFresh;
 
-    // Gross weight is immutable after its first capture. Tare can always be
-    // read again and overwritten until FINALIZAR Y GUARDAR is pressed, but it
-    // cannot be the first weight captured for a transaction.
+    // The first weighing is immutable after its capture. The second can always
+    // be read again and overwritten until FINALIZAR Y GUARDAR is pressed, but
+    // it cannot be the weight that opens a transaction.
     brutoButton.disabled = brutoIsLocked || scaleUnavailable;
     taraButton.disabled = taraIsLocked || scaleUnavailable;
 
@@ -693,8 +693,8 @@ function actualizarEstadoBotonesPeso() {
         manualBrutoButton.classList.toggle('opacity-40', brutoIsLocked);
         manualBrutoButton.classList.toggle('cursor-not-allowed', brutoIsLocked);
         manualBrutoButton.title = brutoIsLocked
-            ? 'El peso bruto está bloqueado para esta transacción.'
-            : 'Registrar peso bruto manualmente';
+            ? 'El primer peso está bloqueado para esta transacción.'
+            : 'Registrar el primer peso manualmente';
     }
 
     if (manualTaraButton) {
@@ -702,48 +702,60 @@ function actualizarEstadoBotonesPeso() {
         manualTaraButton.classList.toggle('opacity-40', taraIsLocked);
         manualTaraButton.classList.toggle('cursor-not-allowed', taraIsLocked);
         manualTaraButton.title = taraIsLocked
-            ? 'Registre primero el peso bruto para habilitar la tara.'
+            ? 'Registre el primer peso para habilitar el segundo.'
             : taraAlreadyExists
-                ? 'Reemplazar la tara registrada usando ingreso manual'
-                : 'Registrar tara manualmente';
+                ? 'Reemplazar el segundo peso registrado usando ingreso manual'
+                : 'Registrar el segundo peso manualmente';
     }
 
     brutoButton.classList.toggle('bg-gray-300', brutoButton.disabled);
     brutoButton.classList.toggle('bg-gray-800', !brutoButton.disabled);
     brutoButton.classList.toggle('cursor-not-allowed', brutoButton.disabled);
     brutoButton.title = brutoIsLocked
-        ? 'El peso bruto queda bloqueado después de registrarse.'
-        : 'Leer y registrar el peso bruto actual';
+        ? 'El primer peso queda bloqueado después de registrarse.'
+        : 'Leer y registrar el primer peso de este vehículo';
 
     taraButton.classList.toggle('bg-gray-300', taraButton.disabled);
     taraButton.classList.toggle('bg-gray-800', !taraButton.disabled);
     taraButton.classList.toggle('cursor-not-allowed', taraButton.disabled);
     taraButton.title = taraIsLocked
-        ? 'Registre primero el peso bruto para habilitar la tara.'
+        ? 'Registre el primer peso para habilitar el segundo.'
         : taraAlreadyExists
-            ? 'Leer nuevamente la báscula y reemplazar la tara actual'
-            : 'Leer y registrar la tara actual';
+            ? 'Leer nuevamente la báscula y reemplazar el segundo peso'
+            : 'Leer y registrar el segundo peso de este vehículo';
     taraButton.innerHTML = taraAlreadyExists
-        ? '<span class="material-icons text-[18px]">sync</span> ACTUALIZAR TARA'
-        : '<span class="material-icons text-[18px]">upload</span> TARA';
+        ? '<span class="material-icons text-[18px]">sync</span> ACTUALIZAR PESO 2'
+        : '<span class="material-icons text-[18px]">upload</span> PESO 2';
 }
 
+// activeTransaction.pesoBruto/pesoTara hold the FIRST and SECOND weighings in
+// capture order, not necessarily loaded-then-empty: a truck that arrives empty,
+// loads inside, and leaves full is weighed light first. So the load is the gap
+// between the two readings regardless of order, and which reading is the real
+// bruto and which the tara is decided by size — here for the display, and again
+// on the server when the boleta is written.
 function calcularNetoYTotal() {
-    const pesoBruto = toFiniteNumber(activeTransaction.pesoBruto);
-    const pesoTara = toFiniteNumber(activeTransaction.pesoTara);
+    const primerPeso = toFiniteNumber(activeTransaction.pesoBruto);
+    const segundoPeso = toFiniteNumber(activeTransaction.pesoTara);
     const hasBothWeights = activeTransaction.pesoBruto != null && activeTransaction.pesoTara != null;
-    // No Math.abs() here on purpose: a tara mistakenly captured higher than
-    // bruto must show as a negative/wrong-looking total so the saveButton's
-    // "neto <= 0" check below catches it instantly, instead of masking the
-    // mix-up as an ordinary-looking positive number until the server's own
-    // bruto >= tara check rejects it on FINALIZAR.
-    const neto = hasBothWeights ? pesoBruto - pesoTara : 0;
+    const neto = hasBothWeights ? Math.abs(primerPeso - segundoPeso) : 0;
     const total = calculatePayment(neto, activeTransaction.precioAplicado, activeTransaction.unidad);
 
     document.getElementById('neto-display').textContent = `${neto.toLocaleString('en-US')} LBS`;
     document.getElementById('total-pago-display').textContent = formatMoney(total);
 
+    // Spells out which reading the boleta will print as bruto and which as tara,
+    // since the boxes above are labelled by capture order and no longer say it.
+    const breakdown = document.getElementById('neto-breakdown');
+    if (breakdown) {
+        breakdown.textContent = hasBothWeights
+            ? `Bruto ${Math.max(primerPeso, segundoPeso).toLocaleString('en-US')} · Tara ${Math.min(primerPeso, segundoPeso).toLocaleString('en-US')} LBS`
+            : '';
+    }
+
     const saveButton = document.getElementById('btn-guardar');
+    // neto <= 0 now only means the two readings are identical — the scale never
+    // moved between them, so there is nothing to bill.
     if (saveButton) saveButton.disabled = !activeTransaction.id || !hasBothWeights || neto <= 0;
 
     return { neto, total };
@@ -764,8 +776,11 @@ async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId
         clienteNombre: truck.clienteNombreSnapshot || 'Cliente no disponible',
         identidad: truck.identidadSnapshot || '',
         numeroBoleta: predictedNumeroBoleta,
-        pesoBruto: truck.pesoBruto,
-        pesoTara: truck.pesoTara,
+        // Mirrors what the server writes when the queued finalize replays: the
+        // heavier of the two readings is the bruto, the lighter the tara, so a
+        // provisional boleta printed while offline matches the confirmed one.
+        pesoBruto: Math.max(toFiniteNumber(truck.pesoBruto), toFiniteNumber(truck.pesoTara)),
+        pesoTara: Math.min(toFiniteNumber(truck.pesoBruto), toFiniteNumber(truck.pesoTara)),
         neto,
         precioAplicado: truck.precioAplicado,
         total,
@@ -790,7 +805,7 @@ async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId
 async function guardarTransaccion() {
     if (weightRequestInProgress) return;
     if (!activeTransaction.id || activeTransaction.pesoBruto == null || activeTransaction.pesoTara == null) {
-        return mostrarNotificacion('La transacción todavía no tiene ambos pesos.', 'error');
+        return mostrarNotificacion('La transacción todavía no tiene ambos pesajes.', 'error');
     }
 
     const { neto, total } = calcularNetoYTotal();
@@ -877,6 +892,8 @@ function limpiarFormulario() {
 
     updateLiveWeightPreview();
     document.getElementById('neto-display').textContent = '0 LBS';
+    const breakdown = document.getElementById('neto-breakdown');
+    if (breakdown) breakdown.textContent = '';
     document.getElementById('total-pago-display').textContent = '0.00';
     document.getElementById('btn-guardar').disabled = true;
 

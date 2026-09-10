@@ -124,8 +124,8 @@ function normalizeActionRecordId(id) {
 
 function getActionModalCopy(action) {
     const copies = {
-        manual_bruto: ['Ingreso Manual de Peso', 'Ingrese el peso (LBS):', 'Ej. 20,500'],
-        manual_tara: ['Ingreso Manual de Peso', 'Ingrese el peso (LBS):', 'Ej. 8,500'],
+        manual_bruto: ['Ingreso Manual del Primer Peso', 'Ingrese el peso (LBS):', 'Ej. 20,500'],
+        manual_tara: ['Ingreso Manual del Segundo Peso', 'Ingrese el peso (LBS):', 'Ej. 8,500'],
         edit_corapsa: ['Autorización de Edición', 'Ingrese la justificación de auditoría:', 'Explique el motivo de la modificación'],
         replace_corapsa_file: ['Reemplazar Archivo', 'Justificación para reemplazar el archivo:', 'Ej. Se adjuntó el recibo incorrecto'],
         delete_corapsa_file: ['Eliminar Archivo', 'Justificación para eliminar el archivo:', 'Explique por qué debe eliminarse'],

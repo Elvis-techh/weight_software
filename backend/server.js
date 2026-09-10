@@ -1725,11 +1725,13 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
             throw new HttpError(409, 'La transacción no tiene ambos pesos.', 'MISSING_WEIGHT');
         }
 
-        const pesoBrutoFinal = Number(truck.peso_bruto);
-        const pesoTaraFinal = Number(truck.peso_tara);
-        if (pesoBrutoFinal < pesoTaraFinal) {
-            throw new HttpError(409, 'El peso bruto no puede ser menor que el peso tara. Verifique si los pesos fueron capturados invertidos.', 'INVALID_WEIGHT_ORDER');
-        }
+        // peso_bruto/peso_tara on a patio row are just the FIRST and SECOND
+        // weighings, in capture order — a truck that arrives empty, loads, and
+        // leaves full is weighed light-then-heavy and lands here "inverted".
+        // Which one is the gross and which the tare is decided here, by size,
+        // so `transacciones` always stores a real bruto >= tara pair.
+        const pesoBrutoFinal = Math.max(Number(truck.peso_bruto), Number(truck.peso_tara));
+        const pesoTaraFinal = Math.min(Number(truck.peso_bruto), Number(truck.peso_tara));
         const neto = pesoBrutoFinal - pesoTaraFinal;
         if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
         const unidad = truck.unidad === 'quintal' ? 'quintal' : 'tonelada';
@@ -1750,7 +1752,7 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
             truck.cliente_nombre_snapshot || 'Cliente no disponible',
             truck.identidad_snapshot || '',
             numeroBoleta,
-            truck.peso_bruto, truck.peso_tara, neto, truck.precio_aplicado, total, unidad, clientOpId
+            pesoBrutoFinal, pesoTaraFinal, neto, truck.precio_aplicado, total, unidad, clientOpId
         ]);
         const transactionId = insertResult.lastID;
         await db.run('DELETE FROM camiones_en_patio WHERE id = ?', [id]);
@@ -1826,15 +1828,18 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const conductor = asText(req.body?.conductor, { field: 'El conductor', maxLength: 150 }) || 'Desconocido';
     const clienteNombre = asText(req.body?.clienteNombre, { required: true, field: 'El nombre del cliente', maxLength: 200 });
     const unidad = asUnit(req.body?.unidad);
-    const pesoBruto = asNumber(req.body?.pesoBruto, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso bruto' });
-    const pesoTara = asNumber(req.body?.pesoTara, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso tara' });
+    const pesoBrutoRaw = asNumber(req.body?.pesoBruto, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso bruto' });
+    const pesoTaraRaw = asNumber(req.body?.pesoTara, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso tara' });
     const precioAplicado = asNumber(req.body?.precioAplicado, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio aplicado' });
     const numeroBoletaRaw = asNumber(req.body?.numeroBoleta, { required: true, min: 1, field: 'El número de boleta' });
     if (!Number.isInteger(numeroBoletaRaw)) throw new HttpError(400, 'El número de boleta no es válido.', 'VALIDATION_ERROR');
 
-    if (pesoBruto < pesoTara) {
-        throw new HttpError(409, 'El peso bruto no puede ser menor que el peso tara. Verifique si los pesos fueron capturados invertidos.', 'INVALID_WEIGHT_ORDER');
-    }
+    // Same rule as finalizar: the heavier reading is the gross, the lighter the
+    // tare, whichever box the operator typed them into. calcularPreviewReporte()
+    // already previews the net as |bruto - tara|, so rejecting the inverted pair
+    // here would 409 an edit the modal just showed as valid.
+    const pesoBruto = Math.max(pesoBrutoRaw, pesoTaraRaw);
+    const pesoTara = Math.min(pesoBrutoRaw, pesoTaraRaw);
     const neto = pesoBruto - pesoTara;
     if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
     const total = roundToCurrency(calculateBillableQuantity(neto, unidad) * precioAplicado);

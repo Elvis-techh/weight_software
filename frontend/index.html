@@ -1784,7 +1784,7 @@
 
                                 <div class="flex flex-col">
 
-                                    <span class="text-gray-500 font-bold uppercase text-sm whitespace-nowrap">Peso Bruto (Lleno)</span>
+                                    <span class="text-gray-500 font-bold uppercase text-sm whitespace-nowrap">Primer Peso</span>
 
                                     <button id="manual-bruto-button" type="button" onclick="manualWeight('bruto')"
                                         class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit whitespace-nowrap"><span
@@ -1802,7 +1802,7 @@
                                     <button id="btn-bruto" onclick="handleBrutoClick()"
                                         class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
 
-                                        <span class="material-icons text-[18px]">download</span> BRUTO
+                                        <span class="material-icons text-[18px]">download</span> PESO 1
 
                                     </button>
 
@@ -1817,7 +1817,7 @@
 
                                 <div class="flex flex-col">
 
-                                    <span class="text-gray-500 font-bold uppercase text-sm whitespace-nowrap">Tara (Vacío)</span>
+                                    <span class="text-gray-500 font-bold uppercase text-sm whitespace-nowrap">Segundo Peso</span>
 
                                     <button id="manual-tara-button" type="button" onclick="manualWeight('tara')"
                                         class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit whitespace-nowrap"><span
@@ -1835,7 +1835,7 @@
                                     <button id="btn-tara" onclick="handleTaraClick()"
                                         class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
 
-                                        <span class="material-icons text-[18px]">upload</span> TARA
+                                        <span class="material-icons text-[18px]">upload</span> PESO 2
 
                                     </button>
 
@@ -1848,7 +1848,14 @@
                             <div
                                 class="flex justify-between items-center mt-2 pt-4 border-t-2 border-dashed border-gray-300">
 
-                                <span class="text-brand-900 font-black uppercase text-xl">Peso Neto</span>
+                                <div class="flex flex-col">
+
+                                    <span class="text-brand-900 font-black uppercase text-xl">Peso Neto</span>
+
+                                    <span id="neto-breakdown"
+                                        class="text-[11px] text-gray-500 font-mono mt-0.5 whitespace-nowrap"></span>
+
+                                </div>
 
                                 <span id="neto-display" class="font-mono text-4xl font-bold text-brand-500">0 LBS</span>
 
