@@ -363,6 +363,14 @@ async function initializeDB() {
     await ensureColumn(db, 'transacciones', 'fecha_entrada', 'TEXT');
     await ensureColumn(db, 'transacciones', 'hora_entrada', 'TEXT');
     await ensureColumn(db, 'transacciones', 'identidad', "TEXT NOT NULL DEFAULT ''");
+    // Links a transacción back to its Clientes row so the name shown on every
+    // past and future transaction (and on printed reports) follows a rename
+    // there instead of freezing at whatever it was when the truck weighed
+    // out. NULL for "casual" (walk-in) customers, transactions that predate
+    // this column, and ones an operator later hand-edited (see the detach
+    // logic in PUT /api/transacciones/:id) -- all of those keep showing the
+    // cliente_nombre snapshot taken when the row was written.
+    await ensureColumn(db, 'transacciones', 'cliente_id', 'INTEGER');
     // Printed ticket number, independent of the internal auto-increment id so it
     // can be corrected/seeded to match a physical ticket book if needed.
     await ensureColumn(db, 'transacciones', 'numero_boleta', 'INTEGER');

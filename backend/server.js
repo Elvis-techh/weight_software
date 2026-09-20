@@ -1438,13 +1438,15 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
         if (!result.changes) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
 
         // Keeps any truck already in the yard queue for this client in sync with
-        // the price just saved — otherwise it stays snapshotted at the old price
-        // (wrong or not) until finalized, even though Clientes now shows the new one.
+        // the price and name just saved — otherwise it stays snapshotted at the
+        // old values (wrong or not) until finalized, even though Clientes now
+        // shows the new ones.
         await db.run(
             `UPDATE camiones_en_patio
-             SET precio_aplicado = CASE WHEN flete = 'Propio' THEN ? ELSE ? END
+             SET precio_aplicado = CASE WHEN flete = 'Propio' THEN ? ELSE ? END,
+                 cliente_nombre_snapshot = ?
              WHERE cliente_id = ?`,
-            [client.precioFletePropio, client.precioFleteCliente, String(id)]
+            [client.precioFletePropio, client.precioFleteCliente, `${client.nombre} ${client.apellido}`.trim(), String(id)]
         );
 
         const row = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
@@ -1715,7 +1717,7 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         // created instead of re-running the finalize, which would either
         // double-insert or 404 on the patio row this same op already deleted.
         if (clientOpId) {
-            const already = await db.get('SELECT * FROM transacciones WHERE client_op_id = ?', [clientOpId]);
+            const already = await db.get(`${TRANSACCION_SELECT} WHERE t.client_op_id = ?`, [clientOpId]);
             if (already) return mapTransaction(already);
         }
 
@@ -1741,15 +1743,21 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         const nextBoletaRow = await db.get('SELECT COALESCE(MAX(numero_boleta), 0) + 1 AS next FROM transacciones');
         const numeroBoleta = Number(nextBoletaRow.next);
 
+        // A real catalog client links live (see TRANSACCION_SELECT); "casual"
+        // walk-ins have no Clientes row to link, so they keep only the name
+        // snapshot, same as before.
+        const clienteId = truck.cliente_id === 'casual' ? null : Number(truck.cliente_id);
+
         const insertResult = await db.run(`
             INSERT INTO transacciones (
-                fecha, hora, fecha_entrada, hora_entrada, placa, conductor, cliente_nombre, identidad,
+                fecha, hora, fecha_entrada, hora_entrada, placa, conductor, cliente_nombre, cliente_id, identidad,
                 numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad, client_op_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
             fecha, hora, truck.fecha_entrada || fecha, truck.hora_entrada || hora,
             truck.placa, truck.conductor,
             truck.cliente_nombre_snapshot || 'Cliente no disponible',
+            clienteId,
             truck.identidad_snapshot || '',
             numeroBoleta,
             pesoBrutoFinal, pesoTaraFinal, neto, truck.precio_aplicado, total, unidad, clientOpId
@@ -1759,7 +1767,7 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         // Passing the finished transaction as "after" is what lets Historial de
         // Cambios show the values the boleta was created with, instead of just
         // the queue id it came from.
-        const creada = mapTransaction(await db.get('SELECT * FROM transacciones WHERE id = ?', [transactionId]));
+        const creada = mapTransaction(await db.get(`${TRANSACCION_SELECT} WHERE t.id = ?`, [transactionId]));
         await logAudit({
             entity: 'transaccion',
             entityId: transactionId,
@@ -1767,7 +1775,7 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
             details: { queueId: id },
             after: creada
         });
-        return mapTransaction(await db.get('SELECT * FROM transacciones WHERE id = ?', [transactionId]));
+        return mapTransaction(await db.get(`${TRANSACCION_SELECT} WHERE t.id = ?`, [transactionId]));
     });
 
     sendData(res, { transaccion: transaction });
@@ -1787,6 +1795,21 @@ app.delete('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
 }));
 
 // TRANSACCIONES
+// Resolves cliente_nombre live from Clientes (falling back to the snapshot
+// stored on the row) so every read of a transacción -- lists, reports,
+// printed boletas -- reflects a rename made later in Gestión > Clientes
+// instead of the name the customer happened to have when the truck weighed
+// out. Every SELECT that feeds mapTransaction() should go through this.
+const TRANSACCION_SELECT = `
+    SELECT
+        t.id, t.fecha, t.hora, t.fecha_entrada, t.hora_entrada, t.placa, t.conductor,
+        t.cliente_id,
+        COALESCE(NULLIF(TRIM(c.nombre || ' ' || COALESCE(c.apellido, '')), ''), t.cliente_nombre) AS cliente_nombre,
+        t.identidad, t.numero_boleta, t.peso_bruto, t.peso_tara, t.neto, t.precio_aplicado, t.total, t.unidad, t.client_op_id
+    FROM transacciones t
+    LEFT JOIN clientes c ON c.id = t.cliente_id
+`;
+
 // The highest ticket number issued so far, on its own so the offline queue can
 // predict the next one (see getNextPredictedBoletaNumber in offlineQueue.js)
 // without the renderer having to hold every transaction ever recorded in
@@ -1800,10 +1823,10 @@ app.get('/api/transacciones', asyncHandler(async (req, res) => {
     const range = optionalDateRange(req.query, 'de transacciones');
     const rows = range
         ? await db.all(
-            'SELECT * FROM transacciones WHERE fecha BETWEEN ? AND ? ORDER BY id DESC LIMIT ?',
+            `${TRANSACCION_SELECT} WHERE t.fecha BETWEEN ? AND ? ORDER BY t.id DESC LIMIT ?`,
             [range.start, range.end, LIST_PAGE_LIMIT]
         )
-        : await db.all('SELECT * FROM transacciones ORDER BY id DESC LIMIT ?', [LIST_PAGE_LIMIT]);
+        : await db.all(`${TRANSACCION_SELECT} ORDER BY t.id DESC LIMIT ?`, [LIST_PAGE_LIMIT]);
     sendData(res, rows.map(mapTransaction));
 }));
 
@@ -1851,20 +1874,27 @@ app.put('/api/transacciones/:id', asyncHandler(async (req, res) => {
         );
         if (duplicate) throw new HttpError(409, 'Ya existe otra transacción con ese número de boleta.', 'DUPLICATE_BOLETA');
 
-        const previo = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
+        const previo = await db.get(`${TRANSACCION_SELECT} WHERE t.id = ?`, [id]);
         if (!previo) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
         const antes = mapTransaction(previo);
 
+        // previo.cliente_nombre is already the live-resolved name (see
+        // TRANSACCION_SELECT). If the operator typed something else, treat it
+        // as an explicit one-off correction and detach from the catalog client
+        // -- otherwise the next read would silently resolve back to the
+        // catalog name and discard the edit they just made.
+        const clienteId = clienteNombre === previo.cliente_nombre ? previo.cliente_id : null;
+
         const result = await db.run(`
             UPDATE transacciones
-            SET fecha = ?, hora = ?, fecha_entrada = ?, hora_entrada = ?, placa = ?, conductor = ?, cliente_nombre = ?,
+            SET fecha = ?, hora = ?, fecha_entrada = ?, hora_entrada = ?, placa = ?, conductor = ?, cliente_nombre = ?, cliente_id = ?,
                 peso_bruto = ?, peso_tara = ?, neto = ?, precio_aplicado = ?, total = ?, unidad = ?,
                 numero_boleta = ?
             WHERE id = ?
-        `, [fecha, hora, fechaEntrada, horaEntrada, placa, conductor, clienteNombre, pesoBruto, pesoTara, neto, precioAplicado, total, unidad, numeroBoletaRaw, id]);
+        `, [fecha, hora, fechaEntrada, horaEntrada, placa, conductor, clienteNombre, clienteId, pesoBruto, pesoTara, neto, precioAplicado, total, unidad, numeroBoletaRaw, id]);
         if (!result.changes) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
 
-        const row = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
+        const row = await db.get(`${TRANSACCION_SELECT} WHERE t.id = ?`, [id]);
         const despues = mapTransaction(row);
         await logAudit({ entity: 'transaccion', entityId: id, action: 'editar', justification: justificacion, details: despues, before: antes, after: despues });
         return despues;
@@ -1877,7 +1907,7 @@ app.delete('/api/transacciones/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
     const justificacion = requireJustification(req.body);
     await withTransaction(async () => {
-        const previo = await db.get('SELECT * FROM transacciones WHERE id = ?', [id]);
+        const previo = await db.get(`${TRANSACCION_SELECT} WHERE t.id = ?`, [id]);
         if (!previo) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
         const result = await db.run('DELETE FROM transacciones WHERE id = ?', [id]);
         if (!result.changes) throw new HttpError(404, 'Transacción no encontrada.', 'NOT_FOUND');
