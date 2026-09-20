@@ -97,7 +97,7 @@ function mostrarNotificacion(message, type = 'success') {
     text.textContent = String(message ?? '');
     toast.append(icon, text);
 
-    toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-xl font-bold z-50 text-white flex items-center gap-2 ${type === 'error' ? 'bg-red-500' : 'bg-brand-500'}`;
+    toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-xl font-bold z-[110] text-white flex items-center gap-2 ${type === 'error' ? 'bg-red-500' : 'bg-brand-500'}`;
     toast.classList.remove('hidden');
     toastTimer = setTimeout(() => toast.classList.add('hidden'), 4000);
 }
