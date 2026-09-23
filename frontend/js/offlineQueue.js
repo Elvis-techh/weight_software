@@ -59,8 +59,18 @@ async function initOfflineQueue() {
         const saved = await window.electronAPI.loadOfflineQueue();
         offlineQueue = Array.isArray(saved) ? saved : [];
     } catch (error) {
+        // Same rule as the store's load path (offlineQueueStore.js): a queue we
+        // failed to READ is not a queue we know to be empty. The main process
+        // refuses to overwrite a file it couldn't read, so nothing on disk dies
+        // here — but this session may be unable to persist, and console-only
+        // reaches nobody on a kiosk with no DevTools open.
         console.error('No se pudo leer la cola local desde disco:', error);
         offlineQueue = [];
+        mostrarNotificacion(
+            'No se pudieron leer los cambios sin sincronizar guardados en disco. ' +
+            'Si había camiones pendientes de enviar, avise antes de seguir: puede que no se sincronicen solos.',
+            'error'
+        );
     }
     queueInitialized = true;
     renderPendingSyncBadge();

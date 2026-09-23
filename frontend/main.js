@@ -1,7 +1,7 @@
 const { dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const scaleSettings = require('./scaleSettings');
@@ -120,6 +120,24 @@ function applyScaleSettings(settings) {
     }
 }
 
+// Electron shows no context menu at all by default (unlike a regular Chrome
+// window) — Ctrl+C/V/X already work in inputs via Chromium's built-in editing,
+// but right-click Cut/Copy/Paste needs to be built by hand.
+function attachEditContextMenu(win) {
+    win.webContents.on('context-menu', (_event, params) => {
+        if (!params.isEditable) return;
+        const { editFlags } = params;
+        const menu = Menu.buildFromTemplate([
+            { label: 'Cortar', role: 'cut', enabled: editFlags.canCut },
+            { label: 'Copiar', role: 'copy', enabled: editFlags.canCopy },
+            { label: 'Pegar', role: 'paste', enabled: editFlags.canPaste },
+            { type: 'separator' },
+            { label: 'Seleccionar todo', role: 'selectAll', enabled: editFlags.canSelectAll }
+        ]);
+        menu.popup({ window: win });
+    });
+}
+
 function createWindow() {
     // Never ask for more room than the monitor actually has — on a display
     // smaller than the usual 1000x700 floor, Electron would otherwise still
@@ -147,6 +165,8 @@ function createWindow() {
             ]
         }
     });
+
+    attachEditContextMenu(mainWindow);
 
     mainWindow.once('ready-to-show', () => mainWindow?.show());
     // `on`, not `once`: after a crash-reload below, the fresh renderer needs the
@@ -301,10 +321,13 @@ async function printReceipt(data) {
             await printViaDialog(receiptWindow);
             return { ok: true, mode: 'print' };
         } catch (printError) {
-            logUpdate(`Impresión de boleta falló, exportando a PDF en su lugar: ${printError.message}`);
-            const numero = String(data?.numero || '').trim().replace(/[^a-zA-Z0-9-]/g, '') || Date.now();
-            const filePath = await exportWindowAsPdf(receiptWindow, { fileName: `boleta-${numero}.pdf` });
-            return { ok: true, mode: 'pdf', path: filePath };
+            // Unlike a listado, this transaction's boleta is never lost — it's
+            // already saved and can be reprinted or exported to PDF anytime
+            // from Historial de Pesajes. So on a failed/no-printer print, just
+            // report it instead of silently dropping a PDF the operator never
+            // asked for.
+            logUpdate(`Impresión de boleta falló: ${printError.message}`);
+            return { ok: false, mode: 'print-failed', error: printError.message };
         }
     } finally {
         if (!receiptWindow.isDestroyed()) receiptWindow.destroy();
@@ -380,6 +403,26 @@ async function saveListadoDocumentAsPdf(htmlFileName, setterName, data, { dialog
     });
 }
 
+// The explicit "Guardar" action for a boleta preview — same operator-chosen-path
+// pattern as saveListadoDocumentAsPdf(), used from Historial de Pesajes so a
+// boleta that didn't print (no printer, cancelled, etc.) is never unrecoverable.
+async function saveReceiptAsPdf(data) {
+    const numero = String(data?.numero || '').trim().replace(/[^a-zA-Z0-9-]/g, '') || Date.now();
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Guardar boleta como PDF',
+        defaultPath: path.join(app.getPath('documents'), `boleta-${numero}.pdf`),
+        filters: [{ name: 'Documento PDF', extensions: ['pdf'] }]
+    });
+    if (canceled || !filePath) return { ok: true, mode: 'cancelled' };
+
+    return withPrintableWindow('receipt.html', 'setReceiptData', data, async win => {
+        const pdfBuffer = await renderWindowToPdfBuffer(win);
+        await fs.promises.writeFile(filePath, pdfBuffer);
+        shell.openPath(filePath);
+        return { ok: true, mode: 'pdf', path: filePath };
+    });
+}
+
 function printListado(data) {
     return printListadoDocument('listado.html', 'setListadoData', data, 'listado');
 }
@@ -405,6 +448,8 @@ function saveCorapsaListadoAsPdf(data) {
 function registerReceiptIpc() {
     ipcMain.removeHandler('receipt:print');
     ipcMain.handle('receipt:print', (_event, data) => printReceipt(data));
+    ipcMain.removeHandler('receipt:save-pdf');
+    ipcMain.handle('receipt:save-pdf', (_event, data) => saveReceiptAsPdf(data));
 }
 
 function registerListadoIpc() {
@@ -421,9 +466,51 @@ function registerCorapsaListadoIpc() {
     ipcMain.handle('corapsa-listado:save-pdf', (_event, data) => saveCorapsaListadoAsPdf(data));
 }
 
+// Failing to READ the outbox is the worst thing that can happen to it — the
+// renderer carries on with an empty queue, so the pending weighings on disk are
+// one enqueue away from being overwritten. offlineQueueStore keeps that from
+// happening on disk; this makes sure a person hears about it, with the same
+// must-acknowledge dialog as the sync warnings below. A console.warn would not
+// do: a packaged app has no attached console (see the note at the top of this
+// file) and a renderer toast can scroll past unseen on an unattended kiosk.
+function warnUnreadableOfflineQueue(failure) {
+    const detail = failure.corruptPath
+        ? `${failure.message}\n\nSe apartó una copia del archivo original en:\n${failure.corruptPath}\n\n` +
+          'Los cambios sin sincronizar que contenía NO se enviarán al servidor por sí solos. ' +
+          'Reporte ese archivo antes de seguir trabajando.'
+        : `${failure.message}\n\nMientras ese archivo siga ahí, la aplicación NO guardará en disco los ` +
+          'cambios sin sincronizar, para no sobrescribir los que ya contiene. Evite trabajar sin ' +
+          'conexión hasta resolverlo.';
+
+    return dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'No se pudo leer la cola sin sincronizar',
+        message: 'La aplicación no pudo leer los cambios sin sincronizar guardados en disco.',
+        detail,
+        buttons: ['Entendido']
+    });
+}
+
 function registerOfflineQueueIpc() {
     ipcMain.removeHandler('offline-queue:load');
-    ipcMain.handle('offline-queue:load', () => offlineQueueStore.loadQueue(app));
+    ipcMain.handle('offline-queue:load', async () => {
+        let result;
+        try {
+            result = offlineQueueStore.loadQueue(app);
+        } catch (error) {
+            // loadQueue is written not to throw; if it ever does, the state of
+            // the file is unknown — the one thing we must not read as "empty",
+            // so block saving explicitly rather than assuming the store did.
+            const message = `No se pudo leer la cola local: ${error.message}`;
+            offlineQueueStore.blockPersistence(message);
+            result = { queue: [], failure: { message, corruptPath: null } };
+        }
+        // Awaited on purpose: the operator acknowledges this before the app
+        // finishes coming up, rather than discovering it after a shift of
+        // weighings has piled up on top of it.
+        if (result.failure) await warnUnreadableOfflineQueue(result.failure);
+        return result.queue;
+    });
 
     ipcMain.removeHandler('offline-queue:save');
     ipcMain.handle('offline-queue:save', (_event, queue) => offlineQueueStore.saveQueue(app, queue));
@@ -543,17 +630,38 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+// Electron doesn't wait for scaleReader's async port.close() before tearing the
+// process down. On Windows that race can leave the COM port handle stuck open,
+// so the next launch fails to reopen it until the cable is unplugged. Hold quit
+// off the event loop until the port actually finishes closing (bounded, in case
+// close() never calls back), then quit for real.
+let quitReadyToExit = false;
+
+app.on('before-quit', event => {
+    if (quitReadyToExit) return;
+    event.preventDefault();
+
     stopScaleSimulation();
-    scaleReader.closeActivePort();
     ipcMain.removeHandler('scale-simulation:set-preset');
     ipcMain.removeHandler('scale:list-ports');
     ipcMain.removeHandler('scale:get-settings');
     ipcMain.removeHandler('scale:save-settings');
     ipcMain.removeHandler('scale:test-connection');
     ipcMain.removeHandler('receipt:print');
+    ipcMain.removeHandler('receipt:save-pdf');
     ipcMain.removeHandler('listado:print');
     ipcMain.removeHandler('offline-queue:load');
     ipcMain.removeHandler('offline-queue:save');
     ipcMain.removeHandler('offline-queue:warn');
+
+    let finished = false;
+    const finishQuit = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(fallbackTimer);
+        quitReadyToExit = true;
+        app.quit();
+    };
+    const fallbackTimer = setTimeout(finishQuit, 2000);
+    scaleReader.closeActivePort(finishQuit);
 });

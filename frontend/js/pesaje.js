@@ -257,9 +257,13 @@ function updateWeightDisplay(type, weight) {
     display.classList.add('text-gray-800');
 }
 
-// Mirrors the live scale reading into whichever of the two weight boxes is
-// still unlocked, so the clerk watches the same number that PESO 1/PESO 2 would
-// capture instead of a static placeholder. Locked boxes are left untouched.
+// Mirrors the live scale reading into the bruto box, only while it's still
+// unlocked, and unconditionally into the tara box. Bruto is locked for good
+// the moment it's captured, but tara "remains intentionally editable until
+// the transaction is finalized" (see saveWeight()), so its box always tracks
+// the live scale, the same way PESO 1 does pre-capture, instead of freezing
+// at whatever was last saved. ACTUALIZAR PESO 2 then just saves the number
+// already on screen, instead of the click itself being what fetches it.
 function updateLiveWeightPreview() {
     const brutoDisplay = document.getElementById('bruto-display');
     const taraDisplay = document.getElementById('tara-display');
@@ -277,11 +281,9 @@ function updateLiveWeightPreview() {
         brutoDisplay.classList.toggle('text-gray-800', scaleUnavailable);
     }
 
-    if (activeTransaction.pesoTara == null) {
-        taraDisplay.textContent = liveText;
-        taraDisplay.classList.toggle('text-gray-400', !scaleUnavailable);
-        taraDisplay.classList.toggle('text-gray-800', scaleUnavailable);
-    }
+    taraDisplay.textContent = liveText;
+    taraDisplay.classList.toggle('text-gray-400', !scaleUnavailable);
+    taraDisplay.classList.toggle('text-gray-800', scaleUnavailable);
 }
 
 async function saveWeight(type, manualWeight = null) {

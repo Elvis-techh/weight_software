@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('receipt:print', data);
     },
 
+    saveReceiptAsPdf(data) {
+        return ipcRenderer.invoke('receipt:save-pdf', data);
+    },
+
     printListado(data) {
         return ipcRenderer.invoke('listado:print', data);
     },

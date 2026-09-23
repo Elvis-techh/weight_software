@@ -26,19 +26,12 @@ function normalizarTransaccion(record = {}) {
 let ultimoFiltroReportes = { filteredData: [], startDate: '', endDate: '', customerSearchRaw: '' };
 
 // Shared by the on-screen table row and the listado print payload, so the
-// identification fallback, unit label, and metric-ton conversion only live
-// in one place.
+// unit label and metric-ton conversion only live in one place.
 function formatearFilaReporte(transaction) {
-    const identification = transaction.placa !== 'S/P'
-        ? transaction.placa
-        : transaction.conductor !== 'Desconocido'
-            ? transaction.conductor
-            : 'S/P';
     const unitLabel = transaction.unidad === 'quintal' ? 'QQ' : 'TON';
     const metricTons = calculateMetricTons(transaction.neto, { truncate: true });
 
     return {
-        identification,
         unitLabel,
         metricTons,
         fechaDisplay: formatDateForDisplay(transaction.fecha),
@@ -128,7 +121,7 @@ function updateReportesTab() {
         return `
             <tr class="hover:bg-gray-50 border-b border-gray-100">
                 <td class="p-4 font-mono text-gray-500 text-xs" data-label="Fecha">${escapeHtml(fila.fechaDisplay)}<br>${escapeHtml(transaction.hora)}</td>
-                <td class="p-4 font-bold text-gray-800 uppercase" data-label="Placa">${escapeHtml(fila.identification)}</td>
+                <td class="p-4 font-bold text-gray-800 uppercase" data-label="Placa">${escapeHtml(transaction.placa)}</td>
                 <td class="p-4 text-gray-600 text-sm" data-label="Conductor">${escapeHtml(conductorLabel)}</td>
                 <td class="p-4 text-gray-600 text-sm" data-label="Cliente">${escapeHtml(transaction.clienteNombre)}</td>
                 <td class="p-4 text-right font-mono font-bold text-gray-800" data-label="Neto (LBS)">${escapeHtml(fila.netoLabel)}</td>
@@ -155,11 +148,28 @@ function formatFechaHoraForReceipt(fecha, hora) {
 // operator confirms "Imprimir" in the preview modal (see printPreview.js).
 async function ejecutarImpresionRecibo(payload) {
     const result = await window.electronAPI.printReceipt(payload);
-    // No printer was available, so main.js saved the receipt as a PDF instead
-    // of printing it — let the operator know where to find it.
-    if (result?.mode === 'pdf') {
-        mostrarNotificacion(`No se encontró una impresora. Boleta guardada como PDF en: ${result.path}`, 'error');
+    // No printer was available. Unlike a listado, this boleta isn't lost —
+    // it's already saved and can be reprinted or exported to PDF anytime from
+    // Historial de Pesajes — so just report the failure instead of dropping
+    // an unrequested PDF on disk.
+    if (result?.mode === 'print-failed') {
+        mostrarNotificacion(
+            'No se encontró una impresora. La boleta no se imprimió, pero puede reintentarlo o exportarla como PDF desde Historial de Pesajes.',
+            'error'
+        );
     }
+}
+
+// Performs the "Guardar" IPC call for a boleta — lets the operator pick where
+// the PDF goes. Returns { cancelled: true } (instead of just resolving) when
+// the operator closes the native Save dialog without picking a location, so
+// the preview modal (see printPreview.js) knows to stay open instead of
+// treating that as a completed save.
+async function ejecutarGuardadoRecibo(payload) {
+    const result = await window.electronAPI.saveReceiptAsPdf(payload);
+    if (result?.mode === 'cancelled') return { cancelled: true };
+    mostrarNotificacion(`Boleta guardada en: ${result.path}`);
+    return result;
 }
 
 function imprimirRecibo(id) {
@@ -196,7 +206,7 @@ function imprimirRecibo(id) {
     const payload = {
         numero: transaction.numeroBoleta ?? '',
         fechaDocumento: formatDateForDisplay(transaction.fecha),
-        identidad: transaction.identidad,
+        conductor: transaction.conductor === 'Desconocido' ? 'SC' : transaction.conductor,
         placa: transaction.placa,
         fechaEntrada: formatFechaHoraForReceipt(transaction.fechaEntrada, transaction.horaEntrada),
         fechaSalida: formatFechaHoraForReceipt(transaction.fecha, transaction.hora),
@@ -215,7 +225,8 @@ function imprimirRecibo(id) {
         template: 'receipt',
         payload,
         title: `Vista previa - Boleta No. ${payload.numero || ''}`,
-        printAction: () => ejecutarImpresionRecibo(payload)
+        printAction: () => ejecutarImpresionRecibo(payload),
+        saveAction: () => ejecutarGuardadoRecibo(payload)
     });
 }
 

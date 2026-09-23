@@ -98,8 +98,7 @@ function setPreviewSaveBusy(busy) {
 // printAction is an async () => {...} that performs the real print IPC call
 // and any result/error notifications specific to that feature. saveAction is
 // the same shape but for "save to a file the operator picks" — optional; the
-// Guardar button only shows up when a caller supplies one (only the listado
-// does, for now).
+// Guardar button only shows up when a caller supplies one.
 async function mostrarVistaPrevia({ template, payload, title, printAction, saveAction }) {
     const config = PRINT_PREVIEW_TEMPLATES[template];
     if (!config) throw new Error(`Plantilla de vista previa desconocida: ${template}`);

@@ -6,7 +6,7 @@ const receiptData = {
   numero: '',
   fechaDocumento: '',
 
-  identidad: '',
+  conductor: '',
   placa: '',
   fechaEntrada: '',
   fechaSalida: '',

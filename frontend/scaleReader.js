@@ -116,7 +116,13 @@ function startWatchdog() {
 
 // Closes whatever port/parser/watchdog is currently active. Safe to call when
 // nothing is open. Does not touch `activeSettings` so a caller can resume later.
-function closeActivePort() {
+// `onClosed`, if given, fires once the OS handle has actually been released
+// (or immediately if there was nothing to close) — callers that are about to
+// exit the process need this: on Windows a COM port close is asynchronous, and
+// killing the process before it finishes can leave the handle stuck until the
+// cable is unplugged.
+function closeActivePort(onClosed) {
+    const done = typeof onClosed === 'function' ? onClosed : () => {};
     stopWatchdog();
     stopReconnectTimer();
     if (activeParser) {
@@ -127,7 +133,13 @@ function closeActivePort() {
         const port = activePort;
         activePort = null;
         port.removeAllListeners();
-        if (port.isOpen) port.close(() => {});
+        if (port.isOpen) {
+            port.close(() => done());
+        } else {
+            done();
+        }
+    } else {
+        done();
     }
     recentReadings = [];
     lastLineReceivedAt = 0;
