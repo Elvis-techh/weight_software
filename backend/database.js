@@ -1,6 +1,15 @@
+const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
+
+// `npm run dev` (frontend/scripts/dev.js) runs this same server as a sandbox,
+// on its own file: nothing started for testing can open the real database, not
+// even if it is started on the droplet by mistake.
+const SANDBOX = process.env.BASCULA_SANDBOX === '1';
+const DB_PATH = SANDBOX
+    ? path.join(__dirname, 'sandbox', 'bascula-sandbox.db')
+    : path.join(__dirname, 'bascula.db');
 
 async function ensureColumn(db, table, column, definition) {
     const columns = await db.all(`PRAGMA table_info(${table})`);
@@ -132,8 +141,9 @@ async function repairLegacyQueueIds(db) {
 }
 
 async function initializeDB() {
+    if (SANDBOX) fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     const db = await open({
-        filename: path.join(__dirname, 'bascula.db'),
+        filename: DB_PATH,
         driver: sqlite3.Database
     });
 
@@ -565,3 +575,4 @@ async function initializeDB() {
 }
 
 module.exports = initializeDB;
+module.exports.DB_PATH = DB_PATH;

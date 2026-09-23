@@ -11,6 +11,11 @@ const storage = require('./storage');
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const API_KEY = process.env.API_KEY || '';
+// Set only by frontend/scripts/dev.js (`npm run dev`): a local test server on
+// its own database (see database.js). It must never share the real attachment
+// bucket — deleting a test record deletes its file there — so start() refuses
+// to run while Spaces credentials are present.
+const SANDBOX = process.env.BASCULA_SANDBOX === '1';
 const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
 const VALID_AJUSTE_CATEGORIAS = new Set(['global', 'acopio', 'directo']);
@@ -2725,7 +2730,17 @@ app.use((error, _req, res, _next) => {
 });
 
 async function start() {
-    if (!API_KEY) {
+    if (SANDBOX) {
+        if (storage.isConfigured()) {
+            console.error(
+                'MODO SANDBOX: no se inicia porque hay credenciales de Spaces (SPACES_*) configuradas. ' +
+                'Con ellas, borrar un registro de prueba borraría su archivo real en producción. ' +
+                'Quítelas de backend/.env en esta computadora: solo van en el servidor real.'
+            );
+            process.exit(1);
+        }
+        console.log(`MODO SANDBOX: datos de prueba en ${initializeDB.DB_PATH}`);
+    } else if (!API_KEY) {
         console.warn(
             'ADVERTENCIA: API_KEY no está definida — el servidor arrancará sin autenticación. ' +
             'Defina API_KEY antes de iniciar el servidor para reactivarla ' +

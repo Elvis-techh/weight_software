@@ -7,6 +7,19 @@ const fs = require('fs');
 const scaleSettings = require('./scaleSettings');
 const scaleReader = require('./scaleReader');
 const offlineQueueStore = require('./offlineQueueStore');
+const environment = require('./environment');
+
+// Which server this run talks to (see environment.js). Resolved before anything
+// reads userData — the offline outbox, scale settings, update.log and
+// Chromium's own storage all live there — because the folder depends on it.
+// For the installed app on production the folder is left exactly as it was.
+const appEnvironment = environment.resolveEnvironment({
+    isPackaged: app.isPackaged,
+    argv: process.argv,
+    env: process.env
+});
+const environmentUserData = environment.userDataPath(app.getPath('userData'), appEnvironment);
+if (environmentUserData !== app.getPath('userData')) app.setPath('userData', environmentUserData);
 
 // Packaged apps have no attached console, so without this, autoUpdater
 // failures (no internet, blocked firewall, bad manifest, etc.) are
@@ -125,7 +138,13 @@ function createWindow() {
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'preload.js'),
+            // Switches rather than IPC so they're already there, synchronously,
+            // when globals.js reads the server address at page load.
+            additionalArguments: [
+                `--bascula-api-url=${appEnvironment.apiUrl}`,
+                `--bascula-dev-build=${appEnvironment.devBuild ? 1 : 0}`
+            ]
         }
     });
 
@@ -478,6 +497,12 @@ function registerScaleIpc() {
 }
 
 app.whenReady().then(() => {
+    // The sandbox never has a real scale attached, so its first run starts in
+    // test mode rather than the fail-closed default meant for the station.
+    if (appEnvironment.sandbox && !fs.existsSync(scaleSettings.getSettingsPath(app))) {
+        fs.mkdirSync(app.getPath('userData'), { recursive: true });
+        scaleSettings.saveSettings(app, { testModeEnabled: true });
+    }
     currentScaleSettings = scaleSettings.loadSettings(app);
     registerScaleIpc();
     registerReceiptIpc();

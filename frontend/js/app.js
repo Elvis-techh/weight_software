@@ -297,6 +297,8 @@ async function retryFailedInitialLoads() {
 }
 
 async function initApp() {
+    // First, so the sandbox/real-data marker is up even if loading fails below.
+    mostrarIndicadorEntorno();
     startClock();
     await initScaleSettings();
     await initOfflineQueue();

@@ -17,6 +17,53 @@ function startClock() {
     clockTimer = setInterval(updateClock, 1000);
 }
 
+// Makes it impossible to mistake which server this window is using: the local
+// sandbox gets an amber frame and label, a development window pointed at a real
+// server a red one. The installed app on production shows nothing. Read from
+// API_URL itself, so it reflects what this page actually talks to; "local" is
+// the same rule as isLocalServer in frontend/environment.js.
+function mostrarIndicadorEntorno() {
+    let servidor;
+    try {
+        servidor = new URL(API_URL);
+    } catch (_) {
+        return;
+    }
+    const sandbox = ['localhost', '127.0.0.1', '[::1]'].includes(servidor.hostname);
+    if (!sandbox && !window.electronAPI?.devBuild) return;
+
+    const estilo = sandbox
+        ? {
+            marco: 'ring-amber-500',
+            etiqueta: 'bg-amber-100 text-amber-900 border-amber-400',
+            icono: 'science',
+            texto: `Sandbox · ${servidor.host}`,
+            titulo: '[SANDBOX]'
+        }
+        : {
+            marco: 'ring-red-600',
+            etiqueta: 'bg-red-600 text-white border-red-700',
+            icono: 'warning',
+            texto: `Datos reales · ${servidor.host}`,
+            titulo: '[DATOS REALES]'
+        };
+
+    const marco = document.createElement('div');
+    marco.className = `fixed inset-0 pointer-events-none z-[300] ring-4 ring-inset ${estilo.marco}`;
+    marco.setAttribute('aria-hidden', 'true');
+    document.body.append(marco);
+
+    const icono = document.createElement('span');
+    icono.className = 'material-icons text-[16px]';
+    icono.textContent = estilo.icono;
+    const etiqueta = document.createElement('span');
+    etiqueta.className = `shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-black uppercase tracking-wide ${estilo.etiqueta}`;
+    etiqueta.append(icono, estilo.texto);
+    document.getElementById('header-title')?.after(etiqueta);
+
+    document.title = `${estilo.titulo} ${document.title}`;
+}
+
 function switchTab(tabName) {
     ['pesaje', 'overview', 'clientes', 'reportes', 'auditoria', 'corapsa', 'gastos', 'planilla'].forEach(name => {
         const view = document.getElementById(`view-${name}`);

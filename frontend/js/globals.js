@@ -1,5 +1,6 @@
-// Defaults to production; run the app with BASCULA_API_URL set (see preload.js)
-// to point it at a local backend instead, e.g. BASCULA_API_URL=http://localhost:3000 npm start
+// Chosen by main.js (see frontend/environment.js): production for the installed
+// app, the local sandbox for `npm start` / `npm run dev`. The fallback only
+// applies to a page loaded outside Electron.
 const API_URL = window.electronAPI?.apiUrl || 'https://api.basculacentral.com';
 // Must match the API_KEY environment variable set on the backend server exactly.
 // Not a cryptographic secret once this app is packaged/distributed — see MVP plan notes.

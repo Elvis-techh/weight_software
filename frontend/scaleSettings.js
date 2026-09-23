@@ -67,4 +67,4 @@ function saveSettings(app, partial) {
     return next;
 }
 
-module.exports = { DEFAULT_SCALE_SETTINGS, loadSettings, saveSettings, normalizeSettings };
+module.exports = { DEFAULT_SCALE_SETTINGS, getSettingsPath, loadSettings, saveSettings, normalizeSettings };

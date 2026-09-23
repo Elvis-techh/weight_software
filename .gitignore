@@ -9,6 +9,8 @@ backend/bascula.db-journal
 backend/bascula.db-shm
 backend/bascula.db-wal
 backend/backups/
+# The npm run dev sandbox: its test database, which can hold a copy of real data
+backend/sandbox/
 
 # Ignore environment variables and logs
 .env
