@@ -2246,6 +2246,102 @@
 
                         <div class="flex items-center gap-2 ml-auto">
 
+                            <!-- Ordenar: se aplica sobre lo ya cargado, sin volver a consultar -->
+                            <div class="relative">
+                                <button type="button" onclick="toggleMenuAuditoria('auditoria-sort-menu')"
+                                    class="flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:bg-gray-100 active:bg-gray-200 transition-colors shrink-0"
+                                    title="Ordenar" aria-label="Ordenar" aria-haspopup="true" aria-expanded="false"
+                                    aria-controls="auditoria-sort-menu">
+                                    <span class="material-icons text-[20px]">sort</span>
+                                    <span class="hidden lg:inline">Ordenar</span>
+                                </button>
+
+                                <div id="auditoria-sort-menu"
+                                    class="absolute right-0 mt-2 bg-white border border-gray-100 shadow-xl rounded-lg p-3 w-64 transform scale-95 opacity-0 pointer-events-none transition-all duration-200 z-50 origin-top-right">
+                                    <label for="auditoria-sort"
+                                        class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Ordenar
+                                        por:</label>
+                                    <select id="auditoria-sort" onchange="renderAuditoria()"
+                                        class="w-full border border-gray-200 bg-gray-50 rounded py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none cursor-pointer">
+                                        <option value="fecha-desc">Fecha (más recientes)</option>
+                                        <option value="fecha-asc">Fecha (más antiguos)</option>
+                                        <option value="modulo-asc">Módulo (A - Z)</option>
+                                        <option value="modulo-desc">Módulo (Z - A)</option>
+                                        <option value="accion-asc">Acción (A - Z)</option>
+                                        <option value="accion-desc">Acción (Z - A)</option>
+                                        <option value="justificacion-asc">Justificación (A - Z)</option>
+                                        <option value="justificacion-desc">Justificación (Z - A)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Filtrar: tipo y módulo se envían al servidor (ver fetchAuditoria) -->
+                            <div class="relative">
+                                <button type="button" onclick="toggleMenuAuditoria('auditoria-filter-menu')"
+                                    class="relative flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:bg-gray-100 active:bg-gray-200 transition-colors shrink-0"
+                                    title="Filtrar" aria-label="Filtrar" aria-haspopup="true" aria-expanded="false"
+                                    aria-controls="auditoria-filter-menu">
+                                    <span class="material-icons text-[20px]">filter_alt</span>
+                                    <span class="hidden lg:inline">Filtrar</span>
+                                    <span id="auditoria-filter-count"
+                                        class="hidden absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-brand-600 text-white text-[11px] leading-[18px] font-bold text-center ring-2 ring-white"></span>
+                                </button>
+
+                                <div id="auditoria-filter-menu"
+                                    class="absolute right-0 mt-2 bg-white border border-gray-100 shadow-xl rounded-lg p-3 w-64 transform scale-95 opacity-0 pointer-events-none transition-all duration-200 z-50 origin-top-right">
+
+                                    <fieldset>
+                                        <legend
+                                            class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Tipo de
+                                            movimiento:</legend>
+                                        <label
+                                            class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="auditoria-filter-tipo" value="" checked
+                                                onchange="fetchAuditoria()" class="accent-brand-600">
+                                            <span class="material-icons text-[18px] text-slate-500">history</span>
+                                            Todos
+                                        </label>
+                                        <label
+                                            class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="auditoria-filter-tipo" value="ediciones"
+                                                onchange="fetchAuditoria()" class="accent-brand-600">
+                                            <span class="material-icons text-[18px] text-blue-600">edit</span>
+                                            Ediciones
+                                        </label>
+                                        <label
+                                            class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="auditoria-filter-tipo" value="eliminaciones"
+                                                onchange="fetchAuditoria()" class="accent-brand-600">
+                                            <span class="material-icons text-[18px] text-red-600">delete</span>
+                                            Eliminaciones
+                                        </label>
+                                        <label
+                                            class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="auditoria-filter-tipo" value="creaciones"
+                                                onchange="fetchAuditoria()" class="accent-brand-600">
+                                            <span class="material-icons text-[18px] text-green-600">add_circle</span>
+                                            Creaciones
+                                        </label>
+                                    </fieldset>
+
+                                    <label for="auditoria-filter-modulo"
+                                        class="block text-xs font-bold text-gray-500 uppercase tracking-wider mt-3 mb-2">Módulo:</label>
+                                    <!-- Opciones: poblarFiltroModulosAuditoria() en auditoria.js -->
+                                    <select id="auditoria-filter-modulo" onchange="fetchAuditoria()"
+                                        class="w-full border border-gray-200 bg-gray-50 rounded py-2 px-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none cursor-pointer">
+                                        <option value="">Todos los módulos</option>
+                                    </select>
+
+                                    <button type="button" id="auditoria-filter-limpiar" onclick="limpiarFiltrosAuditoria()"
+                                        disabled
+                                        class="mt-3 w-full flex items-center justify-center gap-1.5 h-9 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 font-bold hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white">
+                                        <span class="material-icons text-[18px]">filter_alt_off</span>
+                                        Limpiar filtros
+                                    </button>
+
+                                </div>
+                            </div>
+
                             <button type="button" onclick="fetchAuditoria()"
                                 class="flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg bg-brand-700 text-white font-bold shadow hover:bg-brand-600 transition-colors shrink-0"
                                 title="Actualizar" aria-label="Actualizar">

@@ -260,6 +260,7 @@ function setDefaultDateFilters() {
 function renderInitialState() {
     renderClientesTab();
     populateClienteDropdown();
+    poblarFiltroModulosAuditoria();
     renderCorapsaTab();
     renderGastos();
     renderPlanilla();

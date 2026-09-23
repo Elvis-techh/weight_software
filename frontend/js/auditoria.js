@@ -16,6 +16,10 @@
 let auditoriaData = [];
 let auditoriaTruncada = false;
 let auditoriaCargando = false;
+// Bumped on every fetch, so a slow response that lands after a newer one was
+// requested (dates or filters changed in quick succession) is dropped instead
+// of replacing the newer list.
+let auditoriaSolicitud = 0;
 
 // Fields whose value is money, a weight in pounds, a date, or a boolean.
 // Anything not listed is rendered as plain text.
@@ -205,6 +209,13 @@ function esMovimientoDeSnapshot(movimiento) {
     return AUDITORIA_ACCIONES_SNAPSHOT.has(movimiento.accion);
 }
 
+// The three kinds the summary cards count and the Filtrar menu offers. The
+// server applies the same split for ?tipo= (AUDIT_TIPO_FILTERS in server.js).
+function tipoMovimientoAuditoria(movimiento) {
+    if (movimiento.accion === 'eliminar') return 'eliminaciones';
+    return esMovimientoDeSnapshot(movimiento) ? 'creaciones' : 'ediciones';
+}
+
 function renderSnapshotAuditoria(movimiento) {
     const campos = camposDelSnapshotAuditoria(movimiento);
     if (campos.length === 0) {
@@ -246,9 +257,89 @@ function etiquetasVisiblesAuditoria(movimiento) {
         : (movimiento.cambios || []).map(cambio => etiquetaCampoAuditoria(cambio.campo));
 }
 
+// Oldest first, by the moment the change was logged. Ids break ties within the
+// same second, since they are handed out in write order.
+function compararCronologicoAuditoria(a, b) {
+    return String(a.fecha).localeCompare(String(b.fecha))
+        || toFiniteNumber(a.id) - toFiniteNumber(b.id);
+}
+
+// Sort keys for everything but the date, taken from the text the row shows,
+// so "Acción (A - Z)" puts "Creado" before "Editado" instead of ordering the
+// raw action ids behind those labels.
+const AUDITORIA_CLAVES_ORDEN = Object.freeze({
+    modulo: movimiento => etiquetaEntidadAuditoria(movimiento.entidad),
+    accion: movimiento => etiquetaAccionAuditoria(movimiento.accion),
+    justificacion: movimiento => (movimiento.justificacion || '').trim()
+});
+
+// `orden` is a value of the #auditoria-sort select: '<criterio>-<asc|desc>'.
+function ordenarAuditoria(registros, orden) {
+    const [criterio, direccion] = String(orden || 'fecha-desc').split('-');
+    const signo = direccion === 'asc' ? 1 : -1;
+    const clave = AUDITORIA_CLAVES_ORDEN[criterio];
+
+    return [...registros].sort((a, b) => {
+        if (!clave) return signo * compararCronologicoAuditoria(a, b);
+
+        const textoA = clave(a);
+        const textoB = clave(b);
+        // A blank key (in practice, a creation logged without a justification)
+        // has nothing to sort by, so it sinks to the bottom either way.
+        if (Boolean(textoA) !== Boolean(textoB)) return textoA ? -1 : 1;
+        // Rows that tie on the key stay most recent first.
+        return signo * textoA.localeCompare(textoB, 'es', { sensitivity: 'base' })
+            || compararCronologicoAuditoria(b, a);
+    });
+}
+
+// What the Filtrar menu is set to. `entidad` is the raw entity id: the value
+// GET /api/auditoria filters on and each movimiento carries.
+function filtrosAuditoria() {
+    return {
+        tipo: document.querySelector('input[name="auditoria-filter-tipo"]:checked')?.value || '',
+        entidad: document.getElementById('auditoria-filter-modulo')?.value || ''
+    };
+}
+
+// A filtered list looks just like a quiet period, so the Filtrar button
+// carries a count of the filters that are on.
+function actualizarIndicadorFiltrosAuditoria({ tipo, entidad }) {
+    const activos = [tipo, entidad].filter(Boolean).length;
+    const contador = document.getElementById('auditoria-filter-count');
+    if (contador) {
+        contador.textContent = String(activos);
+        contador.classList.toggle('hidden', activos === 0);
+    }
+    const limpiar = document.getElementById('auditoria-filter-limpiar');
+    if (limpiar) limpiar.disabled = activos === 0;
+}
+
+function limpiarFiltrosAuditoria() {
+    const todos = document.querySelector('input[name="auditoria-filter-tipo"][value=""]');
+    if (todos) todos.checked = true;
+    const modulo = document.getElementById('auditoria-filter-modulo');
+    if (modulo) modulo.value = '';
+    fetchAuditoria();
+}
+
+// Every entity the log records, under the same label its rows show in the
+// Módulo column. Filled once at startup (renderInitialState in app.js).
+function poblarFiltroModulosAuditoria() {
+    const select = document.getElementById('auditoria-filter-modulo');
+    if (!select || select.options.length > 1) return;
+
+    Object.entries(AUDITORIA_ETIQUETAS_ENTIDAD)
+        .sort(([, a], [, b]) => a.localeCompare(b, 'es'))
+        .forEach(([entidad, etiqueta]) => select.add(new Option(etiqueta, entidad)));
+}
+
 function renderAuditoria() {
     const tbody = document.getElementById('auditoria-table-body');
     if (!tbody) return;
+
+    const filtros = filtrosAuditoria();
+    actualizarIndicadorFiltrosAuditoria(filtros);
 
     const aviso = document.getElementById('auditoria-truncado');
     if (aviso) aviso.classList.toggle('hidden', !auditoriaTruncada);
@@ -268,7 +359,12 @@ function renderAuditoria() {
     const busquedaRaw = document.getElementById('auditoria-filter-search')?.value || '';
     const busqueda = busquedaRaw.trim().toLocaleLowerCase('es');
 
-    const registros = auditoriaData.filter(movimiento => {
+    const registros = ordenarAuditoria(auditoriaData.filter(movimiento => {
+        // The server already narrowed the list by tipo and módulo (see
+        // fetchAuditoria); checking again here keeps the table right even if
+        // it ignored them, as a server deployed before ?tipo= existed would.
+        if (filtros.tipo && tipoMovimientoAuditoria(movimiento) !== filtros.tipo) return false;
+        if (filtros.entidad && movimiento.entidad !== filtros.entidad) return false;
         if (!busqueda) return true;
         // Matches the justification, the record description, and the field
         // labels, so "precio" finds every row whose price was touched.
@@ -280,16 +376,18 @@ function renderAuditoria() {
             ...etiquetasVisiblesAuditoria(movimiento)
         ].join(' ').toLocaleLowerCase('es');
         return heno.includes(busqueda);
-    });
+    }), document.getElementById('auditoria-sort')?.value);
 
     document.getElementById('auditoria-total').textContent = String(registros.length);
     document.getElementById('auditoria-ediciones').textContent =
-        String(registros.filter(m => !esMovimientoDeSnapshot(m)).length);
+        String(registros.filter(m => tipoMovimientoAuditoria(m) === 'ediciones').length);
     document.getElementById('auditoria-eliminaciones').textContent =
-        String(registros.filter(m => m.accion === 'eliminar').length);
+        String(registros.filter(m => tipoMovimientoAuditoria(m) === 'eliminaciones').length);
 
     if (registros.length === 0) {
-        const mensaje = auditoriaData.length > 0
+        // With tipo or módulo set, an empty response already reflects the
+        // filters, so it says nothing about the period as a whole.
+        const mensaje = auditoriaData.length > 0 || filtros.tipo || filtros.entidad
             ? 'No se encontraron cambios para los filtros seleccionados.'
             : 'Sin cambios registrados en este período.';
         tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-gray-400">${mensaje}</td></tr>`;
@@ -334,25 +432,76 @@ async function fetchAuditoria() {
         return;
     }
 
+    // Tipo and módulo are sent to the server rather than only applied to what
+    // comes back: each response is capped, so on a busy range a local filter
+    // would only ever search the newest rows, and an older deletion would look
+    // like it never happened.
+    const { tipo, entidad } = filtrosAuditoria();
+    const parametros = new URLSearchParams({ inicio, fin });
+    if (tipo) parametros.set('tipo', tipo);
+    if (entidad) parametros.set('entidad', entidad);
+
+    const solicitud = ++auditoriaSolicitud;
     auditoriaCargando = true;
     renderAuditoria();
 
     try {
         const result = await apiRequest(
-            `/api/auditoria?inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`,
+            `/api/auditoria?${parametros}`,
             // The log covers every module at once, so a wide range returns far
             // more rows than a single-tab fetch — allow longer than the default.
             { timeoutMs: 20000 }
         );
+        if (solicitud !== auditoriaSolicitud) return;
         auditoriaData = Array.isArray(result?.movimientos) ? result.movimientos : [];
         auditoriaTruncada = Boolean(result?.truncado);
     } catch (error) {
+        if (solicitud !== auditoriaSolicitud) return;
         console.error('No se pudo cargar el historial de cambios:', error);
         auditoriaData = [];
         auditoriaTruncada = false;
         mostrarNotificacion(error.message || 'No se pudo cargar el historial de cambios.', 'error');
     } finally {
-        auditoriaCargando = false;
-        renderAuditoria();
+        if (solicitud === auditoriaSolicitud) {
+            auditoriaCargando = false;
+            renderAuditoria();
+        }
     }
 }
+
+const AUDITORIA_MENUS = ['auditoria-sort-menu', 'auditoria-filter-menu'];
+
+// Same fade-and-scale popover as the Clientes sort menu.
+function mostrarMenuAuditoria(menu, visible) {
+    menu.classList.toggle('opacity-0', !visible);
+    menu.classList.toggle('scale-95', !visible);
+    menu.classList.toggle('pointer-events-none', !visible);
+    menu.classList.toggle('opacity-100', visible);
+    menu.classList.toggle('scale-100', visible);
+    menu.classList.toggle('pointer-events-auto', visible);
+    document.querySelector(`[aria-controls="${menu.id}"]`)?.setAttribute('aria-expanded', String(visible));
+}
+
+// Opening one menu closes the other, so the two never stack.
+function toggleMenuAuditoria(menuId) {
+    AUDITORIA_MENUS.forEach(id => {
+        const menu = document.getElementById(id);
+        if (menu) mostrarMenuAuditoria(menu, id === menuId && menu.classList.contains('opacity-0'));
+    });
+}
+
+function cerrarMenusAuditoria(debeCerrar = () => true) {
+    AUDITORIA_MENUS.forEach(id => {
+        const menu = document.getElementById(id);
+        if (menu && !menu.classList.contains('opacity-0') && debeCerrar(menu)) mostrarMenuAuditoria(menu, false);
+    });
+}
+
+document.addEventListener('click', event => {
+    cerrarMenusAuditoria(menu => !menu.contains(event.target)
+        && !document.querySelector(`[aria-controls="${menu.id}"]`)?.contains(event.target));
+});
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') cerrarMenusAuditoria();
+});

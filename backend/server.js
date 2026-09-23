@@ -1016,6 +1016,18 @@ const AUDIT_PAGE_LIMIT = 1000;
 // and would otherwise show up as noise in every single change list.
 const AUDIT_IGNORED_FIELDS = new Set(['updatedAt', 'createdAt', 'justificacion']);
 
+// The kinds of movement GET /api/auditoria can be narrowed to with ?tipo= —
+// the same split the Historial de Cambios cards count by (see
+// tipoMovimientoAuditoria in frontend/js/auditoria.js). 'finalizar' is how a
+// weigh-in becomes a transaction, so it counts as a creation, and an edit is
+// anything that is neither a creation nor a deletion, so a new action lands
+// there without touching this list.
+const AUDIT_TIPO_FILTERS = new Map([
+    ['creaciones', "accion IN ('crear', 'finalizar')"],
+    ['ediciones', "accion NOT IN ('crear', 'finalizar', 'eliminar')"],
+    ['eliminaciones', "accion = 'eliminar'"]
+]);
+
 function auditValuesEqual(a, b) {
     // Numbers round-trip through Number()/REAL storage, so an untouched weight
     // can come back as 12000.0000000001 and read as an edit without a tolerance.
@@ -2637,6 +2649,10 @@ app.get('/api/auditoria', asyncHandler(async (req, res) => {
     const entidad = asText(req.query?.entidad, { maxLength: 50 });
     const accion = asText(req.query?.accion, { maxLength: 50 });
     const campo = asText(req.query?.campo, { maxLength: 60 });
+    const tipo = asText(req.query?.tipo, { maxLength: 20 });
+    if (tipo && !AUDIT_TIPO_FILTERS.has(tipo)) {
+        throw new HttpError(400, 'Tipo de movimiento inválido.', 'VALIDATION_ERROR');
+    }
 
     // registrado_en is 'YYYY-MM-DD HH:MM:SS', so a plain string comparison
     // against the end date plus a time of 23:59:59 covers the whole final day.
@@ -2655,6 +2671,10 @@ app.get('/api/auditoria', asyncHandler(async (req, res) => {
         // needle keep "precio" from matching "precioAplicado".
         filtro += " AND (',' || campos_cambiados || ',') LIKE ?";
         params.push(`%,${campo},%`);
+    }
+    if (tipo) {
+        // A fixed clause from the map, never the query value itself.
+        filtro += ` AND ${AUDIT_TIPO_FILTERS.get(tipo)}`;
     }
 
     const rows = await db.all(
