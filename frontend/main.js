@@ -125,7 +125,13 @@ function applyScaleSettings(settings) {
 // but right-click Cut/Copy/Paste needs to be built by hand.
 function attachEditContextMenu(win) {
     win.webContents.on('context-menu', (_event, params) => {
-        if (!params.isEditable) return;
+        // Read-only text the page lets you select (e.g. Historial de Cambios):
+        // only Copiar makes sense there.
+        if (!params.isEditable) {
+            if (!params.selectionText.trim()) return;
+            Menu.buildFromTemplate([{ label: 'Copiar', role: 'copy' }]).popup({ window: win });
+            return;
+        }
         const { editFlags } = params;
         const menu = Menu.buildFromTemplate([
             { label: 'Cortar', role: 'cut', enabled: editFlags.canCut },
