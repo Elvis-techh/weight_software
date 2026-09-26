@@ -20,6 +20,10 @@ const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
 const VALID_AJUSTE_CATEGORIAS = new Set(['global', 'acopio', 'directo']);
 const VALID_CLIENT_CATEGORIAS = new Set(['acopio', 'directo', 'ambos']);
+// Acopio Rivera is the company itself, registered as a client priced at L 0:
+// Ajuste Global must never move its prices (nor fail a decrease over it).
+// Matched on nombre + apellido, ignoring case, accents and extra spaces.
+const CLIENTE_FUERA_DE_AJUSTE_GLOBAL = 'acopio rivera';
 const LBS_PER_METRIC_TON = 2204.62262185;
 const LBS_PER_QUINTAL = 100;
 // Derived (not a rounded business convention) so quintal<->ton price
@@ -1255,6 +1259,16 @@ app.get('/api/clientes', asyncHandler(async (_req, res) => {
     sendData(res, rows.map(mapClient));
 }));
 
+function isClienteFueraDeAjusteGlobal(row) {
+    const nombreCompleto = `${row.nombre || ''} ${row.apellido || ''}`
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('es')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return nombreCompleto === CLIENTE_FUERA_DE_AJUSTE_GLOBAL;
+}
+
 app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
     const montoTonelada = asNumber(req.body?.montoTonelada ?? req.body?.monto, {
         required: true,
@@ -1277,6 +1291,8 @@ app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
     const clientes = await withTransaction(async () => {
         const rows = await db.all('SELECT * FROM clientes ORDER BY id DESC');
         const updates = rows.map(row => {
+            if (isClienteFueraDeAjusteGlobal(row)) return null;
+
             const rowCategoria = VALID_CLIENT_CATEGORIAS.has(row.categoria) ? row.categoria : 'ambos';
             // A client only receives the slice of the adjustment that matches their
             // own categoria — e.g. an Acopio-only client is untouched by a Directo

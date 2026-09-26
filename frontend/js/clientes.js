@@ -34,6 +34,12 @@ function normalizeClientNameForDuplicateCheck(nombre, apellido) {
         .trim();
 }
 
+// Acopio Rivera is the company itself, priced at L 0 — Ajuste Global never
+// touches it. Mirrors CLIENTE_FUERA_DE_AJUSTE_GLOBAL in the backend.
+function isClienteFueraDeAjusteGlobal(cliente) {
+    return normalizeClientNameForDuplicateCheck(cliente.nombre, cliente.apellido) === 'acopio rivera';
+}
+
 function normalizarCliente(record = {}) {
     const unidad = record.unidad === 'quintal' ? 'quintal' : 'tonelada';
     const precioFletePropio = toFiniteNumber(record.precioFletePropio ?? record.precio_flete_propio);
@@ -847,9 +853,9 @@ async function aplicarAjusteGlobalForm() {
     const rowIncludesAcopio = cliente => (cliente.categoria || 'ambos') !== 'directo';
     const rowIncludesDirecto = cliente => (cliente.categoria || 'ambos') !== 'acopio';
 
-    const matchingClients = MOCK_CLIENTES.filter(cliente =>
+    const matchingClients = MOCK_CLIENTES.filter(cliente => !isClienteFueraDeAjusteGlobal(cliente) && (
         (applyAcopio && rowIncludesAcopio(cliente)) || (applyDirecto && rowIncludesDirecto(cliente))
-    );
+    ));
     if (!matchingClients.length) {
         return mostrarNotificacion(
             `No hay clientes registrados en la categoría ${ajusteGlobalCategoriaLabel(categoria)}.`,
@@ -888,6 +894,7 @@ async function aplicarAjusteGlobalForm() {
             MOCK_CLIENTES = result.clientes.map(normalizarCliente);
         } else {
             MOCK_CLIENTES = MOCK_CLIENTES.map(cliente => {
+                if (isClienteFueraDeAjusteGlobal(cliente)) return cliente;
                 const doAcopio = applyAcopio && rowIncludesAcopio(cliente);
                 const doDirecto = applyDirecto && rowIncludesDirecto(cliente);
                 const updated = { ...cliente };
