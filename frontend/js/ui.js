@@ -149,6 +149,28 @@ function mostrarNotificacion(message, type = 'success') {
     toastTimer = setTimeout(() => toast.classList.add('hidden'), 4000);
 }
 
+// Yes/no question as a native dialog. Use this instead of window.confirm():
+// in the desktop app that one can leave the window unable to take typing once
+// it closes, so the question is asked from the main process, which gives focus
+// back (see restoreMainWindowFocus in main.js). Outside the desktop app there
+// is no such bridge and window.confirm() is all that exists.
+let confirmDialogOpen = false;
+
+async function confirmarAccion(message) {
+    // One question at a time: a double-clicked Guardar must not queue a second.
+    if (confirmDialogOpen) return false;
+
+    confirmDialogOpen = true;
+    try {
+        if (typeof window.electronAPI?.confirmDialog === 'function') {
+            return await window.electronAPI.confirmDialog(message);
+        }
+        return window.confirm(message);
+    } finally {
+        confirmDialogOpen = false;
+    }
+}
+
 function actionRequiresRecordId(action) {
     return new Set([
         'delete_cola',

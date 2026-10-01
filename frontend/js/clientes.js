@@ -820,7 +820,7 @@ async function guardarCliente(event) {
             previo.precioToneladaPropio, previo.precioToneladaCliente,
             previo.precioToneladaDirecto
         ].some(precio => Number(precio) > 0);
-        if (teniaPrecios && !window.confirm(
+        if (teniaPrecios && !await confirmarAccion(
             'Este cliente tiene precios registrados. Al fijar el precio en L 0, todos sus precios pasarán a L 0.\n\n¿Desea continuar?'
         )) return;
     }
@@ -831,7 +831,7 @@ async function guardarCliente(event) {
         normalizeClientNameForDuplicateCheck(cliente.nombre, cliente.apellido) === normalizedNewName
     );
     if (duplicate) {
-        const proceed = window.confirm(
+        const proceed = await confirmarAccion(
             `Ya existe un cliente con un nombre muy similar: "${duplicate.nombre} ${duplicate.apellido}" (ID: ${duplicate.id}).\n\n¿Desea guardar este cliente de todos modos?`
         );
         if (!proceed) return;

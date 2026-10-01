@@ -88,5 +88,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     warnOfflineSyncIssue(message) {
         return ipcRenderer.invoke('offline-queue:warn', message);
+    },
+
+    // Resolves true only if the operator picked "Sí".
+    confirmDialog(message) {
+        return ipcRenderer.invoke('dialog:confirm', message);
     }
 });

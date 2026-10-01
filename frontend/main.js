@@ -209,18 +209,36 @@ function createWindow() {
         // form under the operator mid-pesaje and look like their own mistyping;
         // this is the same must-acknowledge treatment as the offline-sync
         // warning, and for the same reason — it must not go unseen.
-        dialog.showMessageBox(mainWindow, {
+        withFocusRestored(dialog.showMessageBox(mainWindow, {
             type: 'warning',
             title: 'La pantalla se reinició',
             message: 'Báscula Central se recuperó de una falla en la pantalla.',
             detail: 'Verifique el pesaje que estaba capturando antes de continuar: lo que no se había guardado debe ingresarse de nuevo.',
             buttons: ['Entendido']
-        });
+        }));
     });
 
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+}
+
+// On Windows the main window can come back from a native dialog (print, save,
+// message box) without keyboard focus: it still looks active and clicks still
+// work, but typing into a text field — the client search boxes — does nothing
+// until the operator switches to another window and back. Printing hits it
+// hardest, since its dialog belongs to an offscreen window instead of
+// mainWindow, so nothing hands focus back when it closes. Call this once the
+// dialog is gone.
+function restoreMainWindowFocus() {
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()) return;
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+}
+
+// Awaits a native dialog and then restores focus, whichever way it closed.
+function withFocusRestored(dialogPromise) {
+    return Promise.resolve(dialogPromise).finally(restoreMainWindowFocus);
 }
 
 function waitForLoad(win) {
@@ -337,6 +355,7 @@ async function printReceipt(data) {
         }
     } finally {
         if (!receiptWindow.isDestroyed()) receiptWindow.destroy();
+        restoreMainWindowFocus();
     }
 }
 
@@ -369,6 +388,7 @@ async function withPrintableWindow(htmlFileName, setterName, data, callback) {
         return await callback(win);
     } finally {
         if (!win.isDestroyed()) win.destroy();
+        restoreMainWindowFocus();
     }
 }
 
@@ -394,11 +414,11 @@ async function printListadoDocument(htmlFileName, setterName, data, filePrefix) 
 // Documents subfolder), this lets the operator pick exactly where it goes.
 async function saveListadoDocumentAsPdf(htmlFileName, setterName, data, { dialogTitle, filePrefix }) {
     const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    const { canceled, filePath } = await withFocusRestored(dialog.showSaveDialog(mainWindow, {
         title: dialogTitle,
         defaultPath: path.join(app.getPath('documents'), `${filePrefix}-${stamp}.pdf`),
         filters: [{ name: 'Documento PDF', extensions: ['pdf'] }]
-    });
+    }));
     if (canceled || !filePath) return { ok: true, mode: 'cancelled' };
 
     return withPrintableWindow(htmlFileName, setterName, data, async win => {
@@ -414,11 +434,11 @@ async function saveListadoDocumentAsPdf(htmlFileName, setterName, data, { dialog
 // boleta that didn't print (no printer, cancelled, etc.) is never unrecoverable.
 async function saveReceiptAsPdf(data) {
     const numero = String(data?.numero || '').trim().replace(/[^a-zA-Z0-9-]/g, '') || Date.now();
-    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    const { canceled, filePath } = await withFocusRestored(dialog.showSaveDialog(mainWindow, {
         title: 'Guardar boleta como PDF',
         defaultPath: path.join(app.getPath('documents'), `boleta-${numero}.pdf`),
         filters: [{ name: 'Documento PDF', extensions: ['pdf'] }]
-    });
+    }));
     if (canceled || !filePath) return { ok: true, mode: 'cancelled' };
 
     return withPrintableWindow('receipt.html', 'setReceiptData', data, async win => {
@@ -472,6 +492,27 @@ function registerCorapsaListadoIpc() {
     ipcMain.handle('corapsa-listado:save-pdf', (_event, data) => saveCorapsaListadoAsPdf(data));
 }
 
+// A yes/no question for the renderer. It goes through here instead of the
+// page's window.confirm() because that native dialog is one of the ones that
+// can leave the window without keyboard focus on Windows (see
+// restoreMainWindowFocus) and the page has no way to hand it back. "No" is the
+// default so a stray Enter never confirms a destructive question.
+function registerDialogIpc() {
+    ipcMain.removeHandler('dialog:confirm');
+    ipcMain.handle('dialog:confirm', async (_event, message) => {
+        const { response } = await withFocusRestored(dialog.showMessageBox(mainWindow, {
+            type: 'question',
+            title: 'Confirmar',
+            message: String(message ?? ''),
+            buttons: ['Sí', 'No'],
+            defaultId: 1,
+            cancelId: 1,
+            noLink: true
+        }));
+        return response === 0;
+    });
+}
+
 // Failing to READ the outbox is the worst thing that can happen to it — the
 // renderer carries on with an empty queue, so the pending weighings on disk are
 // one enqueue away from being overwritten. offlineQueueStore keeps that from
@@ -488,13 +529,13 @@ function warnUnreadableOfflineQueue(failure) {
           'cambios sin sincronizar, para no sobrescribir los que ya contiene. Evite trabajar sin ' +
           'conexión hasta resolverlo.';
 
-    return dialog.showMessageBox(mainWindow, {
+    return withFocusRestored(dialog.showMessageBox(mainWindow, {
         type: 'error',
         title: 'No se pudo leer la cola sin sincronizar',
         message: 'La aplicación no pudo leer los cambios sin sincronizar guardados en disco.',
         detail,
         buttons: ['Entendido']
-    });
+    }));
 }
 
 function registerOfflineQueueIpc() {
@@ -527,13 +568,13 @@ function registerOfflineQueueIpc() {
     // reconnected, which is exactly the kind of thing that must not go unseen.
     ipcMain.removeHandler('offline-queue:warn');
     ipcMain.handle('offline-queue:warn', (_event, message) => {
-        return dialog.showMessageBox(mainWindow, {
+        return withFocusRestored(dialog.showMessageBox(mainWindow, {
             type: 'warning',
             title: 'Revisar sincronización sin conexión',
             message: 'Se detectó un problema al sincronizar cambios guardados sin conexión.',
             detail: String(message || ''),
             buttons: ['Entendido']
-        });
+        }));
     });
 }
 
@@ -602,6 +643,7 @@ app.whenReady().then(() => {
     registerListadoIpc();
     registerCorapsaListadoIpc();
     registerOfflineQueueIpc();
+    registerDialogIpc();
     createWindow();
 
     app.on('activate', () => {
@@ -617,13 +659,13 @@ app.whenReady().then(() => {
 
     // 2. When an update is ready, show a pop-up to the user
     autoUpdater.on('update-downloaded', (info) => {
-        dialog.showMessageBox({
+        withFocusRestored(dialog.showMessageBox({
             type: 'info',
             title: 'Actualización disponible',
             message: `La versión ${info.version} de Báscula Central está lista.`,
             detail: '¿Deseas reiniciar la aplicación ahora para instalarla?',
             buttons: ['Reiniciar e Instalar', 'Más tarde']
-        }).then((result) => {
+        })).then((result) => {
             if (result.response === 0) {
                 // If they click the first button, restart and install
                 autoUpdater.quitAndInstall();
