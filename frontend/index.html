@@ -100,6 +100,18 @@
                         cuáles los alcanza el Ajuste Global.</p>
                 </div>
 
+                <label for="modal-precio-fijo-cero"
+                    class="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer">
+                    <input type="checkbox" id="modal-precio-fijo-cero" onchange="handlePrecioFijoCeroChange()"
+                        class="mt-0.5 h-4 w-4 accent-green-600 cursor-pointer">
+                    <span>
+                        <span class="block text-xs font-bold text-gray-700">Precio fijo en L 0</span>
+                        <span class="block text-[11px] text-gray-500 mt-0.5">Para la cuenta propia de la empresa:
+                            todos sus precios quedan en L 0, el Ajuste Global no los mueve y no se pueden modificar
+                            desde Pesaje.</span>
+                    </span>
+                </label>
+
                 <div id="modal-precios-tonelada-container"
                     class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg mt-2">
                     <div class="flex items-start gap-2 mb-3">
@@ -807,7 +819,7 @@
                         recalculan automáticamente con ÷ 22.04 y redondeo a una décima.
                     </p>
                     <p class="mt-1 text-[11px] leading-relaxed text-gray-500">
-                        Acopio Rivera no se ajusta: sus precios se quedan en L 0.
+                        Los clientes con «Precio fijo en L 0» no se ajustan: sus precios se quedan en L 0.
                     </p>
 
 

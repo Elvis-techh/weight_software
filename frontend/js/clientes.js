@@ -34,10 +34,13 @@ function normalizeClientNameForDuplicateCheck(nombre, apellido) {
         .trim();
 }
 
-// Acopio Rivera is the company itself, priced at L 0 — Ajuste Global never
-// touches it. Mirrors CLIENTE_FUERA_DE_AJUSTE_GLOBAL in the backend.
-function isClienteFueraDeAjusteGlobal(cliente) {
-    return normalizeClientNameForDuplicateCheck(cliente.nombre, cliente.apellido) === 'acopio rivera';
+// A client flagged "Precio fijo en L 0" (e.g. the station's own account) keeps
+// every price at L 0 — Ajuste Global skips it and no price edit may move it.
+// Mirrors precio_fijo_cero in the backend.
+const PRECIO_FIJO_CERO_LOCKED_MESSAGE = 'Este cliente tiene el precio fijo en L 0. Quite esa opción en Clientes para modificar su precio.';
+
+function hasPrecioFijoCero(cliente) {
+    return Boolean(cliente?.precioFijoCero);
 }
 
 function normalizarCliente(record = {}) {
@@ -69,6 +72,7 @@ function normalizarCliente(record = {}) {
         ubicacion: String(record.ubicacion || '').trim(),
         identidad: String(record.identidad || '').trim(),
         categoria,
+        precioFijoCero: record.precioFijoCero === true || Number(record.precio_fijo_cero) === 1,
         precioFletePropio,
         precioFleteCliente,
         precioToneladaPropio,
@@ -194,7 +198,7 @@ function renderClientesTab() {
         return `
         <tr class="hover:bg-blue-50 border-b border-gray-100 last:border-0 transition-colors">
             <td class="p-3 text-sm text-gray-500 font-mono" data-label="ID">#${escapeHtml(cliente.id)}</td>
-            <td class="p-3 text-sm font-bold text-gray-800" data-label="Nombre del Cliente">${escapeHtml(`${cliente.nombre} ${cliente.apellido}`.trim())}</td>
+            <td class="p-3 text-sm font-bold text-gray-800" data-label="Nombre del Cliente">${escapeHtml(`${cliente.nombre} ${cliente.apellido}`.trim())}${cliente.precioFijoCero ? ' <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-gray-200 text-gray-700 whitespace-nowrap">Precio fijo L 0</span>' : ''}</td>
             <td class="p-3 text-sm text-gray-600" data-label="Teléfono">${escapeHtml(cliente.telefono || '-')}</td>
             <td class="p-3 text-sm text-gray-600" data-label="Ubicación">${escapeHtml(cliente.ubicacion || '-')}</td>
             <td class="p-3 text-center" data-label="Categoría">${renderClientCategoriaBadge(cliente.categoria)}</td>
@@ -518,6 +522,52 @@ function toggleQuintalPriceOverride(which) {
     refreshJustificationVisibility();
 }
 
+const PRECIO_FIJO_CERO_INPUT_IDS = [
+    'modal-precio-propio', 'modal-precio-cliente',
+    'modal-precio-ton-propio', 'modal-precio-ton-cliente',
+    'modal-precio-directo'
+];
+
+function isPrecioFijoCeroChecked() {
+    return Boolean(document.getElementById('modal-precio-fijo-cero')?.checked);
+}
+
+// While "Precio fijo en L 0" is ticked every price field is locked at 0.
+function applyPrecioFijoCeroState() {
+    const locked = isPrecioFijoCeroChecked();
+    PRECIO_FIJO_CERO_INPUT_IDS.forEach(id => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.disabled = locked;
+        input.classList.toggle('opacity-60', locked);
+    });
+    ['propio', 'cliente'].forEach(which => {
+        const button = document.getElementById(`modal-precio-${which}-override-btn`);
+        if (!button) return;
+        button.disabled = locked;
+        button.classList.toggle('opacity-50', locked);
+    });
+}
+
+// Ticking it zeroes the price fields but remembers what they held, so
+// unticking within the same edit puts the figures back; nothing is saved until
+// the form is.
+function handlePrecioFijoCeroChange() {
+    const locked = isPrecioFijoCeroChecked();
+    PRECIO_FIJO_CERO_INPUT_IDS.forEach(id => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        if (locked) {
+            input.dataset.valorPrevio = input.value;
+            input.value = '0';
+        } else if (input.dataset.valorPrevio !== undefined) {
+            input.value = input.dataset.valorPrevio;
+            delete input.dataset.valorPrevio;
+        }
+    });
+    applyClientUnitFieldState();
+}
+
 function currentClientCategoria() {
     return document.getElementById('modal-categoria')?.value || 'ambos';
 }
@@ -573,6 +623,7 @@ function applyClientUnitFieldState() {
     if (clientLabel) clientLabel.textContent = isQuintal ? 'Flete CLIENTE calculado (HNL / QQ) *' : 'Flete CLIENTE (HNL / Ton) *';
 
     if (showTonContainer) recalculateQuintalPrices();
+    applyPrecioFijoCeroState();
     refreshJustificationVisibility();
 }
 
@@ -609,6 +660,7 @@ function abrirModalCliente(id = null) {
     const unitSelect = document.getElementById('modal-unidad');
 
     form.reset();
+    PRECIO_FIJO_CERO_INPUT_IDS.forEach(inputId => delete document.getElementById(inputId)?.dataset.valorPrevio);
 
     if (id !== null) {
         const cliente = MOCK_CLIENTES.find(item => sameRecordId(item.id, id));
@@ -622,6 +674,7 @@ function abrirModalCliente(id = null) {
         document.getElementById('modal-ubicacion').value = cliente.ubicacion;
         document.getElementById('modal-identidad').value = cliente.identidad;
         document.getElementById('modal-categoria').value = cliente.categoria || 'ambos';
+        document.getElementById('modal-precio-fijo-cero').checked = hasPrecioFijoCero(cliente);
         unitSelect.value = cliente.unidad;
         unitSelect.dataset.previousUnit = cliente.unidad;
         document.getElementById('modal-precio-propio').value = formatNumberForInput(cliente.precioFletePropio, cliente.unidad === 'quintal' ? 1 : 2);
@@ -679,6 +732,7 @@ async function guardarCliente(event) {
     const categoria = getRequiredElement('modal-categoria').value;
     const includesAcopio = categoria !== 'directo';
     const includesDirecto = categoria !== 'acopio';
+    const precioFijoCero = isPrecioFijoCeroChecked();
 
     const propioInput = getRequiredElement('modal-precio-propio');
     const clienteInput = getRequiredElement('modal-precio-cliente');
@@ -700,7 +754,7 @@ async function guardarCliente(event) {
             ? parseFormattedNumber(clienteInput.value)
             : pricePerQuintalFromTon(precioToneladaCliente);
     }
-    if (!includesAcopio) {
+    if (!includesAcopio || precioFijoCero) {
         precioFletePropio = 0;
         precioFleteCliente = 0;
         precioToneladaPropio = 0;
@@ -708,7 +762,7 @@ async function guardarCliente(event) {
     }
 
     const precioToneladaDirecto = includesDirecto
-        ? parseFormattedNumber(getRequiredElement('modal-precio-directo').value)
+        ? (precioFijoCero ? 0 : parseFormattedNumber(getRequiredElement('modal-precio-directo').value))
         : null;
 
     const clienteData = {
@@ -718,6 +772,7 @@ async function guardarCliente(event) {
         ubicacion: getRequiredElement('modal-ubicacion').value.trim(),
         identidad: getRequiredElement('modal-identidad').value.trim(),
         categoria,
+        precioFijoCero,
         precioFletePropio,
         precioFleteCliente,
         precioToneladaPropio,
@@ -754,6 +809,20 @@ async function guardarCliente(event) {
     }
     if (!clientId && unidad === 'quintal' && (propioOverridden || clienteOverridden) && !justificacion) {
         return mostrarNotificacion('Debe ingresar una justificación para modificar manualmente el precio calculado.', 'error');
+    }
+
+    // Newly pinning a client that has prices wipes them to L 0 — confirm first.
+    // (Saved before-and-after in Historial de Cambios either way.)
+    if (clientId && precioFijoCero) {
+        const previo = MOCK_CLIENTES.find(item => sameRecordId(item.id, clientId));
+        const teniaPrecios = previo && !hasPrecioFijoCero(previo) && [
+            previo.precioFletePropio, previo.precioFleteCliente,
+            previo.precioToneladaPropio, previo.precioToneladaCliente,
+            previo.precioToneladaDirecto
+        ].some(precio => Number(precio) > 0);
+        if (teniaPrecios && !window.confirm(
+            'Este cliente tiene precios registrados. Al fijar el precio en L 0, todos sus precios pasarán a L 0.\n\n¿Desea continuar?'
+        )) return;
     }
 
     const normalizedNewName = normalizeClientNameForDuplicateCheck(clienteData.nombre, clienteData.apellido);
@@ -853,7 +922,7 @@ async function aplicarAjusteGlobalForm() {
     const rowIncludesAcopio = cliente => (cliente.categoria || 'ambos') !== 'directo';
     const rowIncludesDirecto = cliente => (cliente.categoria || 'ambos') !== 'acopio';
 
-    const matchingClients = MOCK_CLIENTES.filter(cliente => !isClienteFueraDeAjusteGlobal(cliente) && (
+    const matchingClients = MOCK_CLIENTES.filter(cliente => !hasPrecioFijoCero(cliente) && (
         (applyAcopio && rowIncludesAcopio(cliente)) || (applyDirecto && rowIncludesDirecto(cliente))
     ));
     if (!matchingClients.length) {
@@ -894,7 +963,7 @@ async function aplicarAjusteGlobalForm() {
             MOCK_CLIENTES = result.clientes.map(normalizarCliente);
         } else {
             MOCK_CLIENTES = MOCK_CLIENTES.map(cliente => {
-                if (isClienteFueraDeAjusteGlobal(cliente)) return cliente;
+                if (hasPrecioFijoCero(cliente)) return cliente;
                 const doAcopio = applyAcopio && rowIncludesAcopio(cliente);
                 const doDirecto = applyDirecto && rowIncludesDirecto(cliente);
                 const updated = { ...cliente };

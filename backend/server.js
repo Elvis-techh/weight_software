@@ -20,10 +20,13 @@ const VALID_UNITS = new Set(['tonelada', 'quintal']);
 const VALID_FREIGHT_TYPES = new Set(['Propio', 'Cliente']);
 const VALID_AJUSTE_CATEGORIAS = new Set(['global', 'acopio', 'directo']);
 const VALID_CLIENT_CATEGORIAS = new Set(['acopio', 'directo', 'ambos']);
-// Acopio Rivera is the company itself, registered as a client priced at L 0:
-// Ajuste Global must never move its prices (nor fail a decrease over it).
-// Matched on nombre + apellido, ignoring case, accents and extra spaces.
-const CLIENTE_FUERA_DE_AJUSTE_GLOBAL = 'acopio rivera';
+// A client flagged precio_fijo_cero (e.g. the station's own account, registered
+// as a client priced at L 0) keeps every price at L 0: Ajuste Global skips it
+// and the Pesaje and Clientes price edits reject it. The flag is set and
+// cleared per client from the Clientes form.
+const PRECIO_FIJO_CERO_LOCKED_MESSAGE = 'Este cliente tiene el precio fijo en L 0. Quite esa opción en Clientes para modificar su precio.';
+const PRECIO_FIJO_CERO_NONZERO_MESSAGE = 'Un cliente con el precio fijo en L 0 no puede tener otro precio.';
+const PRECIO_FIJO_CERO_FIELD_MESSAGE = 'La opción de precio fijo en L 0 no es válida.';
 const LBS_PER_METRIC_TON = 2204.62262185;
 const LBS_PER_QUINTAL = 100;
 // Derived (not a rounded business convention) so quintal<->ton price
@@ -241,10 +244,10 @@ function asTime(value, field) {
     return text;
 }
 
-function asBoolean(value) {
+function asBoolean(value, message = 'El estado de la jornada no es válido.') {
     if (value === true || value === 1 || value === '1' || value === 'true') return true;
     if (value === false || value === 0 || value === '0' || value === 'false') return false;
-    throw new HttpError(400, 'El estado de la jornada no es válido.', 'VALIDATION_ERROR');
+    throw new HttpError(400, message, 'VALIDATION_ERROR');
 }
 
 function asWorkerPhone(value) {
@@ -604,6 +607,7 @@ function mapClient(row) {
         precioToneladaCliente: getStoredTonPrice(row, 'Cliente'),
         precioToneladaDirecto: getStoredDirectoPrice(row),
         categoria: VALID_CLIENT_CATEGORIAS.has(row.categoria) ? row.categoria : 'ambos',
+        precioFijoCero: Boolean(row.precio_fijo_cero),
         unidad
     };
 }
@@ -1259,14 +1263,20 @@ app.get('/api/clientes', asyncHandler(async (_req, res) => {
     sendData(res, rows.map(mapClient));
 }));
 
-function isClienteFueraDeAjusteGlobal(row) {
-    const nombreCompleto = `${row.nombre || ''} ${row.apellido || ''}`
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLocaleLowerCase('es')
-        .replace(/\s+/g, ' ')
-        .trim();
-    return nombreCompleto === CLIENTE_FUERA_DE_AJUSTE_GLOBAL;
+// Rejects a create/edit that would give a precio-fijo-en-L-0 client any price
+// other than 0.
+function assertClientePrecioCero(client) {
+    if (!client.precioFijoCero) return;
+    const prices = [
+        client.precioFletePropio,
+        client.precioFleteCliente,
+        client.precioToneladaPropio,
+        client.precioToneladaCliente,
+        client.precioToneladaDirecto
+    ];
+    if (prices.some(price => Number(price || 0) !== 0)) {
+        throw new HttpError(409, PRECIO_FIJO_CERO_NONZERO_MESSAGE, 'PRICE_LOCKED');
+    }
 }
 
 app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
@@ -1291,7 +1301,7 @@ app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
     const clientes = await withTransaction(async () => {
         const rows = await db.all('SELECT * FROM clientes ORDER BY id DESC');
         const updates = rows.map(row => {
-            if (isClienteFueraDeAjusteGlobal(row)) return null;
+            if (row.precio_fijo_cero) return null;
 
             const rowCategoria = VALID_CLIENT_CATEGORIAS.has(row.categoria) ? row.categoria : 'ambos';
             // A client only receives the slice of the adjustment that matches their
@@ -1391,8 +1401,10 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
         identidad: asText(req.body?.identidad, { field: 'La identidad', maxLength: 40 }),
         unidad,
         categoria,
+        precioFijoCero: asBoolean(req.body?.precioFijoCero ?? false, PRECIO_FIJO_CERO_FIELD_MESSAGE),
         ...pricing
     };
+    assertClientePrecioCero(client);
 
     const cliente = await withTransaction(async () => {
         const result = await db.run(`
@@ -1400,9 +1412,9 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
                 nombre, apellido, telefono, ubicacion, identidad,
                 precio_flete_propio, precio_flete_cliente,
                 precio_tonelada_propio, precio_tonelada_cliente, precio_tonelada_directo,
-                unidad, categoria, created_at, updated_at
+                unidad, categoria, precio_fijo_cero, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [
             client.nombre,
             client.apellido,
@@ -1415,7 +1427,8 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
             client.precioToneladaCliente,
             client.precioToneladaDirecto,
             client.unidad,
-            client.categoria
+            client.categoria,
+            client.precioFijoCero ? 1 : 0
         ]);
         const row = await db.get('SELECT * FROM clientes WHERE id = ?', [result.lastID]);
         await logAudit({ entity: 'cliente', entityId: result.lastID, action: 'crear', justification: justificacion, details: client });
@@ -1438,6 +1451,11 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
         identidad: asText(req.body?.identidad, { field: 'La identidad', maxLength: 40 }),
         unidad,
         categoria,
+        // null = the request didn't mention the flag (an app version from before
+        // it existed): keep whatever the client has instead of silently clearing it.
+        precioFijoCero: Object.prototype.hasOwnProperty.call(req.body || {}, 'precioFijoCero')
+            ? asBoolean(req.body.precioFijoCero, PRECIO_FIJO_CERO_FIELD_MESSAGE)
+            : null,
         ...pricing
     };
 
@@ -1445,13 +1463,15 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
         const previo = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
         if (!previo) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
         const antes = mapClient(previo);
+        if (client.precioFijoCero === null) client.precioFijoCero = antes.precioFijoCero;
+        assertClientePrecioCero(client);
 
         const result = await db.run(`
             UPDATE clientes
             SET nombre = ?, apellido = ?, telefono = ?, ubicacion = ?, identidad = ?,
                 precio_flete_propio = ?, precio_flete_cliente = ?,
                 precio_tonelada_propio = ?, precio_tonelada_cliente = ?, precio_tonelada_directo = ?,
-                unidad = ?, categoria = ?, updated_at = CURRENT_TIMESTAMP
+                unidad = ?, categoria = ?, precio_fijo_cero = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [
             client.nombre,
@@ -1466,6 +1486,7 @@ app.put('/api/clientes/:id', asyncHandler(async (req, res) => {
             client.precioToneladaDirecto,
             client.unidad,
             client.categoria,
+            client.precioFijoCero ? 1 : 0,
             id
         ]);
         if (!result.changes) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
@@ -1524,6 +1545,7 @@ app.patch('/api/clientes/:id/precio', asyncHandler(async (req, res) => {
     const result = await withTransaction(async () => {
         const clientRow = await db.get('SELECT * FROM clientes WHERE id = ?', [id]);
         if (!clientRow) throw new HttpError(404, 'Cliente no encontrado.', 'NOT_FOUND');
+        if (clientRow.precio_fijo_cero) throw new HttpError(409, PRECIO_FIJO_CERO_LOCKED_MESSAGE, 'PRICE_LOCKED');
 
         const unidad = clientRow.unidad === 'quintal' ? 'quintal' : 'tonelada';
         const precioAnteriorTonelada = getStoredTonPrice(clientRow, flete);

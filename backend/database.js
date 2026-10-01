@@ -18,6 +18,39 @@ async function ensureColumn(db, table, column, definition) {
     }
 }
 
+// Adds clientes.precio_fijo_cero, the flag that pins a client's price at L 0
+// (Ajuste Global skips it and no price edit may move it). Before the flag
+// existed this station protected its own account, Acopio Rivera, by name; that
+// client is flagged here, in the same transaction that creates the column, so
+// it stays locked across the upgrade. This must run only when the column is
+// first created: on every start it would re-lock the client the day someone
+// unflags it on purpose.
+async function ensurePrecioFijoCeroColumn(db) {
+    const columns = await db.all('PRAGMA table_info(clientes)');
+    if (columns.some(item => item.name === 'precio_fijo_cero')) return;
+
+    await db.exec('BEGIN');
+    try {
+        await db.exec('ALTER TABLE clientes ADD COLUMN precio_fijo_cero INTEGER NOT NULL DEFAULT 0');
+        const rows = await db.all('SELECT id, nombre, apellido FROM clientes');
+        for (const row of rows) {
+            const nombreCompleto = `${row.nombre || ''} ${row.apellido || ''}`
+                .normalize('NFD')
+                .replace(/[̀-ͯ]/g, '')
+                .toLocaleLowerCase('es')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (nombreCompleto === 'acopio rivera') {
+                await db.run('UPDATE clientes SET precio_fijo_cero = 1 WHERE id = ?', [row.id]);
+            }
+        }
+        await db.exec('COMMIT');
+    } catch (error) {
+        await db.exec('ROLLBACK');
+        throw error;
+    }
+}
+
 function formatLocalIsoDate(date) {
     return [
         date.getFullYear(),
@@ -349,6 +382,7 @@ async function initializeDB() {
     await ensureColumn(db, 'clientes', 'created_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'clientes', 'updated_at', "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
     await ensureColumn(db, 'clientes', 'identidad', "TEXT NOT NULL DEFAULT ''");
+    await ensurePrecioFijoCeroColumn(db);
 
     await ensureColumn(db, 'camiones_en_patio', 'cliente_nombre_snapshot', "TEXT NOT NULL DEFAULT ''");
     await ensureColumn(db, 'camiones_en_patio', 'precio_aplicado', 'REAL NOT NULL DEFAULT 0');

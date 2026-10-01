@@ -88,7 +88,7 @@ function mostrarInfoCliente() {
     priceBox.classList.remove('hidden');
 
     const editButton = document.getElementById('price-edit-button');
-    if (editButton) editButton.classList.toggle('hidden', !getPriceEditContext());
+    if (editButton) editButton.classList.toggle('hidden', !getPriceEditContext() || isPriceEditLocked());
 
     if (activeTransaction.pesoBruto != null && activeTransaction.pesoTara != null) {
         calcularNetoYTotal();
@@ -110,11 +110,19 @@ function getPriceEditContext() {
     return { clienteId, flete };
 }
 
+// A client with "Precio fijo en L 0" (e.g. the station's own account) can't have its price edited.
+function isPriceEditLocked() {
+    const context = getPriceEditContext();
+    if (!context) return false;
+    return hasPrecioFijoCero(MOCK_CLIENTES.find(item => sameRecordId(item.id, context.clienteId)));
+}
+
 function abrirPriceEditModal() {
     const context = getPriceEditContext();
     if (!context) {
         return mostrarNotificacion('Seleccione un cliente registrado para modificar su precio.', 'error');
     }
+    if (isPriceEditLocked()) return mostrarNotificacion(PRECIO_FIJO_CERO_LOCKED_MESSAGE, 'error');
 
     const snapshot = activeTransaction.id
         ? { precioAplicado: activeTransaction.precioAplicado, unidad: activeTransaction.unidad }
@@ -144,6 +152,10 @@ async function confirmarPriceEditModal() {
     if (!context) {
         cerrarPriceEditModal();
         return mostrarNotificacion('Seleccione un cliente registrado para modificar su precio.', 'error');
+    }
+    if (isPriceEditLocked()) {
+        cerrarPriceEditModal();
+        return mostrarNotificacion(PRECIO_FIJO_CERO_LOCKED_MESSAGE, 'error');
     }
 
     const nuevoPrecio = parseFormattedNumber(document.getElementById('price-edit-input').value);

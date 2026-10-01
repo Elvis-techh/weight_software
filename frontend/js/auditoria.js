@@ -30,7 +30,7 @@ const AUDITORIA_CAMPOS_MONEDA = new Set([
 ]);
 const AUDITORIA_CAMPOS_PESO = new Set(['pesoBruto', 'pesoTara', 'neto']);
 const AUDITORIA_CAMPOS_FECHA = new Set(['fecha', 'fechaEntrada', 'fechaPago', 'periodoInicio', 'periodoFin']);
-const AUDITORIA_CAMPOS_BOOLEANO = new Set(['pagado', 'excluido', 'esProductoPropio', 'trabajado', 'hasFile', 'hasFileNuestro']);
+const AUDITORIA_CAMPOS_BOOLEANO = new Set(['pagado', 'excluido', 'esProductoPropio', 'trabajado', 'hasFile', 'hasFileNuestro', 'precioFijoCero']);
 
 const AUDITORIA_ETIQUETAS_CAMPO = Object.freeze({
     fecha: 'Fecha',
@@ -59,6 +59,7 @@ const AUDITORIA_ETIQUETAS_CAMPO = Object.freeze({
     telefono: 'Teléfono',
     ubicacion: 'Ubicación',
     categoria: 'Categoría',
+    precioFijoCero: 'Precio fijo en L 0',
     precioFletePropio: 'Precio flete propio',
     precioFleteCliente: 'Precio flete cliente',
     precioToneladaPropio: 'Precio por tonelada (propio)',
