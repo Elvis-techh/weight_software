@@ -211,6 +211,12 @@ function getActionModalCopy(action) {
     return copies[action] || ['Confirmar Acción', 'Justificación obligatoria:', 'Explique el motivo'];
 }
 
+// The action modal doubles as the box a typed ("Ingreso Manual") weight goes in.
+// Everything else it asks for is a justification.
+function isManualWeightAction(action) {
+    return action === 'manual_bruto' || action === 'manual_tara';
+}
+
 function abrirActionModal(action, id = null) {
     const normalizedId = normalizeActionRecordId(id);
     if (actionRequiresRecordId(action) && !normalizedId) {
@@ -228,14 +234,16 @@ function abrirActionModal(action, id = null) {
     const input = document.getElementById('action-input');
     const [title, label, placeholder] = getActionModalCopy(action);
     document.getElementById('action-title').textContent = title;
-    document.getElementById('action-label').textContent = label;
+    document.getElementById('action-label').textContent = isManualWeightAction(action)
+        ? label
+        : `${label} (mínimo ${APP_CONFIG.minJustificationLength} caracteres)`;
     input.value = '';
     input.placeholder = placeholder;
     input.type = 'text';
     input.removeAttribute('inputmode');
     input.oninput = null;
 
-    if (action === 'manual_bruto' || action === 'manual_tara') {
+    if (isManualWeightAction(action)) {
         input.setAttribute('inputmode', 'numeric');
         input.oninput = formatIntegerThousandsInput;
     }
@@ -266,7 +274,10 @@ async function confirmarActionModal() {
     const value = document.getElementById('action-input').value.trim();
     const action = pendingAction;
     const id = pendingActionId;
-    if (!value) return mostrarNotificacion('Este campo es obligatorio.', 'error');
+    const inputError = isManualWeightAction(action)
+        ? (value ? '' : 'Este campo es obligatorio.')
+        : validateJustification(value, 'Este campo es obligatorio.');
+    if (inputError) return mostrarNotificacion(inputError, 'error');
 
     setActionModalBusy(true);
 

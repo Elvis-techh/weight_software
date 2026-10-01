@@ -339,8 +339,11 @@ async function guardarCorapsa() {
             'error'
         );
     }
-    if (id && !payload.justificacion) {
-        return mostrarNotificacion('La edición requiere una justificación.', 'error');
+    if (id) {
+        // Already checked when it was typed into the authorization modal
+        // (ui.js); this is the same rule, in case it reaches here another way.
+        const justificationError = validateJustification(payload.justificacion, 'La edición requiere una justificación.');
+        if (justificationError) return mostrarNotificacion(justificationError, 'error');
     }
 
     const saveButton = document.getElementById('corapsa-save-button');

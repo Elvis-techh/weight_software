@@ -258,6 +258,7 @@ function setDefaultDateFilters() {
 }
 
 function renderInitialState() {
+    applyJustificationHints();
     renderClientesTab();
     populateClienteDropdown();
     poblarFiltroModulosAuditoria();

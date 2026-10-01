@@ -215,7 +215,10 @@ async function guardarGasto() {
 
     if (!payload.fecha || !payload.concepto) return mostrarNotificacion('Complete los campos obligatorios.', 'error');
     if (!Number.isFinite(payload.monto) || payload.monto <= 0) return mostrarNotificacion('El monto debe ser mayor que cero.', 'error');
-    if (id && !payload.justificacion) return mostrarNotificacion('La edición requiere una justificación.', 'error');
+    if (id) {
+        const justificationError = validateJustification(payload.justificacion, 'La edición requiere una justificación.');
+        if (justificationError) return mostrarNotificacion(justificationError, 'error');
+    }
 
     const saveButton = document.getElementById('gastos-save-button');
     try {

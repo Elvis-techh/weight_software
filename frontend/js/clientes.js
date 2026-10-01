@@ -804,11 +804,18 @@ async function guardarCliente(event) {
     if (includesDirecto && (!Number.isFinite(clienteData.precioToneladaDirecto) || clienteData.precioToneladaDirecto < 0)) {
         return mostrarNotificacion('Precio directo por tonelada inválido.', 'error');
     }
-    if (clientId && !justificacion) {
-        return mostrarNotificacion('Debe ingresar una justificación para editar el cliente.', 'error');
-    }
-    if (!clientId && unidad === 'quintal' && (propioOverridden || clienteOverridden) && !justificacion) {
-        return mostrarNotificacion('Debe ingresar una justificación para modificar manualmente el precio calculado.', 'error');
+    // The reason box is only shown when editing, or when creating with a quintal
+    // price overridden by hand. Anywhere else it is hidden, so whatever was
+    // typed into it earlier must not travel with the request.
+    const requiresJustification = Boolean(clientId)
+        || (unidad === 'quintal' && (propioOverridden || clienteOverridden));
+    if (requiresJustification) {
+        const justificationError = validateJustification(justificacion, clientId
+            ? 'Debe ingresar una justificación para editar el cliente.'
+            : 'Debe ingresar una justificación para modificar manualmente el precio calculado.');
+        if (justificationError) return mostrarNotificacion(justificationError, 'error');
+    } else {
+        clienteData.justificacion = '';
     }
 
     // Newly pinning a client that has prices wipes them to L 0 — confirm first.
@@ -911,7 +918,8 @@ async function aplicarAjusteGlobalForm() {
     if (!Number.isFinite(montoBase) || montoBase <= 0) {
         return mostrarNotificacion('Ingrese un monto mayor que cero.', 'error');
     }
-    if (!razon) return mostrarNotificacion('Debe ingresar una justificación.', 'error');
+    const justificationError = validateJustification(razon, 'Debe ingresar una justificación.');
+    if (justificationError) return mostrarNotificacion(justificationError, 'error');
 
     const applyAcopio = categoria === 'global' || categoria === 'acopio';
     const applyDirecto = categoria === 'global' || categoria === 'directo';

@@ -397,7 +397,8 @@ async function guardarReporteEdit() {
     if (!Number.isFinite(payload.pesoTara) || payload.pesoTara <= 0) return mostrarNotificacion('Ingrese un peso tara válido.', 'error');
     if (Math.abs(payload.pesoBruto - payload.pesoTara) <= 0) return mostrarNotificacion('El peso neto debe ser mayor que cero.', 'error');
     if (!Number.isFinite(payload.precioAplicado) || payload.precioAplicado < 0) return mostrarNotificacion('Ingrese un precio válido.', 'error');
-    if (!payload.justificacion) return mostrarNotificacion('Debe ingresar una justificación para editar la transacción.', 'error');
+    const justificationError = validateJustification(payload.justificacion, 'Debe ingresar una justificación para editar la transacción.');
+    if (justificationError) return mostrarNotificacion(justificationError, 'error');
 
     const saveButton = document.getElementById('reporte-save-button');
     try {

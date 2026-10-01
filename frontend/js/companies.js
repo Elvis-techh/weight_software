@@ -252,7 +252,8 @@ async function guardarEmpresaEditada() {
     const justificacion = document.getElementById('editar-empresa-justificacion').value.trim();
 
     if (!nombre) return mostrarNotificacion('El nombre de la empresa es obligatorio.', 'error');
-    if (!justificacion) return mostrarNotificacion('La justificación es obligatoria.', 'error');
+    const justificationError = validateJustification(justificacion);
+    if (justificationError) return mostrarNotificacion(justificationError, 'error');
 
     const saveButton = document.getElementById('btn-guardar-empresa-editada');
 

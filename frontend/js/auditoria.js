@@ -1,12 +1,13 @@
 /**
  * Historial de Cambios — the read side of the auditoría table.
  *
- * The backend records a full before/after snapshot of every edited or deleted
- * row (see logAudit/diffSnapshots in server.js) and returns the fields that
- * actually moved as `cambios`. Everything here is presentation: turning the
- * raw field names those snapshots carry into Spanish labels and formatted
- * values, so a row reads "Precio aplicado: L 450.00 → L 500.00" instead of
- * "precioAplicado: 450 → 500".
+ * Only changes that came with a justification are logged (see the note above
+ * AUDIT_PAGE_LIMIT in server.js), and the backend records a full before/after
+ * snapshot of every edited or deleted row (see logAudit/diffSnapshots there),
+ * returning the fields that actually moved as `cambios`. Everything here is
+ * presentation: turning the raw field names those snapshots carry into
+ * Spanish labels and formatted values, so a row reads "Precio aplicado:
+ * L 450.00 → L 500.00" instead of "precioAplicado: 450 → 500".
  *
  * Unlike the other tabs, this one is not loaded at boot: the log only matters
  * when someone goes looking for it, and it is fetched per date range rather
@@ -231,7 +232,68 @@ function renderSnapshotAuditoria(movimiento) {
     `).join('')}</div>`;
 }
 
+// The whole record as it was and as it became, side by side, with the fields
+// that moved highlighted. The list of changes above it is only what moved,
+// which is not always enough to judge whether the justification fits — this
+// is the snapshot to read it against (plate, customer, the other weights...).
+function renderRegistroCompletoAuditoria(movimiento) {
+    const { antes, despues } = movimiento;
+    if (!antes || !despues) return '';
+
+    const movidos = new Set((movimiento.cambios || []).map(cambio => cambio.campo));
+    const campos = [...new Set([...Object.keys(antes), ...Object.keys(despues)])]
+        .filter(campo => !AUDITORIA_CAMPOS_OCULTOS.has(campo));
+
+    return `<details class="mt-2 text-xs">
+        <summary class="cursor-pointer font-bold text-gray-500 hover:text-gray-700">Ver registro completo (antes y después)</summary>
+        <table class="mt-1 w-full border-collapse">
+            <thead>
+                <tr class="text-left text-gray-400 uppercase text-[10px]">
+                    <th class="py-0.5 pr-3 font-bold"></th>
+                    <th class="py-0.5 pr-3 font-bold">Antes</th>
+                    <th class="py-0.5 font-bold">Después</th>
+                </tr>
+            </thead>
+            <tbody>${campos.map(campo => {
+                const cambio = movidos.has(campo);
+                return `
+                <tr class="${cambio ? 'bg-yellow-50' : ''}">
+                    <td class="py-0.5 pr-3 text-gray-500">${escapeHtml(etiquetaCampoAuditoria(campo))}</td>
+                    <td class="py-0.5 pr-3 font-mono ${cambio ? 'text-red-600' : 'text-gray-700'}">${escapeHtml(formatearValorAuditoria(campo, antes[campo]))}</td>
+                    <td class="py-0.5 font-mono ${cambio ? 'font-bold text-green-700' : 'text-gray-700'}">${escapeHtml(formatearValorAuditoria(campo, despues[campo]))}</td>
+                </tr>`;
+            }).join('')}</tbody>
+        </table>
+    </details>`;
+}
+
+// An Ajuste global has no single record to compare before and after: it is one
+// amount applied to a group of clients, so the row says what was applied and to
+// whom. It deliberately does not list each client's prices — only a price change
+// to a single client is tracked, as its own edit.
+function renderAjusteGlobalAuditoria(movimiento) {
+    const { montoTonelada, categoria, clientesAfectados } = movimiento.detalles || {};
+    const lineas = [];
+
+    if (Number.isFinite(Number(montoTonelada))) {
+        const monto = Number(montoTonelada);
+        lineas.push(['Ajuste por tonelada', `${monto < 0 ? '−' : '+'}L ${formatMoney(Math.abs(monto))}`]);
+    }
+    if (categoria) lineas.push(['Categoría', ajusteGlobalCategoriaLabel(categoria)]);
+    if (Number.isFinite(Number(clientesAfectados))) lineas.push(['Clientes ajustados', String(clientesAfectados)]);
+
+    if (lineas.length === 0) return '<span class="text-gray-400 italic">Sin detalle del ajuste.</span>';
+
+    return `<div class="flex flex-col gap-0.5 text-xs">${lineas.map(([etiqueta, valor]) => `
+        <div class="flex gap-1.5 items-baseline">
+            <span class="text-gray-500">${escapeHtml(etiqueta)}:</span>
+            <span class="font-mono text-gray-700">${escapeHtml(valor)}</span>
+        </div>
+    `).join('')}</div>`;
+}
+
 function renderListaCambios(movimiento) {
+    if (movimiento.accion === 'ajuste_global') return renderAjusteGlobalAuditoria(movimiento);
     if (esMovimientoDeSnapshot(movimiento)) return renderSnapshotAuditoria(movimiento);
 
     if (!Array.isArray(movimiento.cambios) || movimiento.cambios.length === 0) {
@@ -247,7 +309,7 @@ function renderListaCambios(movimiento) {
             <span class="material-icons text-[14px] text-gray-400 leading-none">arrow_forward</span>
             <span class="font-mono font-bold text-green-700">${escapeHtml(formatearValorAuditoria(cambio.campo, cambio.despues))}</span>
         </div>
-    `).join('')}</div>`;
+    `).join('')}</div>${renderRegistroCompletoAuditoria(movimiento)}`;
 }
 
 // The field labels a row actually displays, so searching "precio" matches both

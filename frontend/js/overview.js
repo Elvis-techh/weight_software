@@ -302,7 +302,10 @@ async function guardarPagoCorapsa() {
     if (payload.periodoInicio > payload.periodoFin) return mostrarNotificacion('El inicio del período no puede ser posterior al final.', 'error');
     if (!Number.isFinite(payload.toneladas) || payload.toneladas <= 0) return mostrarNotificacion('Ingrese toneladas válidas.', 'error');
     if (!Number.isFinite(payload.monto) || payload.monto <= 0) return mostrarNotificacion('Ingrese un monto válido.', 'error');
-    if (id && !payload.justificacion) return mostrarNotificacion('La justificación es obligatoria al editar.', 'error');
+    if (id) {
+        const justificationError = validateJustification(payload.justificacion, 'La justificación es obligatoria al editar.');
+        if (justificationError) return mostrarNotificacion(justificationError, 'error');
+    }
 
     const button = document.getElementById('overview-payment-save-button');
     button.disabled = true;

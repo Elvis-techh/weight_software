@@ -42,6 +42,11 @@ const JSON_BODY_LIMIT = '30mb';
 // real operations ever legitimately need more.
 const MAX_WEIGHT_LBS = 200000;
 const MAX_MONEY_LEMPIRAS = 1000000;
+// Shortest justification accepted anywhere, so a "x" or "ok" can't stand in for
+// a reason in Historial de Cambios. Counted after trimming and collapsing runs
+// of spaces, like asText(). Mirrors APP_CONFIG.minJustificationLength in
+// frontend/js/globals.js, which only warns the operator before the request goes out.
+const JUSTIFICATION_MIN_LENGTH = 10;
 
 let db;
 let server;
@@ -442,12 +447,32 @@ function asDestino(value) {
     return destino;
 }
 
-function requireJustification(body) {
-    return asText(body?.justificacion ?? body?.razon, {
+function assertJustificationLength(text) {
+    if (text.length < JUSTIFICATION_MIN_LENGTH) {
+        throw new HttpError(
+            400,
+            `La justificación debe tener al menos ${JUSTIFICATION_MIN_LENGTH} caracteres.`,
+            'VALIDATION_ERROR'
+        );
+    }
+}
+
+function requireJustification(body, { maxLength = 500 } = {}) {
+    const text = asText(body?.justificacion ?? body?.razon, {
         required: true,
         field: 'La justificación',
-        maxLength: 500
+        maxLength
     });
+    assertJustificationLength(text);
+    return text;
+}
+
+// For the places that take a reason only sometimes: blank is fine, but one that
+// is given has to be a real one.
+function optionalJustification(value, maxLength = 500) {
+    const text = asText(value, { field: 'La justificación', maxLength });
+    if (text) assertJustificationLength(text);
+    return text;
 }
 
 function safeJsonParse(value) {
@@ -1021,6 +1046,14 @@ function optionalDateRange(query, label = 'consultado') {
     return validateOverviewRange(inicio, fin, label);
 }
 
+// WHAT GOES IN HISTORIAL DE CAMBIOS: only changes that come with a justification
+// (edits, deletions, price and weight overrides), each with the before and/or
+// after snapshot of everything it touched, so the reason can be checked against
+// what actually changed. Routine writes — creating a record, capturing a weight,
+// finalizing a boleta, marking payroll days — are deliberately NOT logged: the
+// record itself is the evidence, and any later edit or deletion row carries its
+// earlier values. Don't add a logAudit call for a change that asks for no reason.
+
 // Cap on rows returned by GET /api/auditoria, so a wide date range can't
 // pull the whole log into the renderer at once.
 const AUDIT_PAGE_LIMIT = 1000;
@@ -1034,7 +1067,8 @@ const AUDIT_IGNORED_FIELDS = new Set(['updatedAt', 'createdAt', 'justificacion']
 // tipoMovimientoAuditoria in frontend/js/auditoria.js). 'finalizar' is how a
 // weigh-in becomes a transaction, so it counts as a creation, and an edit is
 // anything that is neither a creation nor a deletion, so a new action lands
-// there without touching this list.
+// there without touching this list. Creations are no longer written (see above),
+// but rows from before that change are still in the table.
 const AUDIT_TIPO_FILTERS = new Map([
     ['creaciones', "accion IN ('crear', 'finalizar')"],
     ['ediciones', "accion NOT IN ('crear', 'finalizar', 'eliminar')"],
@@ -1208,7 +1242,6 @@ app.post('/api/companies', asyncHandler(async (req, res) => {
 
         const result = await db.run('INSERT INTO companies (nombre) VALUES (?)', [nombre]);
         const row = await db.get('SELECT * FROM companies WHERE id = ?', [result.lastID]);
-        await logAudit({ entity: 'company', entityId: result.lastID, action: 'crear', details: { nombre } });
         return mapCompany(row);
     });
 
@@ -1375,6 +1408,11 @@ app.post('/api/clientes/ajuste-global', asyncHandler(async (req, res) => {
             await db.run(`UPDATE clientes SET ${sets.join(', ')} WHERE id = ?`, params);
         }
 
+        // One row for the whole adjustment — what was applied, to which group and
+        // why — and deliberately not one entry per client: a global adjustment
+        // reprices everyone by the same amount, so listing each client's prices
+        // would only bury the row. A price change to a single client is logged
+        // on its own (PUT /api/clientes/:id, PATCH /api/clientes/:id/precio).
         await logAudit({
             entity: 'clientes',
             action: 'ajuste_global',
@@ -1392,7 +1430,8 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
     const unidad = asUnit(req.body?.unidad);
     const categoria = asClientCategoria(req.body?.categoria);
     const pricing = buildClientPricing(req.body, unidad, categoria);
-    const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
+    // Only given when a quintal price was overridden by hand (the form asks then).
+    const justificacion = optionalJustification(req.body?.justificacion);
     const client = {
         nombre: asText(req.body?.nombre, { required: true, field: 'El nombre', maxLength: 120 }),
         apellido: asText(req.body?.apellido, { field: 'El apellido', maxLength: 120 }),
@@ -1431,7 +1470,11 @@ app.post('/api/clientes', asyncHandler(async (req, res) => {
             client.precioFijoCero ? 1 : 0
         ]);
         const row = await db.get('SELECT * FROM clientes WHERE id = ?', [result.lastID]);
-        await logAudit({ entity: 'cliente', entityId: result.lastID, action: 'crear', justification: justificacion, details: client });
+        // A plain creation leaves no row; one that came with a reason (the
+        // hand-overridden quintal price) is kept, with the client as created.
+        if (justificacion) {
+            await logAudit({ entity: 'cliente', entityId: result.lastID, action: 'crear', justification: justificacion, after: mapClient(row) });
+        }
         return mapClient(row);
     });
     sendData(res, { cliente }, 201);
@@ -1697,9 +1740,7 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
         const row = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
         if (!row) throw new Error('El vehículo fue insertado, pero no pudo recuperarse de SQLite.');
 
-        const mappedTruck = mapTruck(row);
-        await logAudit({ entity: 'camion_patio', entityId: id, action: 'crear', details: mappedTruck });
-        return mappedTruck;
+        return mapTruck(row);
     });
 
     sendData(res, { camion: truck }, 201);
@@ -1736,23 +1777,32 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
                 'GROSS_WEIGHT_LOCKED'
             );
         }
+        if (overwritingBruto) assertJustificationLength(justificacion);
 
-        const antes = mapTruck(await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]));
+        // PENDING (justificación): only the first weight is guarded. The second
+        // (peso_tara) can be replaced any number of times before finalizing —
+        // "ACTUALIZAR PESO 2" — with no reason, and since only justified changes
+        // are logged, nothing records it. Require a justification when
+        // `hasTara && current.peso_tara != null` and log it like the overwrite below.
 
         if (hasBruto) await db.run('UPDATE camiones_en_patio SET peso_bruto = ? WHERE id = ?', [pesoBruto, id]);
         if (hasTara) await db.run('UPDATE camiones_en_patio SET peso_tara = ? WHERE id = ?', [pesoTara, id]);
 
         const row = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
         const mappedTruck = mapTruck(row);
-        await logAudit({
-            entity: 'camion_patio',
-            entityId: id,
-            action: overwritingBruto ? 'sobrescribir_peso_bruto' : 'actualizar_peso',
-            justification: overwritingBruto ? justificacion : '',
-            details: { pesoBruto, pesoTara },
-            before: antes,
-            after: mappedTruck
-        });
+        // Capturing a weight for the first time is routine and leaves no row; only
+        // overwriting the first weight does, since that is the one that needs a reason.
+        if (overwritingBruto) {
+            await logAudit({
+                entity: 'camion_patio',
+                entityId: id,
+                action: 'sobrescribir_peso_bruto',
+                justification: justificacion,
+                details: { pesoBruto, pesoTara },
+                before: mapTruck(current),
+                after: mappedTruck
+            });
+        }
         return mappedTruck;
     });
 
@@ -1819,17 +1869,6 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         ]);
         const transactionId = insertResult.lastID;
         await db.run('DELETE FROM camiones_en_patio WHERE id = ?', [id]);
-        // Passing the finished transaction as "after" is what lets Historial de
-        // Cambios show the values the boleta was created with, instead of just
-        // the queue id it came from.
-        const creada = mapTransaction(await db.get(`${TRANSACCION_SELECT} WHERE t.id = ?`, [transactionId]));
-        await logAudit({
-            entity: 'transaccion',
-            entityId: transactionId,
-            action: 'finalizar',
-            details: { queueId: id },
-            after: creada
-        });
         return mapTransaction(await db.get(`${TRANSACCION_SELECT} WHERE t.id = ?`, [transactionId]));
     });
 
@@ -2047,7 +2086,6 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
         const reciboOut = `CRX-${String(result.lastID).padStart(6, '0')}`;
         await db.run('UPDATE corapsa SET recibo_out = ? WHERE id = ?', [reciboOut, result.lastID]);
         const row = await db.get('SELECT * FROM corapsa WHERE id = ?', [result.lastID]);
-        await logAudit({ entity: 'corapsa', entityId: result.lastID, action: 'crear', details: mapCorapsa(row) });
         return mapCorapsa(row);
     });
     sendData(res, { corapsa }, 201);
@@ -2119,6 +2157,10 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
 
 app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
+    // Checked before anything is uploaded below, so a too-short reason doesn't
+    // leave an orphaned object in Spaces. The screen asks for one on every file
+    // change (replace/remove) but not on the paid/excluded toggles.
+    const justificacion = optionalJustification(req.body?.justificacion);
     const current = await db.get('SELECT file_key, file_nuestro_key FROM corapsa WHERE id = ?', [id]);
     if (!current) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
 
@@ -2142,6 +2184,10 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     let oldClienteKeyToRemove = null;
     let oldNuestroKeyToRemove = null;
 
+    // PENDING (justificación): "pagado" and "excluido" change what the Corapsa
+    // lists and totals show (an excluded receipt drops out of both) but ask for
+    // no reason, so — logging only justified changes — they leave no trace.
+    // Require one for these two as the file changes already do.
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'pagado')) {
         updates.push('pagado = ?');
         values.push(asBoolean(req.body.pagado) ? 1 : 0);
@@ -2181,20 +2227,24 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         const result = await db.run(`UPDATE corapsa SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
         if (!result.changes) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
-        await logAudit({
-            entity: 'corapsa', entityId: id, action: 'actualizar_parcial',
-            justification: asText(req.body?.justificacion, { maxLength: 500 }),
-            details: {
-                pagado: req.body?.pagado,
-                excluido: req.body?.excluido,
-                archivoCliente: Boolean(req.body?.archivoCliente),
-                archivoNuestro: Boolean(req.body?.archivoNuestro),
-                eliminarArchivoCliente: Boolean(req.body?.eliminarArchivoCliente),
-                eliminarArchivoNuestro: Boolean(req.body?.eliminarArchivoNuestro)
-            },
-            before: antes,
-            after: mapCorapsa(row)
-        });
+        // Only a change that came with a reason is logged — in practice the
+        // file replace/remove, never the paid/excluded toggles.
+        if (justificacion) {
+            await logAudit({
+                entity: 'corapsa', entityId: id, action: 'actualizar_parcial',
+                justification: justificacion,
+                details: {
+                    pagado: req.body?.pagado,
+                    excluido: req.body?.excluido,
+                    archivoCliente: Boolean(req.body?.archivoCliente),
+                    archivoNuestro: Boolean(req.body?.archivoNuestro),
+                    eliminarArchivoCliente: Boolean(req.body?.eliminarArchivoCliente),
+                    eliminarArchivoNuestro: Boolean(req.body?.eliminarArchivoNuestro)
+                },
+                before: antes,
+                after: mapCorapsa(row)
+            });
+        }
         return mapCorapsa(row);
     });
 
@@ -2250,7 +2300,7 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
         fecha: asIsoDate(req.body?.fecha, 'La fecha'),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
-        justificacion: asText(req.body?.justificacion, { maxLength: 1000 }),
+        justificacion: optionalJustification(req.body?.justificacion, 1000),
         notas: asText(req.body?.notas, { maxLength: 1000 })
     };
     const attachment = await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
@@ -2264,7 +2314,6 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
             clientOpId
         ]);
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [result.lastID]);
-        await logAudit({ entity: 'gasto', entityId: result.lastID, action: 'crear', details: mapExpense(row) });
         return mapExpense(row);
     });
     sendData(res, { gasto }, 201);
@@ -2279,7 +2328,7 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
         fecha: asIsoDate(req.body?.fecha, 'La fecha'),
         monto: asNumber(req.body?.monto, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El monto' }),
         concepto: asText(req.body?.concepto, { required: true, field: 'El concepto', maxLength: 200 }),
-        justificacion: asText(req.body?.justificacion, { required: true, field: 'La justificación', maxLength: 1000 }),
+        justificacion: requireJustification(req.body, { maxLength: 1000 }),
         notas: asText(req.body?.notas, { maxLength: 1000 })
     };
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
@@ -2318,7 +2367,7 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
 
 app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
     const id = req.params.id;
-    const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
+    const justificacion = optionalJustification(req.body?.justificacion);
     const current = await db.get('SELECT file_key FROM gastos WHERE id = ?', [id]);
     if (!current) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
 
@@ -2348,7 +2397,10 @@ app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
         if (!result.changes) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM gastos WHERE id = ?', [id]);
         const despues = mapExpense(row);
-        await logAudit({ entity: 'gasto', entityId: id, action: 'actualizar_archivo', justification: justificacion, details: despues, before: antes, after: despues });
+        // Logged only when a reason came with it (no screen calls this today).
+        if (justificacion) {
+            await logAudit({ entity: 'gasto', entityId: id, action: 'actualizar_archivo', justification: justificacion, details: despues, before: antes, after: despues });
+        }
         return despues;
     });
 
@@ -2409,7 +2461,6 @@ app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
         ]);
 
         const row = await db.get('SELECT * FROM corapsa_pagos WHERE id = ?', [result.lastID]);
-        await logAudit({ entity: 'pago_corapsa', entityId: result.lastID, action: 'crear', details: mapCorapsaPayment(row) });
         return mapCorapsaPayment(row);
     });
     sendData(res, { pago }, 201);
@@ -2477,6 +2528,11 @@ app.delete('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
 }));
 
 // PLANILLA
+// PENDING (justificación): pay is (sueldoBase / 6) × días trabajados + extras,
+// yet the base salary (PUT /:id), the day marks (PUT /:id/asistencia/:fecha —
+// any date, past ones included) and the extras (PUT /:id/periodo) all change
+// with no reason, and since only justified changes are logged, none of them
+// leaves a trace. Require a justification on each and log it with before/after.
 app.get('/api/planilla/resumen', asyncHandler(async (req, res) => {
     const range = validatePayrollRange(req.query?.inicio, req.query?.fin);
     sendData(res, await buildPayrollSummary(range.start, range.end));
@@ -2502,7 +2558,6 @@ app.post('/api/planilla', asyncHandler(async (req, res) => {
             VALUES (?, ?, ?, ?, 0, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase]);
         const row = await db.get('SELECT * FROM planilla WHERE id = ?', [result.lastID]);
-        await logAudit({ entity: 'trabajador', entityId: result.lastID, action: 'crear', details: worker });
         return mapWorker(row);
     });
     sendData(res, { trabajador }, 201);
@@ -2523,15 +2578,6 @@ app.put('/api/planilla/:id/asistencia/:fecha', asyncHandler(async (req, res) => 
     if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
 
     const asistencia = await withTransaction(async () => {
-        // Upsert, so there may be nothing here yet: a first mark of the day is
-        // a creation, and leaving "antes" null keeps it out of the change list.
-        const previo = await db.get(`
-            SELECT trabajador_id, fecha, trabajado, hora_inicio, hora_fin
-            FROM planilla_asistencia
-            WHERE trabajador_id = ? AND fecha = ?
-        `, [id, fecha]);
-        const antes = previo ? mapAttendance(previo) : null;
-
         await db.run(`
             INSERT INTO planilla_asistencia
                 (trabajador_id, fecha, trabajado, hora_inicio, hora_fin)
@@ -2549,18 +2595,7 @@ app.put('/api/planilla/:id/asistencia/:fecha', asyncHandler(async (req, res) => 
             FROM planilla_asistencia
             WHERE trabajador_id = ? AND fecha = ?
         `, [id, fecha]);
-        const despues = mapAttendance(row);
-
-        await logAudit({
-            entity: 'asistencia',
-            entityId: `${id}:${fecha}`,
-            action: trabajado ? 'registrar_jornada' : 'marcar_no_trabajado',
-            details: despues,
-            // Null on the first mark of the day — an insert, not a correction.
-            before: antes,
-            after: despues
-        });
-        return despues;
+        return mapAttendance(row);
     });
     sendData(res, { asistencia });
 }));
@@ -2578,33 +2613,14 @@ app.put('/api/planilla/:id/periodo', asyncHandler(async (req, res) => {
     const worker = await db.get('SELECT id FROM planilla WHERE id = ?', [id]);
     if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
 
-    await withTransaction(async () => {
-        // Upsert: null on the first extras entry for this period, which is a
-        // creation rather than a correction of an earlier amount.
-        const previo = await db.get(
-            'SELECT extras FROM planilla_periodos WHERE trabajador_id = ? AND fecha_inicio = ? AND fecha_fin = ?',
-            [id, range.start, range.end]
-        );
+    await db.run(`
+        INSERT INTO planilla_periodos
+            (trabajador_id, fecha_inicio, fecha_fin, extras)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(trabajador_id, fecha_inicio, fecha_fin)
+        DO UPDATE SET extras = excluded.extras, updated_at = CURRENT_TIMESTAMP
+    `, [id, range.start, range.end, extras]);
 
-        await db.run(`
-            INSERT INTO planilla_periodos
-                (trabajador_id, fecha_inicio, fecha_fin, extras)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(trabajador_id, fecha_inicio, fecha_fin)
-            DO UPDATE SET extras = excluded.extras, updated_at = CURRENT_TIMESTAMP
-        `, [id, range.start, range.end, extras]);
-
-        await logAudit({
-            entity: 'planilla_periodo',
-            entityId: `${id}:${range.start}:${range.end}`,
-            action: 'actualizar_extras',
-            details: { extras },
-            before: previo ? { extras: Number(previo.extras || 0) } : null,
-            after: { extras }
-        });
-    });
-
-    // Read-only response building — kept outside the transaction, no need to hold the write lock for this.
     const summary = await buildPayrollSummary(range.start, range.end, id);
     sendData(res, { trabajador: summary.trabajadores[0] });
 }));
@@ -2619,10 +2635,6 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
     };
 
     const trabajador = await withTransaction(async () => {
-        const previo = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
-        if (!previo) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
-        const antes = mapWorker(previo);
-
         const result = await db.run(`
             UPDATE planilla
             SET nombre = ?, apellido = ?, telefono = ?, sueldo_base = ?, updated_at = CURRENT_TIMESTAMP
@@ -2630,9 +2642,7 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
         `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase, id]);
         if (!result.changes) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
-        const despues = mapWorker(row);
-        await logAudit({ entity: 'trabajador', entityId: id, action: 'editar', details: despues, before: antes, after: despues });
-        return despues;
+        return mapWorker(row);
     });
     sendData(res, { trabajador });
 }));

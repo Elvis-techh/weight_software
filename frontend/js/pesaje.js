@@ -164,9 +164,8 @@ async function confirmarPriceEditModal() {
     if (!Number.isFinite(nuevoPrecio) || nuevoPrecio < 0) {
         return mostrarNotificacion('Ingrese un precio válido.', 'error');
     }
-    if (!justificacion) {
-        return mostrarNotificacion('Debe ingresar una justificación para modificar el precio.', 'error');
-    }
+    const justificationError = validateJustification(justificacion, 'Debe ingresar una justificación para modificar el precio.');
+    if (justificationError) return mostrarNotificacion(justificationError, 'error');
 
     button.disabled = true;
     button.textContent = 'Guardando...';
@@ -239,6 +238,11 @@ function manualWeight(tipo) {
     abrirActionModal(`manual_${normalizedType}`);
 }
 
+// PENDING (justificación): a typed ("Ingreso Manual") weight asks for no reason,
+// and `isManual` never leaves this screen — the request carries only the number —
+// so a typed weight is stored exactly like a scale reading and nothing can tell
+// them apart afterwards. Ask for a justification here, send it along with a
+// marker that the weight was typed, and log it as a justified change.
 function getRequestedWeight(manualWeight) {
     if (manualWeight !== null && manualWeight !== undefined && typeof manualWeight !== 'object') {
         const weight = Number(manualWeight);

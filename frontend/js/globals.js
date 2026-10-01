@@ -49,7 +49,11 @@ const APP_CONFIG = Object.freeze({
     // Mirrors LIST_PAGE_LIMIT in server.js — the server refuses to return more
     // than this from any list endpoint, so hitting it exactly means the result
     // was cut short rather than genuinely being that size.
-    listPageLimit: 5000
+    listPageLimit: 5000,
+    // Shortest justification accepted. Mirrors JUSTIFICATION_MIN_LENGTH in
+    // server.js, which is what actually enforces it; this copy only lets the
+    // form say so before the request is sent.
+    minJustificationLength: 10
 });
 
 let MOCK_CLIENTES = [];
@@ -391,6 +395,27 @@ function validateAttachmentFile(file) {
     if (file.size > APP_CONFIG.maxAttachmentBytes) {
         throw new Error('El archivo supera el límite de 10 MB.');
     }
+}
+
+// Returns the message to show for a justification that is blank or too short,
+// or '' when it is fine. Counted after collapsing runs of spaces, the way the
+// server counts it, so a reason padded with spaces can't pass here and be
+// refused there. `emptyMessage` lets each form keep saying what it is asking for.
+function validateJustification(text, emptyMessage = 'La justificación es obligatoria.') {
+    const length = String(text ?? '').trim().replace(/\s+/g, ' ').length;
+    if (length === 0) return emptyMessage;
+    if (length < APP_CONFIG.minJustificationLength) {
+        return `La justificación debe tener al menos ${APP_CONFIG.minJustificationLength} caracteres (lleva ${length}).`;
+    }
+    return '';
+}
+
+// Fills every [data-justificacion-hint] label suffix with the shared minimum,
+// so the number only has to be changed in APP_CONFIG.
+function applyJustificationHints() {
+    document.querySelectorAll('[data-justificacion-hint]').forEach(element => {
+        element.textContent = ` (mínimo ${APP_CONFIG.minJustificationLength} caracteres)`;
+    });
 }
 
 function readFileAsDataUrl(file) {
