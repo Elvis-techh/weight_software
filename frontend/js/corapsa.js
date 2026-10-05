@@ -649,6 +649,60 @@ let ultimoFiltroCorapsa = {
     filteredData: [], startDate: '', endDate: '', searchRaw: '', destinoFilter: '', sumTons: 0, sumTotal: 0
 };
 
+const CORAPSA_ORDEN_PREDETERMINADO = 'fecha-desc';
+
+// Destino, orden y excluidos live inside the Filtrar y ordenar menu, so a
+// closed menu hides them: a filtered list looks just like a quiet period. The
+// button carries a count of the settings that differ from the defaults.
+function actualizarIndicadorFiltrosCorapsa({ destinoFilter, sort, showExcluidos }) {
+    const activos = [destinoFilter, sort !== CORAPSA_ORDEN_PREDETERMINADO, showExcluidos].filter(Boolean).length;
+    const contador = document.getElementById('corapsa-filtros-count');
+    if (contador) {
+        contador.textContent = String(activos);
+        contador.classList.toggle('hidden', activos === 0);
+    }
+    const limpiar = document.getElementById('corapsa-filtros-limpiar');
+    if (limpiar) limpiar.disabled = activos === 0;
+}
+
+function limpiarFiltrosCorapsa() {
+    document.getElementById('corapsa-filter-destino').value = '';
+    document.getElementById('corapsa-sort').value = CORAPSA_ORDEN_PREDETERMINADO;
+    document.getElementById('corapsa-filter-mostrar-excluidos').checked = false;
+    renderCorapsaTab();
+}
+
+// Same fade-and-scale popover as the Auditoría menus (see mostrarMenuAuditoria).
+function mostrarMenuCorapsa(visible) {
+    const menu = document.getElementById('corapsa-filtros-menu');
+    if (!menu) return;
+
+    menu.classList.toggle('opacity-0', !visible);
+    menu.classList.toggle('scale-95', !visible);
+    menu.classList.toggle('pointer-events-none', !visible);
+    menu.classList.toggle('opacity-100', visible);
+    menu.classList.toggle('scale-100', visible);
+    menu.classList.toggle('pointer-events-auto', visible);
+    document.getElementById('corapsa-filtros-toggle')?.setAttribute('aria-expanded', String(visible));
+}
+
+function toggleMenuCorapsa() {
+    const menu = document.getElementById('corapsa-filtros-menu');
+    if (menu) mostrarMenuCorapsa(menu.classList.contains('opacity-0'));
+}
+
+document.addEventListener('click', event => {
+    const menu = document.getElementById('corapsa-filtros-menu');
+    if (!menu || menu.classList.contains('opacity-0')) return;
+    if (!menu.contains(event.target) && !document.getElementById('corapsa-filtros-toggle')?.contains(event.target)) {
+        mostrarMenuCorapsa(false);
+    }
+});
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') mostrarMenuCorapsa(false);
+});
+
 function renderCorapsaTab() {
     const tbody = document.getElementById('corapsa-table-body');
     if (!tbody) return;
@@ -660,8 +714,9 @@ function renderCorapsaTab() {
     const searchRaw = (document.getElementById('corapsa-filter-client')?.value || '').trim();
     const search = searchRaw.toLocaleLowerCase('es');
     const destinoFilter = document.getElementById('corapsa-filter-destino')?.value || '';
-    const sort = document.getElementById('corapsa-sort')?.value || 'fecha-desc';
+    const sort = document.getElementById('corapsa-sort')?.value || CORAPSA_ORDEN_PREDETERMINADO;
     const showExcluidos = document.getElementById('corapsa-filter-mostrar-excluidos')?.checked || false;
+    actualizarIndicadorFiltrosCorapsa({ destinoFilter, sort, showExcluidos });
 
     const filtered = corapsaData.filter(record => {
         if (!showExcluidos && record.excluido) return false;

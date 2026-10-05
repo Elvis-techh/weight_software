@@ -2468,9 +2468,9 @@
                     <h2 class="text-2xl font-bold text-blue-900">Recibos Externos</h2>
 
                     <div
-                        class="corapsa-toolbar-bar flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm">
+                        class="flex flex-wrap items-center gap-2 bg-white border border-blue-200 rounded-lg p-2 shadow-sm">
 
-                        <div class="search-wrap-overlay relative flex items-center min-w-0" id="corapsa-search-wrap">
+                        <div class="relative flex items-center min-w-0" id="corapsa-search-wrap">
                             <button type="button" onclick="expandInlineSearch('corapsa-search-wrap')"
                                 class="search-toggle-btn flex items-center justify-center w-9 h-9 rounded-lg text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors shrink-0"
                                 title="Buscar" aria-label="Buscar">
@@ -2482,9 +2482,8 @@
                                         class="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-300 text-[18px] pointer-events-none">search</span>
                                     <input type="search" id="corapsa-filter-client" oninput="renderCorapsaTab()"
                                         onblur="collapseInlineSearch('corapsa-search-wrap')"
-                                        onkeydown="if (event.key === 'Escape') this.blur()"
                                         placeholder="Buscar cliente, recibo # o teléfono..."
-                                        class="w-full pl-8 pr-3 py-2 border border-blue-200 rounded-lg text-sm font-medium text-gray-700 outline-none bg-white">
+                                        class="w-full pl-8 pr-3 py-1.5 border border-blue-200 rounded-lg text-sm font-medium text-gray-700 outline-none transition-colors bg-blue-50/50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400">
                                 </div>
                             </div>
                         </div>
@@ -2503,26 +2502,59 @@
 
                         </div>
 
-                        <select id="corapsa-filter-destino" onchange="renderCorapsaTab()"
-                            class="text-sm border border-blue-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-700">
-                            <option value="">Todos los destinos</option>
-                        </select>
-
-                        <select id="corapsa-sort" onchange="renderCorapsaTab()"
-                            class="text-sm border border-blue-100 rounded py-1.5 px-2 outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-700">
-                            <option value="fecha-desc">Más recientes</option>
-                            <option value="fecha-asc">Más antiguos</option>
-                            <option value="recibo-asc">Recibo # (A - Z)</option>
-                            <option value="recibo-desc">Recibo # (Z - A)</option>
-                        </select>
-
-                        <label class="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase cursor-pointer select-none">
-                            <input type="checkbox" id="corapsa-filter-mostrar-excluidos" onchange="renderCorapsaTab()"
-                                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                            Mostrar excluidos
-                        </label>
-
                         <div class="flex items-center gap-2 ml-auto">
+
+                            <!-- Filtrar y ordenar: destino, orden y excluidos. Todo se aplica sobre lo ya cargado (renderCorapsaTab) -->
+                            <div class="relative">
+                                <button type="button" id="corapsa-filtros-toggle" onclick="toggleMenuCorapsa()"
+                                    class="relative flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg border border-blue-200 bg-white text-blue-700 font-bold shadow-sm hover:bg-blue-50 active:bg-blue-100 transition-colors shrink-0"
+                                    title="Filtrar y ordenar" aria-label="Filtrar y ordenar" aria-haspopup="true"
+                                    aria-expanded="false" aria-controls="corapsa-filtros-menu">
+                                    <span class="material-icons text-[20px]">tune</span>
+                                    <span class="hidden xl:inline">Filtrar y ordenar</span>
+                                    <span id="corapsa-filtros-count"
+                                        class="hidden absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[11px] leading-[18px] font-bold text-center ring-2 ring-white"></span>
+                                </button>
+
+                                <div id="corapsa-filtros-menu"
+                                    class="absolute right-0 mt-2 bg-white border border-blue-100 shadow-xl rounded-lg p-3 w-64 transform scale-95 opacity-0 pointer-events-none transition-all duration-200 z-50 origin-top-right">
+
+                                    <label for="corapsa-filter-destino"
+                                        class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Destino:</label>
+                                    <!-- Opciones: populateDestinoDropdowns() en companies.js -->
+                                    <select id="corapsa-filter-destino" onchange="renderCorapsaTab()"
+                                        class="w-full border border-gray-200 bg-gray-50 rounded py-2 px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
+                                        <option value="">Todos los destinos</option>
+                                    </select>
+
+                                    <label for="corapsa-sort"
+                                        class="block text-xs font-bold text-gray-500 uppercase tracking-wider mt-3 mb-2">Ordenar
+                                        por:</label>
+                                    <select id="corapsa-sort" onchange="renderCorapsaTab()"
+                                        class="w-full border border-gray-200 bg-gray-50 rounded py-2 px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
+                                        <option value="fecha-desc">Más recientes</option>
+                                        <option value="fecha-asc">Más antiguos</option>
+                                        <option value="recibo-asc">Recibo # (A - Z)</option>
+                                        <option value="recibo-desc">Recibo # (Z - A)</option>
+                                    </select>
+
+                                    <label
+                                        class="flex items-center gap-2 px-2 py-1.5 mt-3 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer select-none">
+                                        <input type="checkbox" id="corapsa-filter-mostrar-excluidos"
+                                            onchange="renderCorapsaTab()" class="accent-blue-600">
+                                        <span class="material-icons text-[18px] text-amber-500">visibility_off</span>
+                                        Mostrar excluidos
+                                    </label>
+
+                                    <button type="button" id="corapsa-filtros-limpiar" onclick="limpiarFiltrosCorapsa()"
+                                        disabled
+                                        class="mt-3 w-full flex items-center justify-center gap-1.5 h-9 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 font-bold hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white">
+                                        <span class="material-icons text-[18px]">filter_alt_off</span>
+                                        Restablecer
+                                    </button>
+
+                                </div>
+                            </div>
 
                             <button onclick="abrirGestionEmpresasModal()"
                                 class="flex items-center justify-center w-9 h-9 bg-white border border-blue-200 text-blue-700 font-bold rounded-lg shadow-sm hover:bg-blue-50 transition-colors shrink-0"
