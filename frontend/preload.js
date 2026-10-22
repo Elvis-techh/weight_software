@@ -26,7 +26,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
                 weight: Number.isFinite(weight) ? weight : 0,
                 stable: Boolean(value?.stable),
                 source: String(value?.source || 'electron'),
-                preset: String(value?.preset || '')
+                preset: String(value?.preset || ''),
+                // Forwarded so app.js can tell "port not found", an unreadable
+                // frame and a kg frame apart from an ordinary disconnect.
+                staleReason: String(value?.staleReason || '')
             });
         };
 
