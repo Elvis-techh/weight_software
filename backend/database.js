@@ -46,7 +46,8 @@ async function ensurePrecioFijoCeroColumn(db) {
         }
         await db.exec('COMMIT');
     } catch (error) {
-        await db.exec('ROLLBACK');
+        // Must not replace the error that explains the failure (see withTransaction in server.js).
+        await db.exec('ROLLBACK').catch(() => {});
         throw error;
     }
 }
@@ -129,7 +130,8 @@ async function migrateLegacyPayrollAttendance(db) {
         await db.exec('COMMIT');
         console.log(`Planilla: ${workers.length} trabajador(es) migrados al control diario.`);
     } catch (error) {
-        await db.exec('ROLLBACK');
+        // Must not replace the error that explains the failure (see withTransaction in server.js).
+        await db.exec('ROLLBACK').catch(() => {});
         throw error;
     }
 }

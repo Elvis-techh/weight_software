@@ -114,7 +114,7 @@ async function main() {
             );
             await db.exec('COMMIT');
         } catch (error) {
-            await db.exec('ROLLBACK');
+            await db.exec('ROLLBACK').catch(() => {});
             throw error;
         }
 

@@ -1210,7 +1210,12 @@ async function withTransaction(callback) {
         await db.exec('COMMIT');
         return result;
     } catch (error) {
-        await db.exec('ROLLBACK');
+        // SQLite rolls back on its own after some failures (disk full, I/O
+        // error). The explicit ROLLBACK then fails with "no transaction is
+        // active", and must not replace the error that says what happened.
+        await db.exec('ROLLBACK').catch(rollbackError => {
+            console.error('ROLLBACK falló tras:', error?.message, '|', rollbackError.message);
+        });
         throw error;
     }
 }
