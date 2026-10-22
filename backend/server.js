@@ -3000,8 +3000,18 @@ async function start() {
 
 async function shutdown(signal, exitCode = 0) {
     console.log(`Cerrando servidor (${signal})...`);
-    if (server) await new Promise(resolve => server.close(resolve));
-    if (db) await db.close();
+    // A deadline, so a stuck socket or statement can never leave a half-closed
+    // process running: PM2 only restarts processes that actually exit.
+    setTimeout(() => process.exit(exitCode || 1), 10000).unref();
+
+    if (server) {
+        const closed = new Promise(resolve => server.close(resolve));
+        server.closeIdleConnections?.(); // keep-alive sockets from the terminals' polling
+        await closed;
+    }
+    if (db) {
+        await db.close().catch(error => console.error('No se pudo cerrar la base de datos:', error.message));
+    }
     process.exit(exitCode);
 }
 
