@@ -57,12 +57,12 @@ async function uploadObject(folder, buffer, fileName, mimeType) {
     return key;
 }
 
-async function fetchObject(key) {
+// Hands back the object as a stream instead of reading it into memory, so a
+// burst of downloads costs the droplet a few socket buffers, not 10 MB each.
+async function openObjectStream(key) {
     try {
         const result = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: key }));
-        const chunks = [];
-        for await (const chunk of result.Body) chunks.push(chunk);
-        return Buffer.concat(chunks);
+        return { stream: result.Body, length: result.ContentLength };
     } catch (error) {
         // Attachment reads are deliberately unserialized (see server.js) so one slow
         // download can't stall unrelated requests — which means a read can lose a
@@ -86,4 +86,4 @@ async function deleteObject(key) {
     }
 }
 
-module.exports = { isConfigured, uploadObject, fetchObject, deleteObject };
+module.exports = { isConfigured, uploadObject, openObjectStream, deleteObject };

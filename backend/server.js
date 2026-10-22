@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { pipeline } = require('stream/promises');
 const initializeDB = require('./database');
 const storage = require('./storage');
 
@@ -594,17 +595,7 @@ function sendStoredAttachment(res, { fileName, mimeType, data }) {
     const buffer = normalizeStoredAttachment(data);
     if (!buffer?.length) throw new HttpError(404, 'El archivo adjunto no está disponible.', 'ATTACHMENT_NOT_FOUND');
 
-    res.setHeader('Content-Type', isAllowedAttachmentMime(mimeType) ? mimeType : 'application/octet-stream');
-    res.setHeader('Content-Length', String(buffer.length));
-    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName || 'archivo')}`);
-    // Every attachment URL carries a ?v=<updatedAt> stamp (see
-    // getCorapsaAttachmentUrl / getGastoAttachmentUrl) and replacing a file
-    // always bumps updated_at, so a given URL's bytes never change — the
-    // client can cache them forever. Before this, `no-store` forced every
-    // table re-render to re-download every visible full-size receipt, which
-    // on a large list timed out under its own parallel load. `private`
-    // because the response is gated behind the caller's API key.
-    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    setAttachmentHeaders(res, { fileName, mimeType, length: buffer.length });
     res.send(buffer);
 }
 
@@ -633,20 +624,36 @@ async function storeAttachment(folder, attachment) {
     return { fileName: attachment.fileName, mimeType: attachment.mimeType, key: null, data: attachment.data };
 }
 
+function setAttachmentHeaders(res, { fileName, mimeType, length }) {
+    res.setHeader('Content-Type', isAllowedAttachmentMime(mimeType) ? mimeType : 'application/octet-stream');
+    if (length) res.setHeader('Content-Length', String(length));
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName || 'archivo')}`);
+    // Every attachment URL carries a ?v=<updatedAt> stamp (see
+    // getCorapsaAttachmentUrl / getGastoAttachmentUrl) and replacing a file
+    // always bumps updated_at, so a given URL's bytes never change — the
+    // client can cache them forever. Before this, `no-store` forced every
+    // table re-render to re-download every visible full-size receipt, which
+    // on a large list timed out under its own parallel load. `private`
+    // because the response is gated behind the terminal's credentials.
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+}
+
+// Spaces objects are piped straight through instead of buffered: eight
+// parallel downloads of 10 MB receipts used to mean 80 MB held at once.
 async function respondWithAttachment(res, { fileName, mimeType, data, key }) {
-    if (key) {
-        let buffer;
-        try {
-            buffer = await storage.fetchObject(key);
-        } catch (error) {
-            if (error?.notFound) {
-                throw new HttpError(404, 'El archivo adjunto no está disponible.', 'ATTACHMENT_NOT_FOUND');
-            }
-            throw error;
+    if (!key) return sendStoredAttachment(res, { fileName, mimeType, data });
+
+    let object;
+    try {
+        object = await storage.openObjectStream(key);
+    } catch (error) {
+        if (error?.notFound) {
+            throw new HttpError(404, 'El archivo adjunto no está disponible.', 'ATTACHMENT_NOT_FOUND');
         }
-        return sendStoredAttachment(res, { fileName, mimeType, data: buffer });
+        throw error;
     }
-    return sendStoredAttachment(res, { fileName, mimeType, data });
+    setAttachmentHeaders(res, { fileName, mimeType, length: object.length });
+    await pipeline(object.stream, res);
 }
 
 function mapCompany(row) {
@@ -1258,7 +1265,53 @@ app.use('/api', apiLimiter);
 // token (or, during the switch, the old key) is rejected off its headers
 // alone and never gets its body buffered into memory.
 app.use(requireTerminal);
-app.use(express.json({ limit: JSON_BODY_LIMIT }));
+
+// Only the routes that carry attachments may send big bodies, and at most two
+// of them are read at once. Everything else is capped at 1 MB. Measured on a
+// copy of this server: 8 parallel 26.7 MB uploads pushed it from 197 MB to
+// 846 MB resident, enough for the OOM killer on a 1 GB droplet.
+const jsonSmall = express.json({ limit: '1mb' });
+const jsonUpload = express.json({ limit: JSON_BODY_LIMIT });
+const UPLOAD_ROUTES = [
+    /^\/api\/corapsa(\/[^/]+)?$/,
+    /^\/api\/gastos(\/[^/]+)?(\/archivo)?$/,
+    /^\/api\/corapsa-pagos(\/[^/]+)?$/
+];
+const MAX_UPLOADS_IN_FLIGHT = 2;
+let uploadsInFlight = 0;
+
+function isUploadRequest(req) {
+    return ['POST', 'PUT', 'PATCH'].includes(req.method)
+        && UPLOAD_ROUTES.some(pattern => pattern.test(req.path));
+}
+
+function parseJsonBody(req, res, next) {
+    if (!isUploadRequest(req)) return jsonSmall(req, res, next);
+
+    // Refused before the body is read, so a burst costs nothing. A 429, not a
+    // 503, so the operator sees this message (5xx messages are hidden in
+    // production) and the offline queue treats it as "retry later".
+    if (uploadsInFlight >= MAX_UPLOADS_IN_FLIGHT) {
+        res.set('Retry-After', '5');
+        return next(new HttpError(
+            429,
+            'El servidor está guardando otros archivos. Intente de nuevo en unos segundos.',
+            'UPLOADS_BUSY'
+        ));
+    }
+    uploadsInFlight += 1;
+    let released = false;
+    const release = () => {
+        if (released) return;
+        released = true;
+        uploadsInFlight -= 1;
+    };
+    res.once('finish', release);
+    res.once('close', release);
+    jsonUpload(req, res, next);
+}
+
+app.use(parseJsonBody);
 app.use(serializeDatabaseAccess);
 
 app.get('/api/health', (_req, res) => {
@@ -2793,7 +2846,10 @@ app.use((req, _res, next) => {
     next(new HttpError(404, `Ruta no encontrada: ${req.method} ${req.path}`, 'NOT_FOUND'));
 });
 
-app.use((error, _req, res, _next) => {
+app.use((error, _req, res, next) => {
+    // A download that fails half-way has already sent its headers; let
+    // Express close the connection instead of writing a second response.
+    if (res.headersSent) return next(error);
     const status = Number(error?.status) || 500;
     // Fail closed: nothing in this deployment (droplet start script, systemd
     // unit, etc.) ever sets NODE_ENV, so gating on === 'production' left this
@@ -2808,7 +2864,10 @@ app.use((error, _req, res, _next) => {
     // body — without this it fell through to INTERNAL_ERROR despite being a
     // 400 the caller can actually fix.
     const isBodyParseError = error?.type === 'entity.parse.failed';
-    const code = error?.code || (isBodyParseError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR');
+    const isBodyTooLarge = error?.type === 'entity.too.large';
+    const code = error?.code
+        || (isBodyParseError ? 'VALIDATION_ERROR' : isBodyTooLarge ? 'PAYLOAD_TOO_LARGE' : 'INTERNAL_ERROR');
+    if (isBodyTooLarge) error.message = 'La solicitud es demasiado grande.';
 
     res.status(status).json({
         ok: false,
