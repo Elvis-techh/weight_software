@@ -8,6 +8,12 @@
 
     <meta charset="UTF-8">
 
+    <!-- Second line of defense behind escapeHtml(): if an HTML injection ever
+         slips through, it can't load code from elsewhere or send data anywhere
+         but the API (production, or the local sandbox from environment.js).
+         'unsafe-inline' stays until the inline onclick handlers are gone (review Q6). -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' https://api.basculacentral.com http://127.0.0.1:3100; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Báscula Central - Terminal</title>
