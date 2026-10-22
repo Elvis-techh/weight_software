@@ -7,12 +7,46 @@ const BROWSER_SCALE_PRESETS = Object.freeze({
     empty: { weight: 8500, label: 'VACÍO' }
 });
 
-async function fetchClientes() {
-    const records = await apiRequest('/api/clientes');
+const CLIENTES_CACHE_KEY = 'bascula.clientesCache';
+
+function aplicarClientes(records) {
     MOCK_CLIENTES = Array.isArray(records) ? records.map(normalizarCliente) : [];
     renderClientesTab();
     populateClienteDropdown();
     renderQueue();
+}
+
+function leerClientesCache() {
+    try {
+        const cached = JSON.parse(localStorage.getItem(CLIENTES_CACHE_KEY) || 'null');
+        return Array.isArray(cached) ? cached : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function fetchClientes() {
+    let records;
+    try {
+        records = await apiRequest('/api/clientes');
+    } catch (error) {
+        // Started without a connection (a power cut restarts the PC while the
+        // internet is still down): weigh from the last list this terminal saw
+        // instead of only Casual. The server re-derives the price from the
+        // client's row when the truck syncs (POST /api/camiones-patio), so a
+        // stale cached price never reaches a transaction. Rethrown so initApp
+        // keeps retrying the live list. Only used while nothing is loaded yet,
+        // so a later failed refresh never swaps a live list for an older one.
+        const cached = MOCK_CLIENTES.length === 0 ? leerClientesCache() : null;
+        if (cached) aplicarClientes(cached);
+        throw error;
+    }
+    try {
+        localStorage.setItem(CLIENTES_CACHE_KEY, JSON.stringify(records));
+    } catch (_) {
+        // Storage full or unavailable: the live list still works, only the fallback is lost.
+    }
+    aplicarClientes(records);
 }
 
 async function fetchCompanies() {
