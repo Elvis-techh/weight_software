@@ -254,13 +254,6 @@ body {
   line-height: 1;
 }
 
-/* A typed weight carries "MANUAL" on a second line (see imprimirRecibo). */
-.weights-table td[data-field="bruto"],
-.weights-table td[data-field="tara"] {
-  white-space: pre;
-  line-height: 1.2;
-}
-
 /* An offline boleta's number is a local prediction until the server confirms
    it, and the paper in the customer's hands has to say so. Empty otherwise. */
 .provisional-stamp {

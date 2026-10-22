@@ -216,10 +216,10 @@ function imprimirRecibo(id) {
         fechaEntrada: formatFechaHoraForReceipt(transaction.fechaEntrada, transaction.horaEntrada),
         fechaSalida: formatFechaHoraForReceipt(transaction.fecha, transaction.hora),
         cliente: transaction.clienteNombre,
-        // A typed weight says so on paper, not only in Historial de Cambios
-        // (on its own line in the cell, see receipt.css).
-        bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb${transaction.origenPesoBruto === 'manual' ? '\nMANUAL' : ''}`,
-        tara: `${transaction.pesoTara.toLocaleString('en-US')} lb${transaction.origenPesoTara === 'manual' ? '\nMANUAL' : ''}`,
+        // A typed weight is not marked on paper: only Historial de Cambios
+        // shows it (peso_manual), for the supervisor to follow up.
+        bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb`,
+        tara: `${transaction.pesoTara.toLocaleString('en-US')} lb`,
         neto: `${transaction.neto.toLocaleString('en-US')} lb`,
         tm: `${cantidad.toFixed(2)} ${esQuintal ? 'QQ' : 'TM'}`,
         precioTM: `${formatMoney(precioPorUnidad)} Lps`,
