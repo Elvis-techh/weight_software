@@ -132,7 +132,10 @@ function serializeDatabaseAccess(req, res, next) {
         // Nobody is left to receive a response, so drop the request instead of
         // spending a DB write on it: the caller either replays it from the
         // offline queue (patio ops carry a clientOpId) or reports the failure.
-        if (res.writableEnded || res.destroyed) return unlock();
+        if (res.writableEnded || res.destroyed) {
+            req.discardUploads?.(); // nothing will ever reference them
+            return unlock();
+        }
 
         timer = setTimeout(() => {
             console.error(`Liberando la cola de escritura por tiempo excedido: ${req.method} ${req.path}`);
@@ -1352,7 +1355,71 @@ function parseJsonBody(req, res, next) {
     jsonUpload(req, res, next);
 }
 
+// Attachments go to Spaces BEFORE the request joins the write queue, so a slow
+// Spaces transfer (up to ~50 s for POST /api/corapsa's two files on a bad day)
+// never holds the lock every terminal waits on — the weighing terminal gives
+// up after 10 s and falls back to "offline". Handlers read req.uploaded[field]
+// (only set when the body carries that field; null means "clear it"). A
+// request that ends in an error deletes what it uploaded, so a failed save
+// leaves no orphaned object in the bucket.
+const UPLOAD_FIELDS = [
+    {
+        pattern: /^\/api\/corapsa(\/[^/]+)?$/,
+        table: 'corapsa',
+        fields: {
+            archivoCliente: ['corapsa-cliente', 'El archivo del cliente'],
+            archivoNuestro: ['corapsa-nuestro', 'El archivo nuestro']
+        }
+    },
+    {
+        pattern: /^\/api\/gastos(\/[^/]+)?(\/archivo)?$/,
+        table: 'gastos',
+        fields: { archivo: ['gastos', 'El recibo del gasto'] },
+        // PATCH /api/gastos/:id/archivo with eliminarArchivo ignores the file.
+        skip: body => body?.eliminarArchivo === true
+    },
+    {
+        pattern: /^\/api\/corapsa-pagos(\/[^/]+)?$/,
+        table: 'corapsa_pagos',
+        fields: { archivo: ['corapsa-pagos', 'El estado de cuenta de Corapsa'] }
+    }
+];
+
+const uploadBeforeQueue = asyncHandler(async (req, res, next) => {
+    req.uploaded = {};
+    const route = isUploadRequest(req) && UPLOAD_FIELDS.find(entry => entry.pattern.test(req.path));
+    if (!route || route.skip?.(req.body)) return next();
+
+    // A replay of a create that already landed must not upload a second copy.
+    if (req.method === 'POST' && await findByClientOpId(route.table, readClientOpId(req.body))) return next();
+
+    let discarded = false;
+    req.discardUploads = () => {
+        if (discarded) return;
+        discarded = true;
+        for (const attachment of Object.values(req.uploaded)) {
+            if (attachment?.key) storage.deleteObject(attachment.key);
+        }
+    };
+    res.once('finish', () => {
+        if (res.statusCode >= 400) req.discardUploads();
+    });
+
+    try {
+        for (const [field, [folder, label]] of Object.entries(route.fields)) {
+            if (!Object.prototype.hasOwnProperty.call(req.body || {}, field)) continue;
+            req.uploaded[field] = await storeAttachment(folder, parseAttachmentPayload(req.body[field], label));
+        }
+    } catch (error) {
+        req.discardUploads(); // the first file landed, the second failed
+        throw error;
+    }
+    next();
+});
+
+// Order matters: body parser, then uploads, then the write queue.
 app.use(parseJsonBody);
+app.use(uploadBeforeQueue);
 app.use(serializeDatabaseAccess);
 
 app.get('/api/health', (_req, res) => {
@@ -2247,8 +2314,8 @@ app.get('/api/corapsa', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/corapsa', asyncHandler(async (req, res) => {
-    // Checked before the Spaces upload below, so a replay doesn't re-upload the
-    // attachment and orphan the object it uploaded the first time.
+    // A replay gets the row its first attempt created (uploadBeforeQueue
+    // already skipped re-uploading its files).
     const clientOpId = readClientOpId(req.body);
     const replayed = await findByClientOpId('corapsa', clientOpId);
     if (replayed) return sendData(res, { corapsa: mapCorapsa(replayed) }, 200);
@@ -2263,14 +2330,8 @@ app.post('/api/corapsa', asyncHandler(async (req, res) => {
     const precio = asNumber(req.body?.precio, { required: true, min: 0, max: MAX_MONEY_LEMPIRAS, field: 'El precio' });
     const total = roundToCurrency(toneladas * precio);
     const esProductoPropio = asBoolean(req.body?.esProductoPropio ?? false);
-    const archivoCliente = await storeAttachment(
-        'corapsa-cliente',
-        parseAttachmentPayload(req.body?.archivoCliente, 'El archivo del cliente')
-    );
-    const archivoNuestro = await storeAttachment(
-        'corapsa-nuestro',
-        parseAttachmentPayload(req.body?.archivoNuestro, 'El archivo nuestro')
-    );
+    const archivoCliente = req.uploaded.archivoCliente ?? null;
+    const archivoNuestro = req.uploaded.archivoNuestro ?? null;
 
     const corapsa = await withTransaction(async () => {
         const result = await db.run(`
@@ -2316,10 +2377,10 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const hasClienteUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente');
     const hasNuestroUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro');
     const archivoCliente = hasClienteUpload
-        ? resolveAttachmentUpdate(await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente')))
+        ? resolveAttachmentUpdate(req.uploaded.archivoCliente)
         : null;
     const archivoNuestro = hasNuestroUpload
-        ? resolveAttachmentUpdate(await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro')))
+        ? resolveAttachmentUpdate(req.uploaded.archivoNuestro)
         : null;
 
     const corapsa = await withTransaction(async () => {
@@ -2363,9 +2424,9 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
 
 app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
-    // Checked before anything is uploaded below, so a too-short reason doesn't
-    // leave an orphaned object in Spaces. The screen asks for one on every file
-    // change (replace/remove) but not on the paid/excluded toggles.
+    // The screen asks for one on every file change (replace/remove) but not
+    // on the paid/excluded toggles. A too-short one fails the request, and
+    // uploadBeforeQueue then deletes the file it uploaded.
     const justificacion = optionalJustification(req.body?.justificacion);
     const current = await db.get('SELECT file_key, file_nuestro_key FROM corapsa WHERE id = ?', [id]);
     if (!current) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
@@ -2403,13 +2464,13 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         values.push(asBoolean(req.body.excluido) ? 1 : 0);
     }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente')) {
-        const attachment = resolveAttachmentUpdate(await storeAttachment('corapsa-cliente', parseAttachmentPayload(req.body.archivoCliente, 'El archivo del cliente')));
+        const attachment = resolveAttachmentUpdate(req.uploaded.archivoCliente);
         updates.push('file_name = ?', 'file_mime_type = ?', 'file_data = ?', 'file_key = ?');
         values.push(attachment.fileName, attachment.mimeType, attachment.data, attachment.key);
         oldClienteKeyToRemove = current.file_key;
     }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoNuestro')) {
-        const attachment = resolveAttachmentUpdate(await storeAttachment('corapsa-nuestro', parseAttachmentPayload(req.body.archivoNuestro, 'El archivo nuestro')));
+        const attachment = resolveAttachmentUpdate(req.uploaded.archivoNuestro);
         updates.push('file_nuestro = ?', 'file_nuestro_mime_type = ?', 'file_nuestro_data = ?', 'file_nuestro_key = ?');
         values.push(attachment.fileName, attachment.mimeType, attachment.data, attachment.key);
         oldNuestroKeyToRemove = current.file_nuestro_key;
@@ -2509,7 +2570,7 @@ app.post('/api/gastos', asyncHandler(async (req, res) => {
         justificacion: optionalJustification(req.body?.justificacion, 1000),
         notas: asText(req.body?.notas, { maxLength: 1000 })
     };
-    const attachment = await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
+    const attachment = req.uploaded.archivo ?? null;
     const gasto = await withTransaction(async () => {
         const result = await db.run(`
             INSERT INTO gastos (fecha, monto, concepto, justificacion, notas, file_name, file_mime_type, file_data, file_key, client_op_id, created_at, updated_at)
@@ -2539,7 +2600,7 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
     };
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
     const attachment = hasUpload
-        ? resolveAttachmentUpdate(await storeAttachment('gastos', parseAttachmentPayload(req.body.archivo, 'El recibo del gasto')))
+        ? resolveAttachmentUpdate(req.uploaded.archivo)
         : null;
 
     const gasto = await withTransaction(async () => {
@@ -2580,7 +2641,7 @@ app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
     const eliminar = req.body?.eliminarArchivo === true;
     const attachment = eliminar
         ? null
-        : await storeAttachment('gastos', parseAttachmentPayload(req.body?.archivo, 'El recibo del gasto'));
+        : req.uploaded.archivo ?? null;
     if (!eliminar && !attachment) throw new HttpError(400, 'Seleccione un archivo.', 'VALIDATION_ERROR');
 
     const gasto = await withTransaction(async () => {
@@ -2651,7 +2712,7 @@ app.post('/api/corapsa-pagos', asyncHandler(async (req, res) => {
     if (replayed) return sendData(res, { pago: mapCorapsaPayment(replayed) }, 200);
 
     const payment = validateCorapsaPaymentBody(req.body);
-    const attachment = await storeAttachment('corapsa-pagos', parseAttachmentPayload(req.body?.archivo, 'El estado de cuenta de Corapsa'));
+    const attachment = req.uploaded.archivo ?? null;
 
     const pago = await withTransaction(async () => {
         const result = await db.run(`
@@ -2680,7 +2741,7 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
     const payment = validateCorapsaPaymentBody(req.body, { editing: true });
     const hasUpload = Object.prototype.hasOwnProperty.call(req.body || {}, 'archivo');
     const attachment = hasUpload
-        ? resolveAttachmentUpdate(await storeAttachment('corapsa-pagos', parseAttachmentPayload(req.body.archivo, 'El estado de cuenta de Corapsa')))
+        ? resolveAttachmentUpdate(req.uploaded.archivo)
         : null;
 
     const pago = await withTransaction(async () => {
