@@ -208,14 +208,18 @@ function imprimirRecibo(id) {
     const payload = {
         numero: transaction.numeroBoleta ?? '',
         fechaDocumento: formatDateForDisplay(transaction.fecha),
+        // An offline boleta's number is a local prediction until the server
+        // confirms it. The paper has to say so, not just the toast above.
+        provisional: transaction.pendingSync ? 'BOLETA PROVISIONAL · NÚMERO SIN CONFIRMAR POR EL SERVIDOR' : '',
         conductor: transaction.conductor === 'Desconocido' ? 'SC' : transaction.conductor,
         placa: transaction.placa,
         fechaEntrada: formatFechaHoraForReceipt(transaction.fechaEntrada, transaction.horaEntrada),
         fechaSalida: formatFechaHoraForReceipt(transaction.fecha, transaction.hora),
         cliente: transaction.clienteNombre,
-        // A typed weight says so on paper, not only in Historial de Cambios.
-        bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb${transaction.origenPesoBruto === 'manual' ? ' (MANUAL)' : ''}`,
-        tara: `${transaction.pesoTara.toLocaleString('en-US')} lb${transaction.origenPesoTara === 'manual' ? ' (MANUAL)' : ''}`,
+        // A typed weight says so on paper, not only in Historial de Cambios
+        // (on its own line in the cell, see receipt.css).
+        bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb${transaction.origenPesoBruto === 'manual' ? '\nMANUAL' : ''}`,
+        tara: `${transaction.pesoTara.toLocaleString('en-US')} lb${transaction.origenPesoTara === 'manual' ? '\nMANUAL' : ''}`,
         neto: `${transaction.neto.toLocaleString('en-US')} lb`,
         tm: `${cantidad.toFixed(2)} ${esQuintal ? 'QQ' : 'TM'}`,
         precioTM: `${formatMoney(precioPorUnidad)} Lps`,
