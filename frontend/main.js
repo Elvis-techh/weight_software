@@ -145,6 +145,42 @@ function attachEditContextMenu(win) {
     });
 }
 
+// The app only ever shows its own files. Anything else (a stray drop, a future
+// link, a redirect) is refused before it loads, so the preload's API — the
+// outbox, the scale settings, the terminal token — is never handed to foreign
+// content.
+function isAppUrl(url) {
+    try {
+        return new URL(url).protocol === 'file:';
+    } catch (_) {
+        return false;
+    }
+}
+
+function lockDownNavigation(win) {
+    win.webContents.on('will-navigate', (event, url) => {
+        if (!isAppUrl(url)) event.preventDefault();
+    });
+    win.webContents.on('will-redirect', (event, url) => {
+        if (!isAppUrl(url)) event.preventDefault();
+    });
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.webContents.on('will-attach-webview', event => event.preventDefault());
+}
+
+// Every ipcMain.handle() goes through here: only the main window's own page
+// may call in.
+function handleFromApp(channel, handler) {
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, (event, ...args) => {
+        const fromMainWindow = mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+        if (!fromMainWindow || !isAppUrl(event.senderFrame?.url || '')) {
+            throw new Error(`Llamada IPC rechazada (${channel}).`);
+        }
+        return handler(event, ...args);
+    });
+}
+
 function createWindow() {
     // Never ask for more room than the monitor actually has — on a display
     // smaller than the usual 1000x700 floor, Electron would otherwise still
@@ -174,6 +210,7 @@ function createWindow() {
     });
 
     attachEditContextMenu(mainWindow);
+    lockDownNavigation(mainWindow);
 
     mainWindow.once('ready-to-show', () => mainWindow?.show());
     // `on`, not `once`: after a crash-reload below, the fresh renderer needs the
@@ -329,6 +366,8 @@ async function printReceipt(data) {
         }
     });
 
+    lockDownNavigation(receiptWindow);
+
     try {
         const loaded = waitForLoad(receiptWindow);
         receiptWindow.loadFile(path.join(__dirname, 'receipt', 'receipt.html'));
@@ -375,6 +414,8 @@ async function withPrintableWindow(htmlFileName, setterName, data, callback) {
             sandbox: true
         }
     });
+
+    lockDownNavigation(win);
 
     try {
         const loaded = waitForLoad(win);
@@ -473,24 +514,18 @@ function saveCorapsaListadoAsPdf(data) {
 }
 
 function registerReceiptIpc() {
-    ipcMain.removeHandler('receipt:print');
-    ipcMain.handle('receipt:print', (_event, data) => printReceipt(data));
-    ipcMain.removeHandler('receipt:save-pdf');
-    ipcMain.handle('receipt:save-pdf', (_event, data) => saveReceiptAsPdf(data));
+    handleFromApp('receipt:print', (_event, data) => printReceipt(data));
+    handleFromApp('receipt:save-pdf', (_event, data) => saveReceiptAsPdf(data));
 }
 
 function registerListadoIpc() {
-    ipcMain.removeHandler('listado:print');
-    ipcMain.handle('listado:print', (_event, data) => printListado(data));
-    ipcMain.removeHandler('listado:save-pdf');
-    ipcMain.handle('listado:save-pdf', (_event, data) => saveListadoAsPdf(data));
+    handleFromApp('listado:print', (_event, data) => printListado(data));
+    handleFromApp('listado:save-pdf', (_event, data) => saveListadoAsPdf(data));
 }
 
 function registerCorapsaListadoIpc() {
-    ipcMain.removeHandler('corapsa-listado:print');
-    ipcMain.handle('corapsa-listado:print', (_event, data) => printCorapsaListado(data));
-    ipcMain.removeHandler('corapsa-listado:save-pdf');
-    ipcMain.handle('corapsa-listado:save-pdf', (_event, data) => saveCorapsaListadoAsPdf(data));
+    handleFromApp('corapsa-listado:print', (_event, data) => printCorapsaListado(data));
+    handleFromApp('corapsa-listado:save-pdf', (_event, data) => saveCorapsaListadoAsPdf(data));
 }
 
 // A yes/no question for the renderer. It goes through here instead of the
@@ -499,8 +534,7 @@ function registerCorapsaListadoIpc() {
 // restoreMainWindowFocus) and the page has no way to hand it back. "No" is the
 // default so a stray Enter never confirms a destructive question.
 function registerDialogIpc() {
-    ipcMain.removeHandler('dialog:confirm');
-    ipcMain.handle('dialog:confirm', async (_event, message) => {
+    handleFromApp('dialog:confirm', async (_event, message) => {
         const { response } = await withFocusRestored(dialog.showMessageBox(mainWindow, {
             type: 'question',
             title: 'Confirmar',
@@ -556,11 +590,9 @@ function readTerminalToken() {
 }
 
 function registerTerminalIpc() {
-    ipcMain.removeHandler('terminal:get-token');
-    ipcMain.handle('terminal:get-token', () => readTerminalToken());
+    handleFromApp('terminal:get-token', () => readTerminalToken());
 
-    ipcMain.removeHandler('terminal:set-token');
-    ipcMain.handle('terminal:set-token', (_event, token) => {
+    handleFromApp('terminal:set-token', (_event, token) => {
         const value = String(token ?? '').trim();
         if (!/^[A-Za-z0-9_-]{20,200}$/.test(value)) {
             throw new Error('El token de la terminal no tiene un formato válido.');
@@ -575,8 +607,7 @@ function registerTerminalIpc() {
 }
 
 function registerOfflineQueueIpc() {
-    ipcMain.removeHandler('offline-queue:load');
-    ipcMain.handle('offline-queue:load', async () => {
+    handleFromApp('offline-queue:load', async () => {
         let result;
         try {
             result = offlineQueueStore.loadQueue(app);
@@ -595,15 +626,13 @@ function registerOfflineQueueIpc() {
         return result.queue;
     });
 
-    ipcMain.removeHandler('offline-queue:save');
-    ipcMain.handle('offline-queue:save', (_event, queue) => offlineQueueStore.saveQueue(app, queue));
+    handleFromApp('offline-queue:save', (_event, queue) => offlineQueueStore.saveQueue(app, queue));
 
     // A must-acknowledge native dialog, not just a toast — this fires only for
     // the rare cases where an offline-captured value (a boleta number, or a
     // sync that failed outright) turned out to disagree with the server once
     // reconnected, which is exactly the kind of thing that must not go unseen.
-    ipcMain.removeHandler('offline-queue:warn');
-    ipcMain.handle('offline-queue:warn', (_event, message) => {
+    handleFromApp('offline-queue:warn', (_event, message) => {
         return withFocusRestored(dialog.showMessageBox(mainWindow, {
             type: 'warning',
             title: 'Revisar sincronización sin conexión',
@@ -615,8 +644,7 @@ function registerOfflineQueueIpc() {
 }
 
 function registerScaleIpc() {
-    ipcMain.removeHandler('scale-simulation:set-preset');
-    ipcMain.handle('scale-simulation:set-preset', (_event, presetName) => {
+    handleFromApp('scale-simulation:set-preset', (_event, presetName) => {
         // Guarded: without this check, a stray call to this channel could inject a fake
         // reading into the same channel real weighing depends on, even in hardware mode.
         if (!currentScaleSettings?.testModeEnabled) {
@@ -638,21 +666,17 @@ function registerScaleIpc() {
         };
     });
 
-    ipcMain.removeHandler('scale:list-ports');
-    ipcMain.handle('scale:list-ports', () => scaleReader.listPorts());
+    handleFromApp('scale:list-ports', () => scaleReader.listPorts());
 
-    ipcMain.removeHandler('scale:get-settings');
-    ipcMain.handle('scale:get-settings', () => currentScaleSettings);
+    handleFromApp('scale:get-settings', () => currentScaleSettings);
 
-    ipcMain.removeHandler('scale:save-settings');
-    ipcMain.handle('scale:save-settings', (_event, partial) => {
+    handleFromApp('scale:save-settings', (_event, partial) => {
         const saved = scaleSettings.saveSettings(app, partial);
         applyScaleSettings(saved);
         return saved;
     });
 
-    ipcMain.removeHandler('scale:test-connection');
-    ipcMain.handle('scale:test-connection', async (_event, candidateSettings) => {
+    handleFromApp('scale:test-connection', async (_event, candidateSettings) => {
         // Serial ports are exclusive-access: release the live reader first, run the
         // test on its own throwaway port, then always resume the live (saved) settings
         // afterward — a test never leaves the app's actual feed broken.
