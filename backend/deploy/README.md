@@ -21,6 +21,29 @@ ahora además captura `uncaughtException`/`unhandledRejection` y sale con
 código de error en vez de quedar en un estado indefinido, para que PM2 sepa
 que debe reiniciarlo.
 
+## Tokens de terminal (la clave compartida es pública)
+
+La `API_KEY` vieja está en el repositorio público y dentro de cada instalador,
+así que cualquiera puede usarla. Cada terminal recibe ahora su propio token,
+revocable por separado. El servidor guarda solo su hash.
+
+1. Despliegue el servidor nuevo (acepta todavía la `API_KEY` vieja, así que la
+   app instalada sigue funcionando) y luego la app que tiene el campo del token.
+2. Por cada terminal, en el droplet desde `backend/`:
+   ```bash
+   node scripts/enroll-terminal.js "Báscula principal"   # imprime el token UNA vez
+   ```
+   En esa terminal: Configuración de Báscula → Token de la terminal → pegar →
+   Guardar token. La app lo verifica con el servidor antes de guardarlo y lo
+   guarda cifrado (DPAPI de Windows) en su carpeta de datos.
+3. Cuando todas digan "Inscrita como …" (`node scripts/enroll-terminal.js
+   --listar`), quite `API_KEY` de `backend/.env` y `pm2 restart bascula-backend`.
+   Desde ese momento la clave publicada no sirve para nada.
+
+Revocar una terminal (equipo perdido, token filtrado):
+`node scripts/enroll-terminal.js --revocar <id>`. Tarda hasta un minuto en
+surtir efecto. Revocar todas no apaga la autenticación.
+
 ## Respaldos de bascula.db (bug: no existía ningún respaldo fuera del droplet)
 
 Esto sí es nuevo — `scripts/backup-database.js` + `bascula-backup.service` +
@@ -46,7 +69,7 @@ systemctl daemon-reload
 systemctl enable --now bascula-backup.timer
 ```
 
-`backend/.env` debe existir con `API_KEY` y, para que el respaldo salga del
+`backend/.env` debe existir y, para que el respaldo salga del
 droplet (no solo quede en disco local), las mismas variables `SPACES_*` que ya
 usa la app para adjuntos (ver `storage.js`) — el script sube el respaldo al
 mismo bucket, carpeta `backups/`. Sin `SPACES_*`, el respaldo solo protege

@@ -1196,6 +1196,20 @@
                         todavía.</p>
                 </div>
 
+                <div class="bg-gray-50 p-3 border border-gray-200 rounded-lg">
+                    <label for="terminal-token-input" class="block text-xs font-bold text-gray-600">Token de la terminal</label>
+                    <p id="terminal-token-status" class="mt-1 text-[11px] text-gray-500">Comprobando...</p>
+                    <div class="mt-2 flex gap-2">
+                        <input type="password" id="terminal-token-input" autocomplete="off" spellcheck="false"
+                            class="flex-1 min-w-0 border rounded p-2 focus:ring-2 focus:ring-brand-500 outline-none font-mono text-sm"
+                            placeholder="Pegue el token entregado para esta terminal">
+                        <button type="button" onclick="guardarTokenTerminal()"
+                            class="px-3 py-1.5 bg-gray-700 text-white text-[11px] font-bold rounded hover:bg-gray-800">Guardar token</button>
+                    </div>
+                    <p class="mt-1 text-[10px] text-gray-400">Se verifica con el servidor antes de guardarlo y queda
+                        cifrado en este equipo.</p>
+                </div>
+
             </div>
 
             <div class="px-6 pb-6 flex justify-end gap-3">

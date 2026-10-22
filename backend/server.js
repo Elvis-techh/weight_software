@@ -147,24 +147,66 @@ function isValidApiKey(provided) {
     return crypto.timingSafeEqual(providedBuf, expected);
 }
 
-function requireApiKey(req, res, next) {
-    // MVP: auth is off until API_KEY is set on the server. Set it (and keep the
-    // frontend's API_KEY in globals.js in sync) to turn this back on later.
-    if (!API_KEY) return next();
-    if (req.method === 'OPTIONS') return next();
-    if (req.path === '/api/health') return next();
-    if (!isValidApiKey(req.get('X-API-Key'))) {
-        return next(new HttpError(401, 'API key inválida o ausente.', 'UNAUTHORIZED'));
-    }
-    next();
+function hashTerminalToken(token) {
+    return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
+
+// Positive lookups are cached for a minute so most requests cost no query; a
+// terminal revoked with scripts/enroll-terminal.js is locked out within that
+// minute. Misses are never cached, so a flood of made-up tokens can't grow it.
+const TERMINAL_CACHE_MS = 60000;
+const terminalCache = new Map();
+// Latches true the first time any terminal is found enrolled. Revoking every
+// terminal must not turn auth back off, so this never goes back to false.
+let terminalsEnrolled = false;
+
+async function findTerminal(token) {
+    const hash = hashTerminalToken(token);
+    const cached = terminalCache.get(hash);
+    if (cached && Date.now() - cached.at < TERMINAL_CACHE_MS) return cached.terminal;
+    terminalCache.delete(hash);
+
+    const terminal = await db.get(
+        'SELECT id, nombre FROM terminales WHERE token_hash = ? AND revocado_en IS NULL',
+        [hash]
+    );
+    if (terminal) terminalCache.set(hash, { terminal, at: Date.now() });
+    return terminal || null;
+}
+
+async function anyTerminalEnrolled() {
+    if (!terminalsEnrolled) terminalsEnrolled = Boolean(await db.get('SELECT 1 FROM terminales LIMIT 1'));
+    return terminalsEnrolled;
+}
+
+// Each terminal authenticates with its own revocable token (Authorization:
+// Bearer, see scripts/enroll-terminal.js). The shared X-API-Key is accepted
+// only while API_KEY is still set on the server, for terminals on an app
+// build from before tokens: it is public (it shipped in globals.js and every
+// installer), so once every terminal is enrolled, remove API_KEY from .env and
+// it stops working. With no API_KEY and no terminal ever enrolled (the local
+// sandbox, a fresh install) auth stays off, exactly as before tokens existed.
+const requireTerminal = asyncHandler(async (req, _res, next) => {
+    if (req.method === 'OPTIONS' || req.path === '/api/health') return next();
+
+    const match = /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(req.get('Authorization') || '');
+    const terminal = match ? await findTerminal(match[1]) : null;
+    if (terminal) {
+        req.terminal = terminal;
+        return next();
+    }
+    if (API_KEY && isValidApiKey(req.get('X-API-Key'))) return next();
+    if (!API_KEY && !(await anyTerminalEnrolled())) return next();
+
+    next(new HttpError(401, 'Terminal no autorizada. Ingrese el token de esta terminal en Configuración de Báscula.', 'UNAUTHORIZED'));
+});
 
 const corsOptions = {
     origin(origin, callback) {
         // A packaged Electron renderer loaded from file:// sends Origin: "null" (an opaque
         // origin) or omits it entirely; there is no legitimate multi-origin browser client
         // for this API. CORS is browser-enforced defense-in-depth here, not the primary
-        // access control — the X-API-Key check above is.
+        // access control — the terminal token check above is.
         if (!origin || origin === 'null') return callback(null, true);
         return callback(new HttpError(403, 'Origen no permitido.', 'FORBIDDEN_ORIGIN'), false);
     }
@@ -1212,19 +1254,22 @@ if (process.env.TRUST_PROXY) {
 app.use(helmet());
 app.use(cors(corsOptions));
 app.use('/api', apiLimiter);
-// Auth runs before the body parser so an unauthenticated request (or, once
-// API_KEY is set, any request with a bad key) is rejected off req.method/path
-// alone and never gets its body buffered into memory. With API_KEY unset
-// (current MVP default) this middleware still passes everything through —
-// reordering doesn't add auth that isn't configured — but it closes the gap
-// for any deployment that does set API_KEY, and avoids paying the parse cost
-// on requests that were always going to be rejected.
-app.use(requireApiKey);
+// Auth runs before the body parser so a request without a valid terminal
+// token (or, during the switch, the old key) is rejected off its headers
+// alone and never gets its body buffered into memory.
+app.use(requireTerminal);
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(serializeDatabaseAccess);
 
 app.get('/api/health', (_req, res) => {
     sendData(res, { status: 'ok' });
+});
+
+// Which enrolled terminal this request authenticated as, or null when it got
+// in on the old shared key (or with auth off). Configuración de Báscula calls
+// it to check a token before storing it.
+app.get('/api/terminal', (req, res) => {
+    sendData(res, { terminal: req.terminal || null });
 });
 
 // COMPANIES (destino options for Recibos Externos)
@@ -2788,15 +2833,14 @@ async function start() {
             process.exit(1);
         }
         console.log(`MODO SANDBOX: datos de prueba en ${initializeDB.DB_PATH}`);
-    } else if (!API_KEY) {
-        console.warn(
-            'ADVERTENCIA: API_KEY no está definida — el servidor arrancará sin autenticación. ' +
-            'Defina API_KEY antes de iniciar el servidor para reactivarla ' +
-            '(ej. API_KEY=xxxx node server.js). Genere una con: ' +
-            'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
-        );
     }
     db = await initializeDB();
+    if (!SANDBOX && !API_KEY && !(await anyTerminalEnrolled())) {
+        console.warn(
+            'ADVERTENCIA: no hay terminales inscritas ni API_KEY definida — el servidor arrancará sin autenticación. ' +
+            'Inscriba cada terminal con: node scripts/enroll-terminal.js "Nombre de la terminal"'
+        );
+    }
     server = app.listen(PORT, HOST, () => {
         console.log(`Servidor de Báscula Central corriendo en http://${HOST}:${PORT}`);
     });

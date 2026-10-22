@@ -2,8 +2,10 @@
 // app, the local sandbox for `npm start` / `npm run dev`. The fallback only
 // applies to a page loaded outside Electron.
 const API_URL = window.electronAPI?.apiUrl || 'https://api.basculacentral.com';
-// Must match the API_KEY environment variable set on the backend server exactly.
-// Not a cryptographic secret once this app is packaged/distributed — see MVP plan notes.
+// The old shared key. It is public (this repo and every installer carry it), so
+// it is only sent by a terminal that has no token of its own yet, and only works
+// while API_KEY is still set on the server. Remove both once every terminal is
+// enrolled (see backend/scripts/enroll-terminal.js).
 const API_KEY = '1218d8801f6281d70339d5626b60b5ca089355fee5fb3c324954849426c83ec1';
 
 // Stable per-install id sent as X-Terminal-Id so the backend's rate limiter can
@@ -25,6 +27,27 @@ const TERMINAL_ID = (() => {
         return fresh();
     }
 })();
+
+// This terminal's own credential, issued by backend/scripts/enroll-terminal.js
+// and entered in Configuración de Báscula. main.js keeps it encrypted; it is
+// loaded once at startup, before any request goes out.
+let TERMINAL_TOKEN = '';
+
+async function cargarTokenTerminal() {
+    try {
+        TERMINAL_TOKEN = (await window.electronAPI?.getTerminalToken?.()) || '';
+    } catch (error) {
+        console.error('No se pudo leer el token de la terminal:', error);
+        TERMINAL_TOKEN = '';
+    }
+}
+
+// Headers that identify this terminal on every API request.
+function authHeaders() {
+    return TERMINAL_TOKEN
+        ? { Authorization: `Bearer ${TERMINAL_TOKEN}`, 'X-Terminal-Id': TERMINAL_ID }
+        : { 'X-API-Key': API_KEY, 'X-Terminal-Id': TERMINAL_ID };
+}
 
 const APP_CONFIG = Object.freeze({
     lbsPerMetricTon: 2204.62262185,
@@ -489,7 +512,7 @@ function writeBlobCache(cache, url, blobPromise, limit) {
     return blobPromise;
 }
 
-// Every route requires X-API-Key (see requireApiKey in server.js), but a
+// Every route requires the terminal's credentials (see requireTerminal in server.js), but a
 // plain <img src="..."> / <iframe src="..."> can't carry a custom header —
 // the browser just requests the bare URL and gets a 401, which is why
 // receipt thumbnails and the full-size viewer were rendering as broken
@@ -509,7 +532,7 @@ async function fetchAttachmentBlob(url, { timeoutMs = 15000, cache = false } = {
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
             const response = await fetch(url, {
-                headers: { 'X-API-Key': API_KEY, 'X-Terminal-Id': TERMINAL_ID },
+                headers: authHeaders(),
                 signal: controller.signal
             });
             if (typeof setServerConnectionState === 'function') setServerConnectionState(true);

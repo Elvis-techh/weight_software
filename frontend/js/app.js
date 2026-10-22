@@ -301,6 +301,8 @@ async function initApp() {
     // First, so the sandbox/real-data marker is up even if loading fails below.
     mostrarIndicadorEntorno();
     startClock();
+    // Before anything that can send a request, the offline queue included.
+    await cargarTokenTerminal();
     await initScaleSettings();
     await initOfflineQueue();
     setupScaleListener();

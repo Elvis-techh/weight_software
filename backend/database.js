@@ -348,6 +348,17 @@ async function initializeDB() {
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- One row per enrolled weighing terminal (scripts/enroll-terminal.js).
+        -- Only a SHA-256 of its token is stored, so a copy of this database (a
+        -- backup, a sandbox load) can't be used to impersonate a terminal.
+        CREATE TABLE IF NOT EXISTS terminales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            revocado_en TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_transacciones_fecha ON transacciones(fecha);
         CREATE INDEX IF NOT EXISTS idx_corapsa_fecha ON corapsa(fecha);
         CREATE INDEX IF NOT EXISTS idx_corapsa_pagos_periodo ON corapsa_pagos(periodo_inicio, periodo_fin);

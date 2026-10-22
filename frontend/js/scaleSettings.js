@@ -103,8 +103,72 @@ async function abrirScaleSettingsModal() {
     document.getElementById('scale-settings-parse-pattern').value = cachedScaleSettings?.parsePattern || '';
     document.getElementById('scale-settings-test-mode').checked = Boolean(cachedScaleSettings?.testModeEnabled);
     document.getElementById('scale-settings-test-result').textContent = 'Sin probar todavía.';
+    document.getElementById('terminal-token-input').value = '';
 
     modal.classList.remove('hidden');
+    mostrarEstadoTokenTerminal();
+}
+
+async function mostrarEstadoTokenTerminal() {
+    const status = document.getElementById('terminal-token-status');
+    if (!status) return;
+    if (!TERMINAL_TOKEN) {
+        status.textContent = 'Sin token: esta terminal usa todavía la clave compartida antigua.';
+        return;
+    }
+    status.textContent = 'Comprobando...';
+    try {
+        const { terminal } = await apiRequest('/api/terminal');
+        status.textContent = terminal
+            ? `Inscrita como "${terminal.nombre}" (n.º ${terminal.id}).`
+            : 'El servidor no reconoció el token guardado.';
+    } catch (error) {
+        status.textContent = error.status === 401
+            ? 'El servidor rechazó el token guardado (¿revocado?). Ingrese uno nuevo.'
+            : `Token guardado; no se pudo comprobar ahora (${error.message}).`;
+    }
+}
+
+async function guardarTokenTerminal() {
+    const input = document.getElementById('terminal-token-input');
+    const token = String(input?.value || '').trim();
+    if (!/^[A-Za-z0-9_-]{20,200}$/.test(token)) {
+        mostrarNotificacion('Pegue el token completo que entregó el administrador.', 'error');
+        return;
+    }
+    if (!window.electronAPI?.setTerminalToken) {
+        mostrarNotificacion('El token solo se puede guardar en la aplicación de escritorio.', 'error');
+        return;
+    }
+
+    // Checked against the server first, so a typo can never replace a working
+    // token and lock this terminal out.
+    let terminal;
+    try {
+        ({ terminal } = await apiRequest('/api/terminal', { headers: { Authorization: `Bearer ${token}` } }));
+    } catch (error) {
+        mostrarNotificacion(
+            error.status === 401 ? 'El servidor no reconoce ese token.' : `No se pudo verificar el token: ${error.message}`,
+            'error'
+        );
+        return;
+    }
+    if (!terminal) {
+        mostrarNotificacion('El servidor no reconoce ese token.', 'error');
+        return;
+    }
+
+    try {
+        await window.electronAPI.setTerminalToken(token);
+    } catch (error) {
+        console.error('No se pudo guardar el token de la terminal:', error);
+        mostrarNotificacion(error.message || 'No se pudo guardar el token de la terminal.', 'error');
+        return;
+    }
+    TERMINAL_TOKEN = token;
+    input.value = '';
+    mostrarEstadoTokenTerminal();
+    mostrarNotificacion(`Token guardado. Terminal inscrita como "${terminal.nombre}".`);
 }
 
 function cerrarScaleSettingsModal() {

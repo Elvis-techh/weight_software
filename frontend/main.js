@@ -1,13 +1,14 @@
 const { dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-const { app, BrowserWindow, ipcMain, screen, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const scaleSettings = require('./scaleSettings');
 const scaleReader = require('./scaleReader');
 const offlineQueueStore = require('./offlineQueueStore');
 const environment = require('./environment');
+const { writeFileAtomic } = require('./atomicWrite');
 
 // Which server this run talks to (see environment.js). Resolved before anything
 // reads userData — the offline outbox, scale settings, update.log and
@@ -538,6 +539,41 @@ function warnUnreadableOfflineQueue(failure) {
     }));
 }
 
+// This terminal's API token (see backend/scripts/enroll-terminal.js). It lives
+// in userData encrypted with Windows' DPAPI for this Windows user, never in the
+// code, so the installer and the public repo carry no credential. Sandbox and
+// real-data runs keep separate copies, like the rest of userData.
+function terminalTokenPath() {
+    return path.join(app.getPath('userData'), 'terminal-token.bin');
+}
+
+function readTerminalToken() {
+    try {
+        return safeStorage.decryptString(fs.readFileSync(terminalTokenPath()));
+    } catch (_) {
+        return ''; // not enrolled yet: requests fall back to the old shared key
+    }
+}
+
+function registerTerminalIpc() {
+    ipcMain.removeHandler('terminal:get-token');
+    ipcMain.handle('terminal:get-token', () => readTerminalToken());
+
+    ipcMain.removeHandler('terminal:set-token');
+    ipcMain.handle('terminal:set-token', (_event, token) => {
+        const value = String(token ?? '').trim();
+        if (!/^[A-Za-z0-9_-]{20,200}$/.test(value)) {
+            throw new Error('El token de la terminal no tiene un formato válido.');
+        }
+        if (!safeStorage.isEncryptionAvailable()) {
+            throw new Error('Windows no permite cifrar el token con este usuario.');
+        }
+        fs.mkdirSync(app.getPath('userData'), { recursive: true });
+        writeFileAtomic(terminalTokenPath(), safeStorage.encryptString(value));
+        return true;
+    });
+}
+
 function registerOfflineQueueIpc() {
     ipcMain.removeHandler('offline-queue:load');
     ipcMain.handle('offline-queue:load', async () => {
@@ -644,6 +680,7 @@ app.whenReady().then(() => {
     registerCorapsaListadoIpc();
     registerOfflineQueueIpc();
     registerDialogIpc();
+    registerTerminalIpc();
     createWindow();
 
     app.on('activate', () => {
@@ -701,6 +738,8 @@ app.on('before-quit', event => {
     ipcMain.removeHandler('offline-queue:load');
     ipcMain.removeHandler('offline-queue:save');
     ipcMain.removeHandler('offline-queue:warn');
+    ipcMain.removeHandler('terminal:get-token');
+    ipcMain.removeHandler('terminal:set-token');
 
     let finished = false;
     const finishQuit = () => {

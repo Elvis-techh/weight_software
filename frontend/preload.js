@@ -93,5 +93,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Resolves true only if the operator picked "Sí".
     confirmDialog(message) {
         return ipcRenderer.invoke('dialog:confirm', message);
+    },
+
+    // This terminal's API token, stored encrypted by main.js ('' if not enrolled).
+    getTerminalToken() {
+        return ipcRenderer.invoke('terminal:get-token');
+    },
+
+    setTerminalToken(token) {
+        return ipcRenderer.invoke('terminal:set-token', token);
     }
 });
