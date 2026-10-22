@@ -348,6 +348,13 @@ async function initializeDB() {
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- The last number issued per sequence ('boleta'). Unlike a MAX() over
+        -- the rows it never moves back when a transaction is deleted.
+        CREATE TABLE IF NOT EXISTS secuencias (
+            nombre TEXT PRIMARY KEY,
+            ultimo INTEGER NOT NULL
+        );
+
         -- One row per enrolled weighing terminal (scripts/enroll-terminal.js).
         -- Only a SHA-256 of its token is stored, so a copy of this database (a
         -- backup, a sandbox load) can't be used to impersonate a terminal.
@@ -594,6 +601,13 @@ async function initializeDB() {
            OR file_mime_type IS NULL
            OR created_at IS NULL OR TRIM(created_at) = ''
            OR updated_at IS NULL OR TRIM(updated_at) = '';
+    `);
+
+    // Seeded once from the existing transactions; after that the counter
+    // only moves forward (see POST /api/camiones-patio/:id/finalizar).
+    await db.run(`
+        INSERT OR IGNORE INTO secuencias (nombre, ultimo)
+        SELECT 'boleta', COALESCE(MAX(numero_boleta), 0) FROM transacciones
     `);
 
     await repairLegacyQueueIds(db);

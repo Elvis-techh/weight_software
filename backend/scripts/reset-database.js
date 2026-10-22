@@ -40,7 +40,9 @@ const TABLES_TO_WIPE = [
     'planilla_periodos',
     'planilla',
     'clientes',
-    'auditoria'
+    'auditoria',
+    // So the boleta numbers of a fresh start begin again at 1.
+    'secuencias'
 ];
 
 const ATTACHMENT_KEY_COLUMNS = [
@@ -100,6 +102,9 @@ async function main() {
         await db.exec('BEGIN IMMEDIATE');
         try {
             for (const table of TABLES_TO_WIPE) {
+                // secuencias only exists once the updated server has started.
+                const exists = await db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [table]);
+                if (!exists) continue;
                 const result = await db.run(`DELETE FROM ${table}`);
                 console.log(`  ${table}: ${result.changes || 0} fila(s) borradas`);
             }

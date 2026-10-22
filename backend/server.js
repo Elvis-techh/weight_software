@@ -1943,8 +1943,20 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         const cantidadFacturable = calculateBillableQuantity(neto, unidad);
         const total = roundToCurrency(cantidadFacturable * Number(truck.precio_aplicado || 0));
 
-        const nextBoletaRow = await db.get('SELECT COALESCE(MAX(numero_boleta), 0) + 1 AS next FROM transacciones');
-        const numeroBoleta = Number(nextBoletaRow.next);
+        // A counter that only moves forward: MAX(numero_boleta) + 1 handed a
+        // deleted newest boleta's number to the next truck, so two paper
+        // boletas carried one number. MAX() stays as a floor so a number typed
+        // by hand through PUT /api/transacciones/:id can't be issued again
+        // either. Inside this transaction, so a rollback gives the number
+        // back; a deletion never does. The upsert seeds the row if it's
+        // missing (reset-database.js wipes it).
+        const { ultimo: numeroBoleta } = await db.get(`
+            INSERT INTO secuencias (nombre, ultimo)
+            VALUES ('boleta', (SELECT COALESCE(MAX(numero_boleta), 0) FROM transacciones) + 1)
+            ON CONFLICT(nombre) DO UPDATE
+            SET ultimo = MAX(secuencias.ultimo, (SELECT COALESCE(MAX(numero_boleta), 0) FROM transacciones)) + 1
+            RETURNING ultimo
+        `);
 
         // A real catalog client links live (see TRANSACCION_SELECT); "casual"
         // walk-ins have no Clientes row to link, so they keep only the name
@@ -2006,8 +2018,16 @@ const TRANSACCION_SELECT = `
 // predict the next one (see getNextPredictedBoletaNumber in offlineQueue.js)
 // without the renderer having to hold every transaction ever recorded in
 // memory just to run a MAX() over it.
+//
+// Read from the boleta counter, so a prediction never lands on the number of
+// a deleted transaction either.
 app.get('/api/transacciones/max-boleta', asyncHandler(async (_req, res) => {
-    const row = await db.get('SELECT COALESCE(MAX(numero_boleta), 0) AS maximo FROM transacciones');
+    const row = await db.get(`
+        SELECT MAX(
+            COALESCE((SELECT ultimo FROM secuencias WHERE nombre = 'boleta'), 0),
+            (SELECT COALESCE(MAX(numero_boleta), 0) FROM transacciones)
+        ) AS maximo
+    `);
     sendData(res, { maximo: Number(row?.maximo || 0) });
 }));
 
