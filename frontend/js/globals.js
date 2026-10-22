@@ -8,12 +8,10 @@ const API_URL = window.electronAPI?.apiUrl || 'https://api.basculacentral.com';
 // enrolled (see backend/scripts/enroll-terminal.js).
 const API_KEY = '1218d8801f6281d70339d5626b60b5ca089355fee5fb3c324954849426c83ec1';
 
-// Stable per-install id sent as X-Terminal-Id so the backend's rate limiter can
-// budget each terminal separately (they all share the one API_KEY above, so
-// keying on that made every terminal share a single bucket). Not a credential
-// and never treated as one server-side — forging it only splits the forger's
-// own allowance. Falls back to a per-session value if storage is unavailable,
-// which still separates this terminal from the others.
+// Stable per-install id sent as X-Terminal-Id. Not a credential. The server's
+// rate limiter no longer keys on it (a caller could pick any value), so nothing
+// server-side relies on it today. Falls back to a per-session value if storage
+// is unavailable.
 const TERMINAL_ID = (() => {
     const fresh = () => `term-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
     try {

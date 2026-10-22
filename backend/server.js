@@ -1247,29 +1247,43 @@ async function createQueueId() {
 // Pure JSON API with no browser-rendered HTML of its own, so helmet's default
 // header set (no CSP needed) is enough defense-in-depth against the usual
 // response-header-based attacks with zero configuration cost.
+
+// Keyed on the caller's address, never on a header the caller picks: keying
+// on X-Terminal-Id gave a fresh budget to every made-up value, so a flood
+// could never be slowed. All the station's terminals share one public IP, so
+// this is a per-station budget. Needs TRUST_PROXY=1 behind nginx, or every
+// caller looks like 127.0.0.1. ipKeyGenerator keeps IPv6 ranges normalized,
+// which a bare req.ip does not (the ERR_ERL_KEY_GEN_IPV6 warning at boot).
+const byClientIp = req => ipKeyGenerator(req.ip || 'desconocido');
+
+function rateLimited(_req, res) {
+    res.status(429).json({
+        ok: false,
+        error: { code: 'RATE_LIMITED', message: 'Demasiadas solicitudes. Intente de nuevo en unos minutos.', details: null }
+    });
+}
+
 const apiLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
-    // Every terminal ships the SAME compiled-in API key (see globals.js), so
-    // keying on it alone made this one shared bucket for the whole station
-    // rather than a per-client one — the opposite of the intent. An idle
-    // terminal already spends ~40 requests per window just polling
+    // An idle terminal already spends ~40 requests per window just polling
     // (/api/health + the patio refetch, every 15s), before anyone weighs
-    // anything, so the old 600 was a few busy terminals away from throttling
-    // real work. Raised, and keyed per terminal below.
+    // anything, so this leaves room for several busy terminals.
     limit: Number(process.env.RATE_LIMIT_PER_WINDOW || 3000),
     standardHeaders: true,
     legacyHeaders: false,
-    // X-Terminal-Id is a per-install identifier the client sends (see api.js);
-    // it is NOT an auth credential — a forged one only splits an abuser's own
-    // budget. Falling back to ipKeyGenerator keeps IPv6 ranges normalized,
-    // which a bare req.ip does not (the ERR_ERL_KEY_GEN_IPV6 warning at boot).
-    keyGenerator: (req) => req.get('X-Terminal-Id') || ipKeyGenerator(req.ip || 'desconocido'),
-    handler: (_req, res) => {
-        res.status(429).json({
-            ok: false,
-            error: { code: 'RATE_LIMITED', message: 'Demasiadas solicitudes. Intente de nuevo en unos minutos.', details: null }
-        });
-    }
+    keyGenerator: byClientIp,
+    handler: rateLimited
+});
+
+// Writes get their own, tighter budget. The offline queue already treats 429
+// as "retry later", so a long backlog just syncs a little slower.
+const writeLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: Number(process.env.WRITE_RATE_LIMIT_PER_MINUTE || 120),
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: byClientIp,
+    handler: rateLimited
 });
 
 const app = express();
@@ -1287,6 +1301,7 @@ if (process.env.TRUST_PROXY) {
 app.use(helmet());
 app.use(cors(corsOptions));
 app.use('/api', apiLimiter);
+app.use('/api', (req, res, next) => (req.method === 'GET' || req.method === 'OPTIONS' ? next() : writeLimiter(req, res, next)));
 // Auth runs before the body parser so a request without a valid terminal
 // token (or, during the switch, the old key) is rejected off its headers
 // alone and never gets its body buffered into memory.
@@ -2985,6 +3000,12 @@ async function start() {
             process.exit(1);
         }
         console.log(`MODO SANDBOX: datos de prueba en ${initializeDB.DB_PATH}`);
+    }
+    if (!SANDBOX && !process.env.TRUST_PROXY) {
+        console.warn(
+            'ADVERTENCIA: TRUST_PROXY no está definida. Detrás de nginx todas las solicitudes parecen venir de ' +
+            '127.0.0.1 y comparten un solo límite de solicitudes con la báscula. Defina TRUST_PROXY=1 en .env.'
+        );
     }
     db = await initializeDB();
     if (!SANDBOX && !API_KEY && !(await anyTerminalEnrolled())) {
