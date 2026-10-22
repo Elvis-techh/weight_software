@@ -2416,8 +2416,8 @@ app.put('/api/corapsa/:id', asyncHandler(async (req, res) => {
         return despues;
     });
 
-    if (hasClienteUpload && current.file_key) await storage.deleteObject(current.file_key);
-    if (hasNuestroUpload && current.file_nuestro_key) await storage.deleteObject(current.file_nuestro_key);
+    if (hasClienteUpload && current.file_key) await storage.retireObject(current.file_key);
+    if (hasNuestroUpload && current.file_nuestro_key) await storage.retireObject(current.file_nuestro_key);
 
     sendData(res, { corapsa });
 }));
@@ -2515,8 +2515,8 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         return mapCorapsa(row);
     });
 
-    if (oldClienteKeyToRemove) await storage.deleteObject(oldClienteKeyToRemove);
-    if (oldNuestroKeyToRemove) await storage.deleteObject(oldNuestroKeyToRemove);
+    if (oldClienteKeyToRemove) await storage.retireObject(oldClienteKeyToRemove);
+    if (oldNuestroKeyToRemove) await storage.retireObject(oldNuestroKeyToRemove);
 
     sendData(res, { corapsa });
 }));
@@ -2532,8 +2532,8 @@ app.delete('/api/corapsa/:id', asyncHandler(async (req, res) => {
         if (!result.changes) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
         await logAudit({ entity: 'corapsa', entityId: id, action: 'eliminar', justification: justificacion, before: mapCorapsa(previo) });
     });
-    if (current?.file_key) await storage.deleteObject(current.file_key);
-    if (current?.file_nuestro_key) await storage.deleteObject(current.file_nuestro_key);
+    if (current?.file_key) await storage.retireObject(current.file_key);
+    if (current?.file_nuestro_key) await storage.retireObject(current.file_nuestro_key);
     sendData(res, { id });
 }));
 
@@ -2627,7 +2627,7 @@ app.put('/api/gastos/:id', asyncHandler(async (req, res) => {
         return despues;
     });
 
-    if (hasUpload && current.file_key) await storage.deleteObject(current.file_key);
+    if (hasUpload && current.file_key) await storage.retireObject(current.file_key);
 
     sendData(res, { gasto });
 }));
@@ -2671,7 +2671,7 @@ app.patch('/api/gastos/:id/archivo', asyncHandler(async (req, res) => {
         return despues;
     });
 
-    if (current.file_key) await storage.deleteObject(current.file_key);
+    if (current.file_key) await storage.retireObject(current.file_key);
 
     sendData(res, { gasto });
 }));
@@ -2687,7 +2687,7 @@ app.delete('/api/gastos/:id', asyncHandler(async (req, res) => {
         if (!result.changes) throw new HttpError(404, 'Gasto no encontrado.', 'NOT_FOUND');
         await logAudit({ entity: 'gasto', entityId: id, action: 'eliminar', justification: justificacion, before: mapExpense(previo) });
     });
-    if (current?.file_key) await storage.deleteObject(current.file_key);
+    if (current?.file_key) await storage.retireObject(current.file_key);
     sendData(res, { id });
 }));
 
@@ -2774,7 +2774,7 @@ app.put('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
         return despues;
     });
 
-    if (hasUpload && current.file_key) await storage.deleteObject(current.file_key);
+    if (hasUpload && current.file_key) await storage.retireObject(current.file_key);
 
     sendData(res, { pago });
 }));
@@ -2790,7 +2790,7 @@ app.delete('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
         if (!result.changes) throw new HttpError(404, 'Pago de Corapsa no encontrado.', 'NOT_FOUND');
         await logAudit({ entity: 'pago_corapsa', entityId: id, action: 'eliminar', justification: justificacion, before: mapCorapsaPayment(previo) });
     });
-    if (current?.file_key) await storage.deleteObject(current.file_key);
+    if (current?.file_key) await storage.retireObject(current.file_key);
     sendData(res, { id });
 }));
 

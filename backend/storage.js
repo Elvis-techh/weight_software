@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
 
 const SPACES_KEY = process.env.SPACES_KEY || '';
@@ -86,4 +86,24 @@ async function deleteObject(key) {
     }
 }
 
-module.exports = { isConfigured, uploadObject, openObjectStream, deleteObject };
+// Moves an attachment under retirados/ instead of destroying it, so the photo a
+// deletion or replacement in Historial de Cambios refers to can still be pulled
+// up in a review. Old ones expire through a lifecycle rule on that prefix. Keys
+// from buildKey() are already URL-safe, so CopySource needs no extra encoding.
+// deleteObject() stays for files nothing ever referenced (a failed save).
+async function retireObject(key) {
+    if (!key) return;
+    try {
+        await client.send(new CopyObjectCommand({
+            Bucket: SPACES_BUCKET,
+            CopySource: `${SPACES_BUCKET}/${key}`,
+            Key: `retirados/${key}`,
+            ACL: 'private'
+        }));
+        await client.send(new DeleteObjectCommand({ Bucket: SPACES_BUCKET, Key: key }));
+    } catch (error) {
+        console.error(`No se pudo retirar el objeto de Spaces (${key}):`, error.message);
+    }
+}
+
+module.exports = { isConfigured, uploadObject, openObjectStream, deleteObject, retireObject };
