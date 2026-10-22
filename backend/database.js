@@ -603,6 +603,15 @@ async function initializeDB() {
            OR updated_at IS NULL OR TRIM(updated_at) = '';
     `);
 
+    // Where each weight came from: 'bascula' (read from the indicator) or
+    // 'manual' (typed in Ingreso Manual). NULL on rows from before these
+    // columns and on requests from app versions that don't report it — never
+    // assumed to be 'bascula'.
+    await ensureColumn(db, 'camiones_en_patio', 'origen_peso_bruto', 'TEXT');
+    await ensureColumn(db, 'camiones_en_patio', 'origen_peso_tara', 'TEXT');
+    await ensureColumn(db, 'transacciones', 'origen_peso_bruto', 'TEXT');
+    await ensureColumn(db, 'transacciones', 'origen_peso_tara', 'TEXT');
+
     // Seeded once from the existing transactions; after that the counter
     // only moves forward (see POST /api/camiones-patio/:id/finalizar).
     await db.run(`

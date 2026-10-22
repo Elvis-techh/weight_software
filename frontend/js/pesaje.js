@@ -36,7 +36,9 @@ function normalizarCamionPatio(record = {}) {
         casualSnapshot,
         fechaEntrada: String(record.fechaEntrada ?? record.fecha_entrada ?? ''),
         horaEntrada: String(record.horaEntrada ?? record.hora_entrada ?? ''),
-        identidadSnapshot: String(record.identidadSnapshot ?? record.identidad_snapshot ?? '')
+        identidadSnapshot: String(record.identidadSnapshot ?? record.identidad_snapshot ?? ''),
+        origenPesoBruto: record.origenPesoBruto ?? record.origen_peso_bruto ?? null,
+        origenPesoTara: record.origenPesoTara ?? record.origen_peso_tara ?? null
     };
 }
 
@@ -238,11 +240,9 @@ function manualWeight(tipo) {
     abrirActionModal(`manual_${normalizedType}`);
 }
 
-// PENDING (justificación): a typed ("Ingreso Manual") weight asks for no reason,
-// and `isManual` never leaves this screen — the request carries only the number —
-// so a typed weight is stored exactly like a scale reading and nothing can tell
-// them apart afterwards. Ask for a justification here, send it along with a
-// marker that the weight was typed, and log it as a justified change.
+// A typed ("Ingreso Manual") weight carries isManual into the request as
+// origenPeso* = 'manual', with the reason typed beside it, so the record, the
+// boleta and Historial de Cambios all show it was not read from the scale.
 function getRequestedWeight(manualWeight) {
     if (manualWeight !== null && manualWeight !== undefined && typeof manualWeight !== 'object') {
         const weight = Number(manualWeight);
@@ -302,7 +302,10 @@ function updateLiveWeightPreview() {
     taraDisplay.classList.toggle('text-gray-800', scaleUnavailable);
 }
 
-async function saveWeight(type, manualWeight = null) {
+// `justificacion` is required for a typed weight and for replacing a second
+// weight already captured (ACTUALIZAR PESO 2); the server refuses or flags
+// either without one.
+async function saveWeight(type, manualWeight = null, justificacion = '') {
     if (weightRequestInProgress) {
         mostrarNotificacion('Ya hay una operación de peso en curso.', 'error');
         return false;
@@ -360,14 +363,16 @@ async function saveWeight(type, manualWeight = null) {
     setWeightButtonsBusy(true);
 
     try {
+        const origen = reading.isManual ? 'manual' : 'bascula';
         if (!activeTransaction.id) {
-            return await crearNuevaTransaccion(type, reading.weight);
+            return await crearNuevaTransaccion(type, reading.weight, { origen, justificacion });
         }
 
         const wasReplacingTara = type === 'tara' && activeTransaction.pesoTara != null;
         const body = type === 'bruto'
-            ? { pesoBruto: reading.weight }
-            : { pesoTara: reading.weight };
+            ? { pesoBruto: reading.weight, origenPesoBruto: origen }
+            : { pesoTara: reading.weight, origenPesoTara: origen };
+        if (justificacion) body.justificacion = justificacion;
         let wentOffline = false;
 
         // If this truck's own "create" hasn't synced yet (still queued, or the
@@ -405,6 +410,8 @@ async function saveWeight(type, manualWeight = null) {
                 ...activeTransaction,
                 pesoBruto: type === 'bruto' ? reading.weight : activeTransaction.pesoBruto,
                 pesoTara: type === 'tara' ? reading.weight : activeTransaction.pesoTara,
+                origenPesoBruto: type === 'bruto' ? origen : activeTransaction.origenPesoBruto,
+                origenPesoTara: type === 'tara' ? origen : activeTransaction.origenPesoTara,
                 pendingSync: true
             };
         }
@@ -435,15 +442,25 @@ async function saveWeight(type, manualWeight = null) {
     }
 }
 
-function handleBrutoClick(manualWeight = null) {
-    return saveWeight('bruto', manualWeight);
+function handleBrutoClick(manualWeight = null, justificacion = '') {
+    return saveWeight('bruto', manualWeight, justificacion);
 }
 
-function handleTaraClick(manualWeight = null) {
-    return saveWeight('tara', manualWeight);
+function handleTaraClick(manualWeight = null, justificacion = '') {
+    // Replacing a second weight from the scale asks for the reason first; a
+    // typed one already brings its own from the Ingreso Manual box.
+    const replacingTara = activeTransaction.id && activeTransaction.pesoTara != null;
+    if (manualWeight == null && replacingTara && !justificacion) {
+        const reading = getRequestedWeight(null);
+        if (!reading.fresh) return mostrarNotificacion('La lectura de la báscula está desactualizada.', 'error');
+        if (!reading.stable) return mostrarNotificacion('Espere a que la báscula indique PESO ESTABLE.', 'error');
+        abrirActionModal('replace_tara');
+        return undefined;
+    }
+    return saveWeight('tara', manualWeight, justificacion);
 }
 
-async function crearNuevaTransaccion(tipoPeso, pesoValue) {
+async function crearNuevaTransaccion(tipoPeso, pesoValue, { origen = 'bascula', justificacion = '' } = {}) {
     const snapshot = getSelectedClientSnapshot();
     if (!snapshot) {
         mostrarNotificacion('El cliente es obligatorio para iniciar el pesaje.', 'error');
@@ -456,6 +473,9 @@ async function crearNuevaTransaccion(tipoPeso, pesoValue) {
         conductor: document.getElementById('conductor-input').value.trim() || 'Desconocido',
         pesoBruto: tipoPeso === 'bruto' ? pesoValue : null,
         pesoTara: tipoPeso === 'tara' ? pesoValue : null,
+        origenPesoBruto: tipoPeso === 'bruto' ? origen : null,
+        origenPesoTara: tipoPeso === 'tara' ? origen : null,
+        ...(justificacion ? { justificacion } : {}),
         fecha: getLocalIsoDate(),
         hora: getLocalTimeString()
     };
@@ -799,6 +819,10 @@ async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId
         // provisional boleta printed while offline matches the confirmed one.
         pesoBruto: Math.max(toFiniteNumber(truck.pesoBruto), toFiniteNumber(truck.pesoTara)),
         pesoTara: Math.min(toFiniteNumber(truck.pesoBruto), toFiniteNumber(truck.pesoTara)),
+        // Each origin follows its own weight through that swap.
+        ...(toFiniteNumber(truck.pesoTara) > toFiniteNumber(truck.pesoBruto)
+            ? { origenPesoBruto: truck.origenPesoTara, origenPesoTara: truck.origenPesoBruto }
+            : { origenPesoBruto: truck.origenPesoBruto, origenPesoTara: truck.origenPesoTara }),
         neto,
         precioAplicado: truck.precioAplicado,
         total,

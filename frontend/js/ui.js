@@ -180,6 +180,7 @@ function getActionModalCopy(action) {
     const copies = {
         manual_bruto: ['Ingreso Manual del Primer Peso', 'Ingrese el peso (LBS):', 'Ej. 20,500'],
         manual_tara: ['Ingreso Manual del Segundo Peso', 'Ingrese el peso (LBS):', 'Ej. 8,500'],
+        replace_tara: ['Reemplazar Segundo Peso', 'Justificación para reemplazar el segundo peso:', 'Ej. El camión no estaba completo sobre la báscula'],
         edit_corapsa: ['Autorización de Edición', 'Ingrese la justificación de auditoría:', 'Explique el motivo de la modificación'],
         replace_corapsa_file: ['Reemplazar Archivo', 'Justificación para reemplazar el archivo:', 'Ej. Se adjuntó el recibo incorrecto'],
         delete_corapsa_file: ['Eliminar Archivo', 'Justificación para eliminar el archivo:', 'Explique por qué debe eliminarse'],
@@ -233,6 +234,13 @@ function abrirActionModal(action, id = null) {
         input.oninput = formatIntegerThousandsInput;
     }
 
+    // A typed weight also needs its reason, which Historial de Cambios keeps.
+    const justificacionInput = document.getElementById('action-justificacion');
+    document.getElementById('action-justificacion-block').classList.toggle('hidden', !isManualWeightAction(action));
+    document.getElementById('action-justificacion-label').textContent =
+        `Justificación del ingreso manual (mínimo ${APP_CONFIG.minJustificationLength} caracteres):`;
+    justificacionInput.value = '';
+
     document.getElementById('action-modal').classList.remove('hidden');
     setTimeout(() => input.focus(), 0);
 }
@@ -257,10 +265,12 @@ async function confirmarActionModal() {
     if (actionInProgress) return;
 
     const value = document.getElementById('action-input').value.trim();
+    const justificacionManual = document.getElementById('action-justificacion').value.trim();
     const action = pendingAction;
     const id = pendingActionId;
     const inputError = isManualWeightAction(action)
-        ? (value ? '' : 'Este campo es obligatorio.')
+        ? (value ? '' : 'Ingrese el peso.')
+            || validateJustification(justificacionManual, 'Explique por qué el peso se ingresa a mano.')
         : validateJustification(value, 'Este campo es obligatorio.');
     if (inputError) return mostrarNotificacion(inputError, 'error');
 
@@ -273,8 +283,14 @@ async function confirmarActionModal() {
                 const weight = parseFormattedNumber(value);
                 if (!Number.isFinite(weight) || weight <= 0) throw new Error('Ingrese un peso válido mayor que cero.');
                 const saved = action === 'manual_bruto'
-                    ? await handleBrutoClick(weight)
-                    : await handleTaraClick(weight);
+                    ? await handleBrutoClick(weight, justificacionManual)
+                    : await handleTaraClick(weight, justificacionManual);
+                if (saved === false) return;
+                break;
+            }
+
+            case 'replace_tara': {
+                const saved = await saveWeight('tara', null, value);
                 if (saved === false) return;
                 break;
             }

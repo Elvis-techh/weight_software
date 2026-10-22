@@ -48,6 +48,13 @@ const MAX_MONEY_LEMPIRAS = 1000000;
 // of spaces, like asText(). Mirrors APP_CONFIG.minJustificationLength in
 // frontend/js/globals.js, which only warns the operator before the request goes out.
 const JUSTIFICATION_MIN_LENGTH = 10;
+// App builds from before 1.0.22 replace Peso 2 without sending a reason, so
+// until every terminal runs a newer build such a replacement is accepted and
+// logged as unjustified. Set ENFORCE_WEIGHT_JUSTIFICATIONS=1 once they all do,
+// and it is refused instead.
+const ENFORCE_WEIGHT_JUSTIFICATIONS = process.env.ENFORCE_WEIGHT_JUSTIFICATIONS === '1';
+const UNJUSTIFIED_BY_OLD_APP = 'Sin justificación: enviado por una versión anterior de la app.';
+const VALID_WEIGHT_ORIGINS = new Set(['bascula', 'manual']);
 
 let db;
 let server;
@@ -500,6 +507,16 @@ function assertJustificationLength(text) {
     }
 }
 
+// 'bascula' or 'manual'; null from an app version that doesn't report it.
+function readWeightOrigin(body, field) {
+    const raw = body?.[field];
+    if (raw == null || raw === '') return null;
+    if (!VALID_WEIGHT_ORIGINS.has(raw)) {
+        throw new HttpError(400, 'El origen del peso no es válido.', 'VALIDATION_ERROR');
+    }
+    return raw;
+}
+
 function requireJustification(body, { maxLength = 500 } = {}) {
     const text = asText(body?.justificacion ?? body?.razon, {
         required: true,
@@ -701,7 +718,9 @@ function mapTruck(row) {
         casualSnapshot: safeJsonParse(row.casual_snapshot),
         fechaEntrada: row.fecha_entrada || '',
         horaEntrada: row.hora_entrada || '',
-        identidadSnapshot: row.identidad_snapshot || ''
+        identidadSnapshot: row.identidad_snapshot || '',
+        origenPesoBruto: row.origen_peso_bruto || null,
+        origenPesoTara: row.origen_peso_tara || null
     };
 }
 
@@ -722,7 +741,9 @@ function mapTransaction(row) {
         neto: Number(row.neto || 0),
         precioAplicado: Number(row.precio_aplicado || 0),
         total: Number(row.total || 0),
-        unidad: row.unidad === 'quintal' ? 'quintal' : 'tonelada'
+        unidad: row.unidad === 'quintal' ? 'quintal' : 'tonelada',
+        origenPesoBruto: row.origen_peso_bruto || null,
+        origenPesoTara: row.origen_peso_tara || null
     };
 }
 
@@ -1763,6 +1784,13 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
     if (pesoBruto == null && pesoTara == null) {
         throw new HttpError(400, 'Debe registrar al menos un peso.', 'VALIDATION_ERROR');
     }
+    const origenBruto = pesoBruto == null ? null : readWeightOrigin(req.body, 'origenPesoBruto');
+    const origenTara = pesoTara == null ? null : readWeightOrigin(req.body, 'origenPesoTara');
+    // A typed weight needs a reason, like every other change Historial de
+    // Cambios explains. Only app versions that report the origin can send
+    // 'manual', so this never rejects the installed app.
+    const esManual = origenBruto === 'manual' || origenTara === 'manual';
+    const justificacionManual = esManual ? requireJustification(req.body) : '';
 
     // Captured client-side (same getLocalIsoDate()/getLocalTimeString() pair
     // used at finalize) so entrada and salida timestamps are both local time,
@@ -1815,8 +1843,9 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
             INSERT INTO camiones_en_patio (
                 id, cliente_id, cliente_nombre_snapshot, placa, conductor, flete,
                 peso_bruto, peso_tara, precio_aplicado, unidad, casual_snapshot,
-                fecha_entrada, hora_entrada, identidad_snapshot, client_op_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                fecha_entrada, hora_entrada, identidad_snapshot, client_op_id,
+                origen_peso_bruto, origen_peso_tara, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
             id,
             String(clienteId),
@@ -1832,13 +1861,26 @@ app.post('/api/camiones-patio', asyncHandler(async (req, res) => {
             fechaEntrada,
             horaEntrada,
             identidadSnapshot,
-            clientOpId
+            clientOpId,
+            origenBruto,
+            origenTara
         ]);
 
         const row = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
         if (!row) throw new Error('El vehículo fue insertado, pero no pudo recuperarse de SQLite.');
 
-        return mapTruck(row);
+        const mappedTruck = mapTruck(row);
+        if (esManual) {
+            await logAudit({
+                entity: 'camion_patio',
+                entityId: id,
+                action: 'peso_manual',
+                justification: justificacionManual,
+                details: { pesoBruto, pesoTara, origenPesoBruto: origenBruto, origenPesoTara: origenTara },
+                after: mappedTruck
+            });
+        }
+        return mappedTruck;
     });
 
     sendData(res, { camion: truck }, 201);
@@ -1860,8 +1902,13 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
 
     const pesoBruto = hasBruto ? asNumber(req.body.pesoBruto, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso bruto' }) : null;
     const pesoTara = hasTara ? asNumber(req.body.pesoTara, { required: true, min: 0.01, max: MAX_WEIGHT_LBS, field: 'El peso tara' }) : null;
-    // Only required when overwriting an already-set peso_bruto (checked below, inside the transaction).
+    const origenBruto = hasBruto ? readWeightOrigin(req.body, 'origenPesoBruto') : null;
+    const origenTara = hasTara ? readWeightOrigin(req.body, 'origenPesoTara') : null;
+    const esManual = origenBruto === 'manual' || origenTara === 'manual';
+    // Required for a typed weight and when overwriting a weight already
+    // captured (checked below, inside the transaction).
     const justificacion = asText(req.body?.justificacion ?? req.body?.razon, { maxLength: 500 });
+    if (esManual) requireJustification(req.body);
 
     const truck = await withTransaction(async () => {
         const current = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
@@ -1877,26 +1924,40 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
         }
         if (overwritingBruto) assertJustificationLength(justificacion);
 
-        // PENDING (justificación): only the first weight is guarded. The second
-        // (peso_tara) can be replaced any number of times before finalizing —
-        // "ACTUALIZAR PESO 2" — with no reason, and since only justified changes
-        // are logged, nothing records it. Require a justification when
-        // `hasTara && current.peso_tara != null` and log it like the overwrite below.
+        // The second weight stays replaceable until FINALIZAR (ACTUALIZAR PESO
+        // 2), but every replacement leaves a row. Builds that don't send a
+        // reason yet are still accepted unless ENFORCE_WEIGHT_JUSTIFICATIONS is
+        // set, and their row says so.
+        const overwritingTara = hasTara && current.peso_tara != null;
+        if (overwritingTara && !justificacion && ENFORCE_WEIGHT_JUSTIFICATIONS) {
+            throw new HttpError(
+                409,
+                'El segundo peso ya está registrado. Incluya una justificación para reemplazarlo.',
+                'SECOND_WEIGHT_LOCKED'
+            );
+        }
+        if (overwritingTara && justificacion) assertJustificationLength(justificacion);
 
-        if (hasBruto) await db.run('UPDATE camiones_en_patio SET peso_bruto = ? WHERE id = ?', [pesoBruto, id]);
-        if (hasTara) await db.run('UPDATE camiones_en_patio SET peso_tara = ? WHERE id = ?', [pesoTara, id]);
+        if (hasBruto) {
+            await db.run('UPDATE camiones_en_patio SET peso_bruto = ?, origen_peso_bruto = ? WHERE id = ?', [pesoBruto, origenBruto, id]);
+        }
+        if (hasTara) {
+            await db.run('UPDATE camiones_en_patio SET peso_tara = ?, origen_peso_tara = ? WHERE id = ?', [pesoTara, origenTara, id]);
+        }
 
         const row = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
         const mappedTruck = mapTruck(row);
-        // Capturing a weight for the first time is routine and leaves no row; only
-        // overwriting the first weight does, since that is the one that needs a reason.
-        if (overwritingBruto) {
+        // Capturing a weight from the scale for the first time is routine and
+        // leaves no row; overwriting one, or typing one, does.
+        if (overwritingBruto || overwritingTara || esManual) {
             await logAudit({
                 entity: 'camion_patio',
                 entityId: id,
-                action: 'sobrescribir_peso_bruto',
-                justification: justificacion,
-                details: { pesoBruto, pesoTara },
+                action: overwritingBruto
+                    ? 'sobrescribir_peso_bruto'
+                    : overwritingTara ? 'reemplazar_peso_tara' : 'peso_manual',
+                justification: justificacion || UNJUSTIFIED_BY_OLD_APP,
+                details: { pesoBruto, pesoTara, origenPesoBruto: origenBruto, origenPesoTara: origenTara },
                 before: mapTruck(current),
                 after: mappedTruck
             });
@@ -1937,6 +1998,10 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         // so `transacciones` always stores a real bruto >= tara pair.
         const pesoBrutoFinal = Math.max(Number(truck.peso_bruto), Number(truck.peso_tara));
         const pesoTaraFinal = Math.min(Number(truck.peso_bruto), Number(truck.peso_tara));
+        // Each origin follows its own weight through that swap.
+        const invertido = Number(truck.peso_tara) > Number(truck.peso_bruto);
+        const origenBrutoFinal = invertido ? truck.origen_peso_tara : truck.origen_peso_bruto;
+        const origenTaraFinal = invertido ? truck.origen_peso_bruto : truck.origen_peso_tara;
         const neto = pesoBrutoFinal - pesoTaraFinal;
         if (neto <= 0) throw new HttpError(409, 'El peso neto debe ser mayor que cero.', 'INVALID_NET_WEIGHT');
         const unidad = truck.unidad === 'quintal' ? 'quintal' : 'tonelada';
@@ -1966,8 +2031,9 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
         const insertResult = await db.run(`
             INSERT INTO transacciones (
                 fecha, hora, fecha_entrada, hora_entrada, placa, conductor, cliente_nombre, cliente_id, identidad,
-                numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad, client_op_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                numero_boleta, peso_bruto, peso_tara, neto, precio_aplicado, total, unidad, client_op_id,
+                origen_peso_bruto, origen_peso_tara, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [
             fecha, hora, truck.fecha_entrada || fecha, truck.hora_entrada || hora,
             truck.placa, truck.conductor,
@@ -1975,7 +2041,8 @@ app.post('/api/camiones-patio/:id/finalizar', asyncHandler(async (req, res) => {
             clienteId,
             truck.identidad_snapshot || '',
             numeroBoleta,
-            pesoBrutoFinal, pesoTaraFinal, neto, truck.precio_aplicado, total, unidad, clientOpId
+            pesoBrutoFinal, pesoTaraFinal, neto, truck.precio_aplicado, total, unidad, clientOpId,
+            origenBrutoFinal || null, origenTaraFinal || null
         ]);
         const transactionId = insertResult.lastID;
         await db.run('DELETE FROM camiones_en_patio WHERE id = ?', [id]);
@@ -2009,7 +2076,8 @@ const TRANSACCION_SELECT = `
         t.id, t.fecha, t.hora, t.fecha_entrada, t.hora_entrada, t.placa, t.conductor,
         t.cliente_id,
         COALESCE(NULLIF(TRIM(c.nombre || ' ' || COALESCE(c.apellido, '')), ''), t.cliente_nombre) AS cliente_nombre,
-        t.identidad, t.numero_boleta, t.peso_bruto, t.peso_tara, t.neto, t.precio_aplicado, t.total, t.unidad, t.client_op_id
+        t.identidad, t.numero_boleta, t.peso_bruto, t.peso_tara, t.neto, t.precio_aplicado, t.total, t.unidad, t.client_op_id,
+        t.origen_peso_bruto, t.origen_peso_tara
     FROM transacciones t
     LEFT JOIN clientes c ON c.id = t.cliente_id
 `;

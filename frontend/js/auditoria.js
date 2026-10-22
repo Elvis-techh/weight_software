@@ -49,6 +49,8 @@ const AUDITORIA_ETIQUETAS_CAMPO = Object.freeze({
     precioAplicado: 'Precio aplicado',
     total: 'Total',
     unidad: 'Unidad',
+    origenPesoBruto: 'Origen del peso bruto',
+    origenPesoTara: 'Origen del peso tara',
     // Camiones en patio
     clienteId: 'Cliente (id)',
     clienteNombreSnapshot: 'Cliente',
@@ -120,6 +122,8 @@ const AUDITORIA_ETIQUETAS_ACCION = Object.freeze({
     finalizar: 'Finalizado',
     actualizar_peso: 'Peso actualizado',
     sobrescribir_peso_bruto: 'Primer peso sobrescrito',
+    reemplazar_peso_tara: 'Segundo peso reemplazado',
+    peso_manual: 'Peso ingresado a mano',
     actualizar_archivo: 'Archivo actualizado',
     actualizar_parcial: 'Actualizado',
     editar_precio_pesaje: 'Precio editado en Pesaje',
@@ -130,7 +134,7 @@ const AUDITORIA_ETIQUETAS_ACCION = Object.freeze({
 });
 
 // Actions that remove or overwrite data get a red badge; the rest are neutral.
-const AUDITORIA_ACCIONES_DESTRUCTIVAS = new Set(['eliminar', 'sobrescribir_peso_bruto']);
+const AUDITORIA_ACCIONES_DESTRUCTIVAS = new Set(['eliminar', 'sobrescribir_peso_bruto', 'reemplazar_peso_tara']);
 
 // Bookkeeping fields carried by the mappers that mean nothing to an operator
 // reading a created/deleted record: internal ids, write timestamps, MIME types,
@@ -161,6 +165,9 @@ function formatearValorAuditoria(campo, valor) {
     if (AUDITORIA_CAMPOS_MONEDA.has(campo)) return `L ${formatMoney(valor)}`;
     if (AUDITORIA_CAMPOS_PESO.has(campo)) return `${toFiniteNumber(valor).toLocaleString('en-US')} LBS`;
     if (AUDITORIA_CAMPOS_FECHA.has(campo)) return formatDateForDisplay(valor);
+    if (campo === 'origenPesoBruto' || campo === 'origenPesoTara') {
+        return valor === 'manual' ? 'Ingreso manual' : valor === 'bascula' ? 'Báscula' : String(valor);
+    }
     if (typeof valor === 'number') return valor.toLocaleString('en-US');
     return String(valor);
 }

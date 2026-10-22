@@ -16,7 +16,9 @@ function normalizarTransaccion(record = {}) {
         neto: toFiniteNumber(record.neto),
         precioAplicado: toFiniteNumber(record.precioAplicado ?? record.precio_aplicado),
         total: toFiniteNumber(record.total),
-        unidad: record.unidad === 'quintal' ? 'quintal' : 'tonelada'
+        unidad: record.unidad === 'quintal' ? 'quintal' : 'tonelada',
+        origenPesoBruto: record.origenPesoBruto ?? record.origen_peso_bruto ?? null,
+        origenPesoTara: record.origenPesoTara ?? record.origen_peso_tara ?? null
     };
 }
 
@@ -211,8 +213,9 @@ function imprimirRecibo(id) {
         fechaEntrada: formatFechaHoraForReceipt(transaction.fechaEntrada, transaction.horaEntrada),
         fechaSalida: formatFechaHoraForReceipt(transaction.fecha, transaction.hora),
         cliente: transaction.clienteNombre,
-        bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb`,
-        tara: `${transaction.pesoTara.toLocaleString('en-US')} lb`,
+        // A typed weight says so on paper, not only in Historial de Cambios.
+        bruto: `${transaction.pesoBruto.toLocaleString('en-US')} lb${transaction.origenPesoBruto === 'manual' ? ' (MANUAL)' : ''}`,
+        tara: `${transaction.pesoTara.toLocaleString('en-US')} lb${transaction.origenPesoTara === 'manual' ? ' (MANUAL)' : ''}`,
         neto: `${transaction.neto.toLocaleString('en-US')} lb`,
         tm: `${cantidad.toFixed(2)} ${esQuintal ? 'QQ' : 'TM'}`,
         precioTM: `${formatMoney(precioPorUnidad)} Lps`,
