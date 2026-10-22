@@ -181,6 +181,11 @@ function getActionModalCopy(action) {
         manual_bruto: ['Ingreso Manual del Primer Peso', 'Ingrese el peso (LBS):', 'Ej. 20,500'],
         manual_tara: ['Ingreso Manual del Segundo Peso', 'Ingrese el peso (LBS):', 'Ej. 8,500'],
         replace_tara: ['Reemplazar Segundo Peso', 'Justificación para reemplazar el segundo peso:', 'Ej. El camión no estaba completo sobre la báscula'],
+        edit_sueldo: ['Cambiar Sueldo Base', 'Justificación para cambiar el sueldo base:', 'Ej. Aumento acordado desde el 1 de octubre'],
+        jornada_pasada: ['Modificar Jornada Pasada', 'Justificación para modificar una jornada de hace más de un día:', 'Ej. No se registró a tiempo'],
+        edit_extras: ['Modificar Extras', 'Justificación para los extras:', 'Ej. 4 horas extra el sábado'],
+        despagar_corapsa: ['Quitar Marca de Pagado', 'Justificación para marcar el recibo como no pagado:', 'Ej. Se marcó como pagado por error'],
+        excluir_corapsa: ['Excluir o Incluir Recibo', 'Justificación para cambiar si el recibo cuenta en listados y totales:', 'Ej. Recibo duplicado'],
         edit_corapsa: ['Autorización de Edición', 'Ingrese la justificación de auditoría:', 'Explique el motivo de la modificación'],
         replace_corapsa_file: ['Reemplazar Archivo', 'Justificación para reemplazar el archivo:', 'Ej. Se adjuntó el recibo incorrecto'],
         delete_corapsa_file: ['Eliminar Archivo', 'Justificación para eliminar el archivo:', 'Explique por qué debe eliminarse'],
@@ -203,7 +208,11 @@ function isManualWeightAction(action) {
     return action === 'manual_bruto' || action === 'manual_tara';
 }
 
-function abrirActionModal(action, id = null) {
+// Run when the operator cancels the box, for callers that changed something on
+// screen before asking (an extras cell already showing the new amount).
+let pendingActionOnCancel = null;
+
+function abrirActionModal(action, id = null, { onCancel = null } = {}) {
     const normalizedId = normalizeActionRecordId(id);
     if (actionRequiresRecordId(action) && !normalizedId) {
         mostrarNotificacion(
@@ -216,6 +225,7 @@ function abrirActionModal(action, id = null) {
 
     pendingAction = action;
     pendingActionId = normalizedId ?? id;
+    pendingActionOnCancel = onCancel;
 
     const input = document.getElementById('action-input');
     const [title, label, placeholder] = getActionModalCopy(action);
@@ -250,6 +260,9 @@ function cerrarActionModal() {
     document.getElementById('action-modal').classList.add('hidden');
     pendingAction = null;
     pendingActionId = null;
+    const onCancel = pendingActionOnCancel;
+    pendingActionOnCancel = null;
+    if (typeof onCancel === 'function') onCancel();
 }
 
 function setActionModalBusy(busy) {
@@ -294,6 +307,28 @@ async function confirmarActionModal() {
                 if (saved === false) return;
                 break;
             }
+
+            // Each of these re-runs its own save with the reason; it shows its
+            // own error and returns false, which keeps this box open.
+            case 'edit_sueldo':
+                if (await guardarTrabajador(value) === false) return;
+                break;
+
+            case 'jornada_pasada':
+                if (await guardarJornadaPlanilla(value) === false) return;
+                break;
+
+            case 'edit_extras':
+                if (await guardarExtrasPeriodo(id, value) === false) return;
+                break;
+
+            case 'despagar_corapsa':
+                if (await togglePagoCorapsa(id, value) === false) return;
+                break;
+
+            case 'excluir_corapsa':
+                if (await toggleExcluirCorapsa(id, value) === false) return;
+                break;
 
             case 'delete_cola': {
                 const queueId = normalizeActionRecordId(id);
@@ -375,6 +410,7 @@ async function confirmarActionModal() {
         document.getElementById('action-modal').classList.add('hidden');
         pendingAction = null;
         pendingActionId = null;
+        pendingActionOnCancel = null;
     } catch (error) {
         console.error(`Error al ejecutar ${action}:`, error);
         mostrarNotificacion(error.message || 'No se pudo completar la acción.', 'error');

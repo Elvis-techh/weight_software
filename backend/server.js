@@ -48,11 +48,12 @@ const MAX_MONEY_LEMPIRAS = 1000000;
 // of spaces, like asText(). Mirrors APP_CONFIG.minJustificationLength in
 // frontend/js/globals.js, which only warns the operator before the request goes out.
 const JUSTIFICATION_MIN_LENGTH = 10;
-// App builds from before 1.0.22 replace Peso 2 without sending a reason, so
-// until every terminal runs a newer build such a replacement is accepted and
-// logged as unjustified. Set ENFORCE_WEIGHT_JUSTIFICATIONS=1 once they all do,
-// and it is refused instead.
-const ENFORCE_WEIGHT_JUSTIFICATIONS = process.env.ENFORCE_WEIGHT_JUSTIFICATIONS === '1';
+// App builds from before 1.0.22 make some changes that now need a reason
+// (replacing Peso 2, payroll edits, the Corapsa paid/excluded switches)
+// without sending one. Until every terminal runs a newer build those are
+// accepted and logged as unjustified; set ENFORCE_JUSTIFICATIONS=1 once they
+// all do, and they are refused instead.
+const ENFORCE_JUSTIFICATIONS = process.env.ENFORCE_JUSTIFICATIONS === '1';
 const UNJUSTIFIED_BY_OLD_APP = 'Sin justificación: enviado por una versión anterior de la app.';
 const VALID_WEIGHT_ORIGINS = new Set(['bascula', 'manual']);
 
@@ -518,6 +519,17 @@ function readWeightOrigin(body, field) {
         throw new HttpError(400, 'El origen del peso no es válido.', 'VALIDATION_ERROR');
     }
     return raw;
+}
+
+// The reason a change that needs one came with, checked for length. Without
+// one, see ENFORCE_JUSTIFICATIONS: refused, or logged as unjustified.
+function justificationOrOldApp(justificacion, code, message) {
+    if (justificacion) {
+        assertJustificationLength(justificacion);
+        return justificacion;
+    }
+    if (ENFORCE_JUSTIFICATIONS) throw new HttpError(409, message, code);
+    return UNJUSTIFIED_BY_OLD_APP;
 }
 
 function requireJustification(body, { maxLength = 500 } = {}) {
@@ -2012,18 +2024,15 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
         if (overwritingBruto) assertJustificationLength(justificacion);
 
         // The second weight stays replaceable until FINALIZAR (ACTUALIZAR PESO
-        // 2), but every replacement leaves a row. Builds that don't send a
-        // reason yet are still accepted unless ENFORCE_WEIGHT_JUSTIFICATIONS is
-        // set, and their row says so.
+        // 2), but every replacement leaves a row.
         const overwritingTara = hasTara && current.peso_tara != null;
-        if (overwritingTara && !justificacion && ENFORCE_WEIGHT_JUSTIFICATIONS) {
-            throw new HttpError(
-                409,
-                'El segundo peso ya está registrado. Incluya una justificación para reemplazarlo.',
-                'SECOND_WEIGHT_LOCKED'
-            );
-        }
-        if (overwritingTara && justificacion) assertJustificationLength(justificacion);
+        const justificacionTara = overwritingTara && !overwritingBruto
+            ? justificationOrOldApp(
+                justificacion,
+                'SECOND_WEIGHT_LOCKED',
+                'El segundo peso ya está registrado. Incluya una justificación para reemplazarlo.'
+            )
+            : '';
 
         if (hasBruto) {
             await db.run('UPDATE camiones_en_patio SET peso_bruto = ?, origen_peso_bruto = ? WHERE id = ?', [pesoBruto, origenBruto, id]);
@@ -2043,7 +2052,7 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
                 action: overwritingBruto
                     ? 'sobrescribir_peso_bruto'
                     : overwritingTara ? 'reemplazar_peso_tara' : 'peso_manual',
-                justification: justificacion || UNJUSTIFIED_BY_OLD_APP,
+                justification: justificacion || justificacionTara,
                 details: { pesoBruto, pesoTara, origenPesoBruto: origenBruto, origenPesoTara: origenTara },
                 before: mapTruck(current),
                 after: mappedTruck
@@ -2428,7 +2437,7 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     // on the paid/excluded toggles. A too-short one fails the request, and
     // uploadBeforeQueue then deletes the file it uploaded.
     const justificacion = optionalJustification(req.body?.justificacion);
-    const current = await db.get('SELECT file_key, file_nuestro_key FROM corapsa WHERE id = ?', [id]);
+    const current = await db.get('SELECT file_key, file_nuestro_key, pagado, excluido FROM corapsa WHERE id = ?', [id]);
     if (!current) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
 
     // Setting and clearing the same attachment in one request would otherwise
@@ -2451,18 +2460,25 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
     let oldClienteKeyToRemove = null;
     let oldNuestroKeyToRemove = null;
 
-    // PENDING (justificación): "pagado" and "excluido" change what the Corapsa
-    // lists and totals show (an excluded receipt drops out of both) but ask for
-    // no reason, so — logging only justified changes — they leave no trace.
-    // Require one for these two as the file changes already do.
+    // Marking a receipt paid is routine. Taking "pagado" back, and excluding or
+    // re-including a receipt (an excluded one drops out of the lists and
+    // totals), need a reason and leave a row.
+    let toggleNeedsReason = false;
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'pagado')) {
+        const pagado = asBoolean(req.body.pagado);
+        if (!pagado && current.pagado) toggleNeedsReason = true;
         updates.push('pagado = ?');
-        values.push(asBoolean(req.body.pagado) ? 1 : 0);
+        values.push(pagado ? 1 : 0);
     }
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'excluido')) {
+        const excluido = asBoolean(req.body.excluido);
+        if (excluido !== Boolean(current.excluido)) toggleNeedsReason = true;
         updates.push('excluido = ?');
-        values.push(asBoolean(req.body.excluido) ? 1 : 0);
+        values.push(excluido ? 1 : 0);
     }
+    const justificacionRegistro = toggleNeedsReason
+        ? justificationOrOldApp(justificacion, 'JUSTIFICATION_REQUIRED', 'Incluya una justificación para este cambio.')
+        : justificacion;
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'archivoCliente')) {
         const attachment = resolveAttachmentUpdate(req.uploaded.archivoCliente);
         updates.push('file_name = ?', 'file_mime_type = ?', 'file_data = ?', 'file_key = ?');
@@ -2494,12 +2510,12 @@ app.patch('/api/corapsa/:id', asyncHandler(async (req, res) => {
         const result = await db.run(`UPDATE corapsa SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
         if (!result.changes) throw new HttpError(404, 'Recibo no encontrado.', 'NOT_FOUND');
         const row = await db.get('SELECT * FROM corapsa WHERE id = ?', [id]);
-        // Only a change that came with a reason is logged — in practice the
-        // file replace/remove, never the paid/excluded toggles.
-        if (justificacion) {
+        // Logged when the change needed or came with a reason: the file
+        // replace/remove, un-marking paid, excluding or re-including.
+        if (justificacionRegistro) {
             await logAudit({
                 entity: 'corapsa', entityId: id, action: 'actualizar_parcial',
-                justification: justificacion,
+                justification: justificacionRegistro,
                 details: {
                     pagado: req.body?.pagado,
                     excluido: req.body?.excluido,
@@ -2795,11 +2811,9 @@ app.delete('/api/corapsa-pagos/:id', asyncHandler(async (req, res) => {
 }));
 
 // PLANILLA
-// PENDING (justificación): pay is (sueldoBase / 6) × días trabajados + extras,
-// yet the base salary (PUT /:id), the day marks (PUT /:id/asistencia/:fecha —
-// any date, past ones included) and the extras (PUT /:id/periodo) all change
-// with no reason, and since only justified changes are logged, none of them
-// leaves a trace. Require a justification on each and log it with before/after.
+// Pay is (sueldoBase / 6) × días trabajados + extras, so the routes below ask
+// for a reason, and leave a row, when they change pay after the fact: a new
+// base salary, a day mark on a date more than a day back, and the extras.
 app.get('/api/planilla/resumen', asyncHandler(async (req, res) => {
     const range = validatePayrollRange(req.query?.inicio, req.query?.fin);
     sendData(res, await buildPayrollSummary(range.start, range.end));
@@ -2841,10 +2855,36 @@ app.put('/api/planilla/:id/asistencia/:fecha', asyncHandler(async (req, res) => 
         throw new HttpError(400, 'La hora de salida debe ser posterior a la hora de entrada.', 'VALIDATION_ERROR');
     }
 
+    const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
+
     const worker = await db.get('SELECT id FROM planilla WHERE id = ?', [id]);
     if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
 
     const asistencia = await withTransaction(async () => {
+        const previoRow = await db.get(`
+            SELECT trabajador_id, fecha, trabajado, hora_inicio, hora_fin
+            FROM planilla_asistencia
+            WHERE trabajador_id = ? AND fecha = ?
+        `, [id, fecha]);
+        const antes = previoRow ? mapAttendance(previoRow) : null;
+        const cambia = !antes
+            || antes.trabajado !== trabajado
+            || (trabajado && (antes.horaInicio !== horaInicio || antes.horaFin !== horaFin));
+        // Today's and yesterday's marks are routine (a day apart covers the
+        // server's clock being in another time zone); anything older changes
+        // pay retroactively.
+        const retroactiva = cambia && fecha < localTimestamp(new Date(Date.now() - 2 * 86400000)).slice(0, 10);
+        // A reason the app sent anyway (its own cutoff can be a day stricter
+        // than this one) is still checked and kept.
+        if (cambia && !retroactiva && justificacion) assertJustificationLength(justificacion);
+        const justificacionJornada = retroactiva
+            ? justificationOrOldApp(
+                justificacion,
+                'JUSTIFICATION_REQUIRED',
+                'Incluya una justificación para modificar una jornada de hace más de un día.'
+            )
+            : (cambia ? justificacion : '');
+
         await db.run(`
             INSERT INTO planilla_asistencia
                 (trabajador_id, fecha, trabajado, hora_inicio, hora_fin)
@@ -2862,7 +2902,11 @@ app.put('/api/planilla/:id/asistencia/:fecha', asyncHandler(async (req, res) => 
             FROM planilla_asistencia
             WHERE trabajador_id = ? AND fecha = ?
         `, [id, fecha]);
-        return mapAttendance(row);
+        const despues = mapAttendance(row);
+        if (justificacionJornada) {
+            await logAudit({ entity: 'asistencia', entityId: `${id}:${fecha}`, action: 'editar_jornada', justification: justificacionJornada, before: antes, after: despues });
+        }
+        return despues;
     });
     sendData(res, { asistencia });
 }));
@@ -2877,16 +2921,38 @@ app.put('/api/planilla/:id/periodo', asyncHandler(async (req, res) => {
         field: 'Los extras'
     });
 
+    const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
+
     const worker = await db.get('SELECT id FROM planilla WHERE id = ?', [id]);
     if (!worker) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
 
-    await db.run(`
-        INSERT INTO planilla_periodos
-            (trabajador_id, fecha_inicio, fecha_fin, extras)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(trabajador_id, fecha_inicio, fecha_fin)
-        DO UPDATE SET extras = excluded.extras, updated_at = CURRENT_TIMESTAMP
-    `, [id, range.start, range.end, extras]);
+    await withTransaction(async () => {
+        const previo = await db.get(`
+            SELECT extras FROM planilla_periodos
+            WHERE trabajador_id = ? AND fecha_inicio = ? AND fecha_fin = ?
+        `, [id, range.start, range.end]);
+        const extrasAntes = Number(previo?.extras || 0);
+        const cambia = !auditValuesEqual(extrasAntes, extras);
+        const justificacionExtras = cambia
+            ? justificationOrOldApp(justificacion, 'JUSTIFICATION_REQUIRED', 'Incluya una justificación para modificar los extras.')
+            : '';
+
+        await db.run(`
+            INSERT INTO planilla_periodos
+                (trabajador_id, fecha_inicio, fecha_fin, extras)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(trabajador_id, fecha_inicio, fecha_fin)
+            DO UPDATE SET extras = excluded.extras, updated_at = CURRENT_TIMESTAMP
+        `, [id, range.start, range.end, extras]);
+
+        if (justificacionExtras) {
+            const periodo = { periodoInicio: range.start, periodoFin: range.end };
+            await logAudit({
+                entity: 'planilla_periodo', entityId: id, action: 'editar_extras', justification: justificacionExtras,
+                before: { ...periodo, extras: extrasAntes }, after: { ...periodo, extras }
+            });
+        }
+    });
 
     const summary = await buildPayrollSummary(range.start, range.end, id);
     sendData(res, { trabajador: summary.trabajadores[0] });
@@ -2901,15 +2967,27 @@ app.put('/api/planilla/:id', asyncHandler(async (req, res) => {
         sueldoBase: asNumber(req.body?.sueldoBase, { required: true, min: 0.01, max: MAX_MONEY_LEMPIRAS, field: 'El sueldo base' })
     };
 
+    const justificacion = asText(req.body?.justificacion, { maxLength: 500 });
+
     const trabajador = await withTransaction(async () => {
-        const result = await db.run(`
+        const previo = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
+        if (!previo) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
+        // A salary change needs a reason and leaves a row; a name or phone fix does not.
+        const cambiaSueldo = !auditValuesEqual(Number(previo.sueldo_base), worker.sueldoBase);
+        const justificacionSueldo = cambiaSueldo
+            ? justificationOrOldApp(justificacion, 'JUSTIFICATION_REQUIRED', 'Incluya una justificación para cambiar el sueldo base.')
+            : '';
+
+        await db.run(`
             UPDATE planilla
             SET nombre = ?, apellido = ?, telefono = ?, sueldo_base = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `, [worker.nombre, worker.apellido, worker.telefono, worker.sueldoBase, id]);
-        if (!result.changes) throw new HttpError(404, 'Trabajador no encontrado.', 'NOT_FOUND');
-        const row = await db.get('SELECT * FROM planilla WHERE id = ?', [id]);
-        return mapWorker(row);
+        const despues = mapWorker(await db.get('SELECT * FROM planilla WHERE id = ?', [id]));
+        if (justificacionSueldo) {
+            await logAudit({ entity: 'trabajador', entityId: id, action: 'editar_sueldo', justification: justificacionSueldo, before: mapWorker(previo), after: despues });
+        }
+        return despues;
     });
     sendData(res, { trabajador });
 }));

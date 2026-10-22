@@ -383,9 +383,15 @@ async function guardarCorapsa() {
     }
 }
 
-async function togglePagoCorapsa(id) {
+// Marking a receipt paid is routine; taking it back asks for a reason first
+// (the reason box calls back with it). Returns false when nothing changed.
+async function togglePagoCorapsa(id, justificacion = '') {
     const record = corapsaData.find(item => sameRecordId(item.id, id));
-    if (!record) return;
+    if (!record) return false;
+    if (record.pagado && !justificacion) {
+        abrirActionModal('despagar_corapsa', id);
+        return false;
+    }
 
     const previous = record.pagado;
     record.pagado = !record.pagado;
@@ -394,19 +400,27 @@ async function togglePagoCorapsa(id) {
     try {
         const result = await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, {
             method: 'PATCH',
-            body: { pagado: record.pagado }
+            body: { pagado: record.pagado, ...(justificacion ? { justificacion } : {}) }
         });
         Object.assign(record, normalizarCorapsa(result?.corapsa || result));
+        return true;
     } catch (error) {
         record.pagado = previous;
         renderCorapsaTab();
         mostrarNotificacion(error.message || 'No se pudo actualizar el estado.', 'error');
+        return false;
     }
 }
 
-async function toggleExcluirCorapsa(id) {
+// Excluding or re-including changes the lists and totals, so it asks for a
+// reason first either way.
+async function toggleExcluirCorapsa(id, justificacion = '') {
     const record = corapsaData.find(item => sameRecordId(item.id, id));
-    if (!record) return;
+    if (!record) return false;
+    if (!justificacion) {
+        abrirActionModal('excluir_corapsa', id);
+        return false;
+    }
 
     const previous = record.excluido;
     record.excluido = !record.excluido;
@@ -415,13 +429,15 @@ async function toggleExcluirCorapsa(id) {
     try {
         const result = await apiRequest(`/api/corapsa/${encodeURIComponent(id)}`, {
             method: 'PATCH',
-            body: { excluido: record.excluido }
+            body: { excluido: record.excluido, justificacion }
         });
         Object.assign(record, normalizarCorapsa(result?.corapsa || result));
+        return true;
     } catch (error) {
         record.excluido = previous;
         renderCorapsaTab();
         mostrarNotificacion(error.message || 'No se pudo actualizar el estado.', 'error');
+        return false;
     }
 }
 

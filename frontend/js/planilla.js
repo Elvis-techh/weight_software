@@ -143,8 +143,11 @@ function cerrarPlanillaModal() {
     document.getElementById('planilla-modal').classList.add('hidden');
 }
 
-async function guardarTrabajador() {
-    if (document.getElementById('planilla-save-button')?.disabled) return;
+// `justificacion` comes from the reason box (see confirmarActionModal), which
+// opens first when an edit changes the base salary. Returns false when nothing
+// was saved.
+async function guardarTrabajador(justificacion = '') {
+    if (document.getElementById('planilla-save-button')?.disabled) return false;
 
     const id = document.getElementById('planilla-edit-id').value;
     const telefono = document.getElementById('planilla-telefono').value.trim();
@@ -156,17 +159,28 @@ async function guardarTrabajador() {
     };
 
     if (!payload.nombre || !payload.apellido) {
-        return mostrarNotificacion('Nombre y apellido son obligatorios.', 'error');
+        mostrarNotificacion('Nombre y apellido son obligatorios.', 'error');
+        return false;
     }
     if (!isValidInternationalPhone(payload.telefono)) {
-        return mostrarNotificacion(
+        mostrarNotificacion(
             'Para Honduras use el formato +504 1234-5678. Otros países deben comenzar con + y su código de área.',
             'error'
         );
+        return false;
     }
     if (!Number.isFinite(payload.sueldoBase) || payload.sueldoBase <= 0) {
-        return mostrarNotificacion('El sueldo base debe ser mayor que cero.', 'error');
+        mostrarNotificacion('El sueldo base debe ser mayor que cero.', 'error');
+        return false;
     }
+
+    // Pay is computed from the base salary, so changing it asks for a reason.
+    const actual = id ? planillaData.find(item => sameRecordId(item.id, id)) : null;
+    if (actual && Math.abs(Number(actual.sueldoBase) - payload.sueldoBase) >= 0.005 && !justificacion) {
+        abrirActionModal('edit_sueldo', id);
+        return false;
+    }
+    if (justificacion) payload.justificacion = justificacion;
 
     const saveButton = document.getElementById('planilla-save-button');
     try {
@@ -188,9 +202,11 @@ async function guardarTrabajador() {
         cerrarPlanillaModal();
         await fetchPlanilla();
         mostrarNotificacion(id ? 'Trabajador actualizado.' : 'Trabajador registrado.');
+        return true;
     } catch (error) {
         console.error('Error al guardar trabajador:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar el trabajador.', 'error');
+        return false;
     } finally {
         if (saveButton) {
             saveButton.disabled = false;
@@ -282,10 +298,20 @@ function recalcularFilaPlanilla(id) {
     actualizarTotalesPlanilla();
 }
 
-async function guardarExtrasPeriodo(id) {
+// Changing the extras changes pay, so it asks for a reason first (the reason
+// box calls back with it). Cancelling the box puts the saved amount back.
+async function guardarExtrasPeriodo(id, justificacion = '') {
     const trabajador = planillaData.find(item => sameRecordId(item.id, id));
     const range = getPlanillaSelectedRange({ notify: true });
-    if (!trabajador || !range) return;
+    if (!trabajador || !range) return false;
+
+    const nuevo = parseFormattedNumber(document.getElementById(`extras-${id}`)?.value);
+    const nuevoExtras = Number.isFinite(nuevo) ? Math.max(nuevo, 0) : 0;
+    if (Math.abs(nuevoExtras - Number(trabajador.extras || 0)) < 0.005) return true;
+    if (!justificacion) {
+        abrirActionModal('edit_extras', id, { onCancel: renderPlanilla });
+        return false;
+    }
 
     const previousExtras = trabajador.extras;
     const previousTotal = trabajador.totalPeriodo;
@@ -298,12 +324,14 @@ async function guardarExtrasPeriodo(id) {
             body: {
                 inicio: range.start,
                 fin: range.end,
-                extras: trabajador.extras
+                extras: trabajador.extras,
+                justificacion
             }
         });
         const saved = normalizarTrabajador(result?.trabajador || result);
         Object.assign(trabajador, saved);
         renderPlanilla();
+        return true;
     } catch (error) {
         console.error('No se pudieron guardar los extras:', error);
         mostrarNotificacion(error.message || 'No se pudieron guardar los extras.', 'error');
@@ -444,7 +472,21 @@ function cerrarJornadaModal() {
     document.getElementById('planilla-day-modal').classList.add('hidden');
 }
 
-async function guardarJornadaPlanilla() {
+// True when a day mark changes pay after the fact: a date before yesterday
+// whose mark differs from what is saved. The server applies the same rule
+// (with a day of slack for its clock), so it never asks for less than this.
+function jornadaRequiereJustificacion(workerId, fecha, { trabajado, horaInicio, horaFin }) {
+    const ayer = new Date();
+    ayer.setDate(ayer.getDate() - 1);
+    if (fecha >= formatLocalIsoDate(ayer)) return false;
+    const trabajador = planillaData.find(item => sameRecordId(item.id, workerId));
+    const antes = trabajador ? getAttendanceForDate(trabajador, fecha) : null;
+    if (!antes) return true;
+    return antes.trabajado !== trabajado
+        || (trabajado && (antes.horaInicio !== horaInicio || antes.horaFin !== horaFin));
+}
+
+async function guardarJornadaPlanilla(justificacion = '') {
     const workerId = document.getElementById('planilla-day-worker-id').value;
     const fecha = document.getElementById('planilla-day-date').value;
     const trabajado = document.getElementById('planilla-day-worked').checked;
@@ -452,7 +494,12 @@ async function guardarJornadaPlanilla() {
     const horaFin = document.getElementById('planilla-day-end-time').value;
 
     if (trabajado && (!horaInicio || !horaFin || horaFin <= horaInicio)) {
-        return mostrarNotificacion('La hora de salida debe ser posterior a la hora de entrada.', 'error');
+        mostrarNotificacion('La hora de salida debe ser posterior a la hora de entrada.', 'error');
+        return false;
+    }
+    if (!justificacion && jornadaRequiereJustificacion(workerId, fecha, { trabajado, horaInicio, horaFin })) {
+        abrirActionModal('jornada_pasada', workerId);
+        return false;
     }
 
     const saveButton = document.getElementById('planilla-day-save-button');
@@ -466,16 +513,18 @@ async function guardarJornadaPlanilla() {
             `/api/planilla/${encodeURIComponent(workerId)}/asistencia/${encodeURIComponent(fecha)}`,
             {
                 method: 'PUT',
-                body: { trabajado, horaInicio, horaFin }
+                body: { trabajado, horaInicio, horaFin, ...(justificacion ? { justificacion } : {}) }
             }
         );
 
         cerrarJornadaModal();
         await fetchPlanilla();
         mostrarNotificacion(trabajado ? 'Jornada guardada.' : 'Día marcado como no trabajado.');
+        return true;
     } catch (error) {
         console.error('No se pudo guardar la jornada:', error);
         mostrarNotificacion(error.message || 'No se pudo guardar la jornada.', 'error');
+        return false;
     } finally {
         if (saveButton) {
             saveButton.disabled = false;
