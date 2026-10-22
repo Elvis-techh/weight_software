@@ -254,8 +254,18 @@ function getRequestedWeight(manualWeight) {
         weight: Number(reading.weight),
         isManual: false,
         stable: reading.stable,
-        fresh: reading.isFresh
+        fresh: reading.isFresh,
+        source: reading.source
     };
+}
+
+// Why a live reading can't be captured right now, or '' if it can.
+function problemaLecturaBascula(reading) {
+    if (reading.source === 'disconnected') return 'La báscula está desconectada.';
+    if (reading.source === 'invalid') return 'La báscula envía lecturas que no se pueden leer. Revise el indicador.';
+    if (!reading.fresh) return 'La lectura de la báscula está desactualizada.';
+    if (!reading.stable) return 'Espere a que la báscula indique PESO ESTABLE.';
+    return '';
 }
 
 function setWeightButtonsBusy(busy) {
@@ -286,7 +296,7 @@ function updateLiveWeightPreview() {
     if (!brutoDisplay || !taraDisplay) return;
 
     const liveReading = getLiveScaleReading();
-    const scaleUnavailable = liveReading.source === 'disconnected' || !liveReading.isFresh;
+    const scaleUnavailable = ['disconnected', 'invalid'].includes(liveReading.source) || !liveReading.isFresh;
     const liveText = scaleUnavailable
         ? '----- LBS'
         : `${toFiniteNumber(liveReading.weight).toLocaleString('en-US')}\u00A0LBS`;
@@ -336,6 +346,13 @@ async function saveWeight(type, manualWeight = null, justificacion = '') {
     }
 
     const reading = getRequestedWeight(manualWeight);
+    // Before the zero check: an unreadable or kg frame reads as 0 and needs
+    // its own explanation.
+    const problema = reading.isManual ? '' : problemaLecturaBascula(reading);
+    if (problema) {
+        mostrarNotificacion(problema, 'error');
+        return false;
+    }
     if (!Number.isFinite(reading.weight) || reading.weight <= 0) {
         mostrarNotificacion("El peso es 0. Use 'Ingreso Manual' si está probando sin báscula.", 'error');
         return false;
@@ -348,14 +365,6 @@ async function saveWeight(type, manualWeight = null, justificacion = '') {
             `El peso ingresado supera el máximo razonable (${APP_CONFIG.maxWeightLbs.toLocaleString('en-US')} LBS). Verifique el valor.`,
             'error'
         );
-        return false;
-    }
-    if (!reading.isManual && !reading.fresh) {
-        mostrarNotificacion('La lectura de la báscula está desactualizada.', 'error');
-        return false;
-    }
-    if (!reading.isManual && !reading.stable) {
-        mostrarNotificacion('Espere a que la báscula indique PESO ESTABLE.', 'error');
         return false;
     }
 
@@ -451,9 +460,8 @@ function handleTaraClick(manualWeight = null, justificacion = '') {
     // typed one already brings its own from the Ingreso Manual box.
     const replacingTara = activeTransaction.id && activeTransaction.pesoTara != null;
     if (manualWeight == null && replacingTara && !justificacion) {
-        const reading = getRequestedWeight(null);
-        if (!reading.fresh) return mostrarNotificacion('La lectura de la báscula está desactualizada.', 'error');
-        if (!reading.stable) return mostrarNotificacion('Espere a que la báscula indique PESO ESTABLE.', 'error');
+        const problema = problemaLecturaBascula(getRequestedWeight(null));
+        if (problema) return mostrarNotificacion(problema, 'error');
         abrirActionModal('replace_tara');
         return undefined;
     }
@@ -718,7 +726,7 @@ function actualizarEstadoBotonesPeso() {
     // reaching a real transaction. Manual entry (below) is a separate, deliberate
     // escape hatch and is intentionally NOT gated by this.
     const liveReading = getLiveScaleReading();
-    const scaleUnavailable = liveReading.source === 'disconnected' || !liveReading.isFresh;
+    const scaleUnavailable = ['disconnected', 'invalid'].includes(liveReading.source) || !liveReading.isFresh;
 
     // The first weighing is immutable after its capture. The second can always
     // be read again and overwritten until FINALIZAR Y GUARDAR is pressed, but

@@ -16,8 +16,13 @@ function getSettingsPath(app) {
     return path.join(app.getPath('userData'), 'scale-settings.json');
 }
 
+// Mirrors MAX_PATTERN_LENGTH in scaleReader.js, which runs the pattern on every
+// line in the main process.
+const MAX_PATTERN_LENGTH = 200;
+
 function isValidRegex(pattern) {
     if (!pattern) return true;
+    if (pattern.length > MAX_PATTERN_LENGTH) return false;
     try {
         // eslint-disable-next-line no-new
         new RegExp(pattern);
@@ -33,7 +38,7 @@ function normalizeSettings(raw, { strict = false } = {}) {
     const patternValid = isValidRegex(parsePattern);
 
     if (!patternValid) {
-        if (strict) throw new Error('El patrón de lectura no es una expresión regular válida.');
+        if (strict) throw new Error(`El patrón de lectura no es una expresión regular válida de hasta ${MAX_PATTERN_LENGTH} caracteres.`);
         console.warn('scale-settings.json tiene un parsePattern inválido; se ignorará.');
     }
 

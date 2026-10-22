@@ -83,9 +83,14 @@ async function fetchPlanilla() {
     renderPlanilla();
 }
 
-function getScaleSourceLabel(source) {
+function getScaleSourceLabel(source, staleReason = '') {
     if (source === 'disconnected') {
         return 'BÁSCULA DESCONECTADA';
+    }
+    if (source === 'invalid') {
+        return staleReason === 'unit-kg'
+            ? 'EL INDICADOR ENVÍA KG — CÁMBIELO A LB'
+            : 'LECTURA NO VÁLIDA — REVISE EL INDICADOR';
     }
     if (source === 'simulator:empty' || source === 'browser-simulator:empty') {
         return 'PESO ESTABLE (SIMULADO - VACÍO)';
@@ -118,6 +123,8 @@ function renderScaleReading(data) {
 
     const source = String(data?.source || '');
     const disconnected = source === 'disconnected';
+    // A line the app can't read (or a kg frame) is no weight at all.
+    const unreadable = disconnected || source === 'invalid';
 
     if (!disconnected) {
         scalePortNotFoundNoticeShown = false;
@@ -140,9 +147,9 @@ function renderScaleReading(data) {
         .toLocaleString('en-US')
         .padStart(6, '0');
 
-    weightDisplay.classList.toggle('text-green-400', currentScaleStable && !disconnected);
-    weightDisplay.classList.toggle('text-green-500', !currentScaleStable || disconnected);
-    statusDisplay.textContent = getScaleSourceLabel(source);
+    weightDisplay.classList.toggle('text-green-400', currentScaleStable && !unreadable);
+    weightDisplay.classList.toggle('text-green-500', !currentScaleStable || unreadable);
+    statusDisplay.textContent = getScaleSourceLabel(source, data?.staleReason);
 
     const preset = String(data?.preset || source.split(':')[1] || '');
     if (preset) updateSimulatorButtons(preset);
@@ -162,6 +169,21 @@ function renderScaleReading(data) {
     // Re-evaluate weight-button gating on every reading so a disconnect (or
     // recovery) reflects in the UI immediately, not just on transaction load.
     if (typeof actualizarEstadoBotonesPeso === 'function') actualizarEstadoBotonesPeso();
+}
+
+// Readings only re-render the screen when they arrive, so a feed that simply
+// stops would leave the last weight up, looking live. Once a second, a stale
+// reading dims the number, says so, and re-gates the PESO buttons.
+function startScaleFreshnessCheck() {
+    setInterval(() => {
+        const reading = getLiveScaleReading();
+        const stale = !reading.isFresh && !['disconnected', 'invalid'].includes(reading.source);
+        document.getElementById('live-weight')?.classList.toggle('opacity-40', stale);
+        const statusDisplay = document.getElementById('scale-status');
+        if (stale && statusDisplay) statusDisplay.textContent = 'SIN LECTURA DE LA BÁSCULA';
+        if (typeof updateLiveWeightPreview === 'function') updateLiveWeightPreview();
+        if (typeof actualizarEstadoBotonesPeso === 'function') actualizarEstadoBotonesPeso();
+    }, 1000);
 }
 
 function emitBrowserSimulationReading() {
@@ -306,6 +328,7 @@ async function initApp() {
     await initScaleSettings();
     await initOfflineQueue();
     setupScaleListener();
+    startScaleFreshnessCheck();
     setDefaultDateFilters();
     renderInitialState();
 

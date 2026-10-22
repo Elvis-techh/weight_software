@@ -6,10 +6,21 @@ const { ReadlineParser } = require('@serialport/parser-readline');
 const DEFAULT_WEIGHT_REGEX = /[-+]?\d+(?:\.\d+)?/;
 
 // Rolling-window stability heuristic, hardware-agnostic (works regardless of
-// what protocol the real scale turns out to speak). Tolerance roughly matches
-// the old simulator's own +-2 jitter range.
-const STABILITY_SAMPLE_COUNT = 3;
+// what protocol the real scale turns out to speak). Readings must agree for a
+// full second, not just three lines: indicators commonly send 10-20 lines a
+// second, so three lines was a 150-300 ms window, shorter than a truck's
+// settling sway. Tolerance roughly matches the old simulator's +-2 jitter.
+const STABILITY_WINDOW_MS = 1000;
+const STABILITY_MIN_SAMPLES = 3;
 const STABILITY_TOLERANCE_LBS = 3;
+// Lines with no readable weight (overload "OL", "------", an error code, a
+// changed print format) prove the cable is alive, not that the scale is
+// readable. After this long with only those, the screen says so instead of
+// keeping the last stable weight up.
+const INVALID_FRAME_AFTER_MS = 1500;
+// A custom pattern runs on every line in the main process, so a long one (and
+// the catastrophic backtracking it can bring) is refused.
+const MAX_PATTERN_LENGTH = 200;
 
 const STALE_AFTER_MS = 3000;
 const WATCHDOG_INTERVAL_MS = 1000;
@@ -45,29 +56,47 @@ function noteOpenSuccess() {
     portNotFoundNoticeSent = false;
 }
 
-function parseWeightFromLine(line, parsePattern) {
-    let regex = DEFAULT_WEIGHT_REGEX;
-    if (parsePattern) {
-        try {
-            regex = new RegExp(parsePattern);
-        } catch (_) {
-            regex = DEFAULT_WEIGHT_REGEX;
-        }
+// Compiled once per settings change, not once per line.
+function compilePattern(parsePattern) {
+    if (parsePattern instanceof RegExp) return parsePattern;
+    if (!parsePattern || parsePattern.length > MAX_PATTERN_LENGTH) return DEFAULT_WEIGHT_REGEX;
+    try {
+        return new RegExp(parsePattern);
+    } catch (_) {
+        return DEFAULT_WEIGHT_REGEX;
     }
-    const match = regex.exec(line);
+}
+
+function parseWeightFromLine(line, parsePattern) {
+    const match = compilePattern(parsePattern).exec(line);
     if (!match) return null;
     const raw = match.length > 1 && match[1] !== undefined ? match[1] : match[0];
     const weight = Number(raw);
     return Number.isFinite(weight) ? weight : null;
 }
 
-function computeStability(weight) {
-    recentReadings.push(weight);
-    if (recentReadings.length > STABILITY_SAMPLE_COUNT) recentReadings.shift();
-    if (recentReadings.length < STABILITY_SAMPLE_COUNT) return false;
-    const max = Math.max(...recentReadings);
-    const min = Math.min(...recentReadings);
-    return (max - min) <= STABILITY_TOLERANCE_LBS;
+// The indicator's own status where the frame carries it, e.g.
+// "ST,GS,+012345,lb" (stable) or "US,GS,+012345,lb" (in motion). null when the
+// frame doesn't say.
+function readFrameFlags(line) {
+    const upper = String(line).toUpperCase();
+    return {
+        motion: /\b(US|MOTION)\b/.test(upper) ? true : /\bST\b/.test(upper) ? false : null,
+        unit: /\bKGS?\b/.test(upper) ? 'kg' : /\bLBS?\b/.test(upper) ? 'lb' : null
+    };
+}
+
+function computeStability(weight, now, motion) {
+    recentReadings.push({ weight, at: now });
+    // Keep the last second of readings, but never fewer than the minimum.
+    while (recentReadings.length > STABILITY_MIN_SAMPLES && now - recentReadings[1].at >= STABILITY_WINDOW_MS) {
+        recentReadings.shift();
+    }
+    if (motion === true) return false; // the indicator itself says it's moving
+    if (recentReadings.length < STABILITY_MIN_SAMPLES) return false;
+    if (now - recentReadings[0].at < STABILITY_WINDOW_MS) return false;
+    const weights = recentReadings.map(sample => sample.weight);
+    return Math.max(...weights) - Math.min(...weights) <= STABILITY_TOLERANCE_LBS;
 }
 
 function emitDisconnected() {
@@ -77,10 +106,23 @@ function emitDisconnected() {
     onReading({ weight: 0, stable: false, source: 'disconnected', preset: '' });
 }
 
-function emitReading(weight) {
+// 'invalid' readings carry weight 0 and never count as stable, so neither PESO
+// button can capture while one is on screen.
+function emitInvalid(staleReason) {
+    recentReadings = [];
+    onReading({ weight: 0, stable: false, source: 'invalid', preset: '', staleReason });
+}
+
+function emitReading(weight, line = '') {
     staleNotified = false;
-    const stable = computeStability(weight);
-    onReading({ weight, stable, source: 'scale', preset: '' });
+    const { motion, unit } = readFrameFlags(line);
+    if (unit === 'kg') {
+        // Every price and limit in the app is in pounds; a kg frame stored as
+        // lb is 2.2x off. Refuse it, and the screen says why.
+        emitInvalid('unit-kg');
+        return;
+    }
+    onReading({ weight, stable: computeStability(weight, Date.now(), motion), source: 'scale', preset: '' });
 }
 
 function stopWatchdog() {
@@ -177,11 +219,28 @@ function startReading(settings, readingCallback) {
         return;
     }
 
+    const compiledPattern = compilePattern(settings.parsePattern);
+    let lastValidReadingAt = Date.now();
+    let invalidFrameNotified = false;
     activeParser = activePort.pipe(new ReadlineParser({ delimiter: '\n' }));
     activeParser.on('data', line => {
-        lastLineReceivedAt = Date.now();
-        const weight = parseWeightFromLine(String(line), settings.parsePattern);
-        if (weight !== null) emitReading(weight);
+        const now = Date.now();
+        const text = String(line);
+        lastLineReceivedAt = now;
+        const weight = parseWeightFromLine(text, compiledPattern);
+        if (weight !== null) {
+            lastValidReadingAt = now;
+            invalidFrameNotified = false;
+            emitReading(weight, text);
+            return;
+        }
+        // The cable is alive (the watchdog stays quiet) but nothing readable is
+        // coming: say so once, instead of leaving the last weight on screen.
+        if (!invalidFrameNotified && now - lastValidReadingAt > INVALID_FRAME_AFTER_MS) {
+            invalidFrameNotified = true;
+            staleNotified = false;
+            emitInvalid('invalid-frame');
+        }
     });
     // .pipe() never forwards 'error' from source to destination, so the parser
     // needs its own handler — without one, a parser fault is an unhandled
@@ -275,7 +334,13 @@ function testConnection({ comPort, baudRate, parsePattern }) {
         parser.once('data', line => {
             const rawLine = String(line);
             const parsedWeight = parseWeightFromLine(rawLine, parsePattern);
-            finish({ ok: parsedWeight !== null, rawLine, parsedWeight });
+            const { unit } = readFrameFlags(rawLine);
+            finish({
+                ok: parsedWeight !== null && unit !== 'kg',
+                rawLine,
+                parsedWeight,
+                ...(unit === 'kg' ? { error: 'El indicador envía kilogramos; configúrelo en libras (lb)' } : {})
+            });
         });
         parser.once('error', error => finish({ ok: false, error: error.message }));
 
@@ -293,5 +358,7 @@ module.exports = {
     resumeActiveReader,
     listPorts,
     testConnection,
-    parseWeightFromLine
+    parseWeightFromLine,
+    readFrameFlags,
+    MAX_PATTERN_LENGTH
 };
