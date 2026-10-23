@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, CopyObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
 
 const SPACES_KEY = process.env.SPACES_KEY || '';
@@ -47,6 +47,15 @@ function buildKey(folder, fileName) {
 
 async function uploadObject(folder, buffer, fileName, mimeType) {
     const key = buildKey(folder, fileName);
+    await putObjectAtKey(key, buffer, mimeType);
+    return key;
+}
+
+// Exact-key variants for backups (see scripts/backup-database.js), which need
+// predictable names — sortable by date, and a per-day copy that can be
+// overwritten in place — instead of buildKey()'s random prefix. Unlike
+// deleteObject(), these throw: a backup step that fails must fail the run.
+async function putObjectAtKey(key, buffer, mimeType) {
     await client.send(new PutObjectCommand({
         Bucket: SPACES_BUCKET,
         Key: key,
@@ -54,7 +63,32 @@ async function uploadObject(folder, buffer, fileName, mimeType) {
         ContentType: mimeType || 'application/octet-stream',
         ACL: 'private'
     }));
-    return key;
+}
+
+async function copyObject(sourceKey, destinationKey) {
+    await client.send(new CopyObjectCommand({
+        Bucket: SPACES_BUCKET,
+        CopySource: `${SPACES_BUCKET}/${sourceKey}`,
+        Key: destinationKey,
+        ACL: 'private'
+    }));
+}
+
+async function listObjects(prefix) {
+    const objects = [];
+    let continuationToken;
+    do {
+        const page = await client.send(new ListObjectsV2Command({
+            Bucket: SPACES_BUCKET,
+            Prefix: prefix,
+            ContinuationToken: continuationToken
+        }));
+        for (const item of page.Contents || []) {
+            objects.push({ key: item.Key, size: item.Size, lastModified: item.LastModified });
+        }
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return objects;
 }
 
 // Hands back the object as a stream instead of reading it into memory, so a
@@ -106,4 +140,7 @@ async function retireObject(key) {
     }
 }
 
-module.exports = { isConfigured, uploadObject, openObjectStream, deleteObject, retireObject };
+module.exports = {
+    isConfigured, uploadObject, openObjectStream, deleteObject, retireObject,
+    putObjectAtKey, copyObject, listObjects
+};

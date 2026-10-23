@@ -32,8 +32,69 @@ const LOCAL_BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', 'b
 // keeps the long tail; local only needs to cover "undo the last few hours".
 const LOCAL_RETENTION_DAYS = Number(process.env.BACKUP_LOCAL_RETENTION_DAYS || 2);
 
+// Spaces layout. Every hourly snapshot used to be kept forever (~1,250 files,
+// 1.2 GiB after two months, each a full copy of the database). Now:
+//   backups/hourly/  every snapshot, deleted after HOURLY_RETENTION_DAYS
+//   backups/daily/   one per day, kept forever — the last snapshot of that day
+// so any hour of the last week can still be restored, and older history
+// survives at one copy per day.
+const SPACES_HOURLY_PREFIX = 'backups/hourly/';
+const SPACES_DAILY_PREFIX = 'backups/daily/';
+// Never under 1 day, so a typo in .env can't delete the snapshot just uploaded.
+const HOURLY_RETENTION_DAYS = Math.max(1, Number(process.env.BACKUP_HOURLY_RETENTION_DAYS) || 7);
+// "Which day" a snapshot belongs to follows the station's clock, not UTC:
+// a 20:00 shift-end snapshot is 02:00 UTC the next day.
+const BACKUP_TIMEZONE = process.env.BACKUP_TIMEZONE || 'America/Tegucigalpa';
+const SQLITE_MIME_TYPE = 'application/vnd.sqlite3';
+
 function timestampForFilename(date) {
     return date.toISOString().replace(/[:.]/g, '-');
+}
+
+// Inverse of timestampForFilename(), read from the end of any key or file name
+// this script produced (including the old `backups/<uuid>-bascula-...` keys).
+// Returns null for anything else, so pruning never touches a file it didn't name.
+function snapshotTimeFromName(name) {
+    const match = /bascula-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.db$/.exec(name);
+    if (!match) return null;
+    const [, day, hours, minutes, seconds, millis] = match;
+    return new Date(`${day}T${hours}:${minutes}:${seconds}.${millis}Z`);
+}
+
+const localDayFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BACKUP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit'
+});
+
+function dailyKeyFor(date) {
+    return `${SPACES_DAILY_PREFIX}bascula-${localDayFormatter.format(date)}.db`;
+}
+
+async function uploadToSpaces(localPath, fileName, takenAt) {
+    const hourlyKey = SPACES_HOURLY_PREFIX + fileName;
+    await storage.putObjectAtKey(hourlyKey, await fs.promises.readFile(localPath), SQLITE_MIME_TYPE);
+    console.log(`Respaldo subido a Spaces: ${hourlyKey}`);
+
+    // Overwritten every hour, so the copy that survives for each day is its
+    // last snapshot: the whole day's work. Server-side copy, no second upload.
+    const dailyKey = dailyKeyFor(takenAt);
+    await storage.copyObject(hourlyKey, dailyKey);
+    console.log(`Copia del día actualizada: ${dailyKey}`);
+
+    // Only reached when both steps above succeeded. If the daily copy keeps
+    // failing, hourly snapshots pile up instead of being pruned away.
+    await pruneOldHourlyBackups(takenAt);
+}
+
+async function pruneOldHourlyBackups(now) {
+    const cutoff = now.getTime() - HOURLY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    let removed = 0;
+    for (const object of await storage.listObjects(SPACES_HOURLY_PREFIX)) {
+        const takenAt = snapshotTimeFromName(object.key);
+        if (!takenAt || takenAt.getTime() >= cutoff) continue;
+        await storage.deleteObject(object.key);
+        removed += 1;
+    }
+    if (removed > 0) console.log(`Respaldos por hora con más de ${HOURLY_RETENTION_DAYS} días eliminados de Spaces: ${removed}`);
 }
 
 async function pruneOldLocalBackups() {
@@ -69,9 +130,7 @@ async function main() {
     console.log(`Respaldo local creado: ${localPath}`);
 
     if (storage.isConfigured()) {
-        const buffer = await fs.promises.readFile(localPath);
-        const key = await storage.uploadObject('backups', buffer, fileName, 'application/vnd.sqlite3');
-        console.log(`Respaldo subido a Spaces: ${key}`);
+        await uploadToSpaces(localPath, fileName, startedAt);
     } else {
         console.warn(
             'ADVERTENCIA: SPACES_* no está configurado — el respaldo solo existe en este disco, ' +
@@ -83,7 +142,13 @@ async function main() {
     return localPath;
 }
 
-module.exports = { runBackup: main };
+module.exports = {
+    runBackup: main,
+    // For scripts/reorganize-spaces-backups.js, which moves the old flat
+    // backups/ layout into this one.
+    uploadToSpaces, snapshotTimeFromName, dailyKeyFor,
+    SPACES_HOURLY_PREFIX, SPACES_DAILY_PREFIX, HOURLY_RETENTION_DAYS
+};
 
 // Only run automatically when invoked directly (`node backup-database.js`),
 // not when reset-database.js requires this module to take a safety snapshot

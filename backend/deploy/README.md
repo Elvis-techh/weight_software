@@ -65,7 +65,10 @@ cp backend/deploy/bascula-backup.timer /etc/systemd/system/
 
 systemctl daemon-reload
 
-# Corre diario vía el timer — no habilitar el .service directamente.
+# Corre cada hora vía el timer — no habilitar el .service directamente.
+# `enable` (no solo `start`) es lo que hace que sobreviva un reinicio: el
+# 5 de septiembre de 2026 el droplet se reinició, el timer no volvió a
+# arrancar y no hubo respaldos durante 4 días, hasta que se habilitó.
 systemctl enable --now bascula-backup.timer
 ```
 
@@ -83,12 +86,33 @@ un `node scripts/backup-database.js` manual subía nada en silencio).
 El timer corre **cada hora**, no una vez al día: con un respaldo diario a las
 04:00, una falla de disco a las 15:00 se lleva un día entero de pesajes.
 Localmente solo se guardan 2 días de copias (`BACKUP_LOCAL_RETENTION_DAYS`);
-el historial completo vive en Spaces.
+el historial vive en Spaces, en dos carpetas:
+
+| Carpeta | Qué guarda | Cuánto tiempo |
+|---|---|---|
+| `backups/hourly/` | Cada respaldo por hora | 7 días (`BACKUP_HOURLY_RETENTION_DAYS`), luego el script lo borra |
+| `backups/daily/` | Un respaldo por día: el último de ese día, hora de Honduras (`BACKUP_TIMEZONE`) | Para siempre |
+
+Así se puede volver a cualquier hora de la última semana, y a cualquier día
+anterior. Antes se guardaba cada respaldo por hora para siempre (~1,250
+archivos y 1.2 GiB en dos meses). Para pasar los de ese formato
+(`backups/<uuid>-bascula-<fecha>.db`) a las carpetas nuevas, una sola vez:
+
+```bash
+cd /root/weight_software/backend
+node scripts/reorganize-spaces-backups.js             # solo muestra el plan
+node scripts/reorganize-spaces-backups.js --confirm   # lo aplica
+```
+
+Primero copia el último respaldo de cada día a `backups/daily/`, mueve los de
+la última semana a `backups/hourly/` y solo entonces borra los demás. Un
+respaldo se borra únicamente si la copia de su día ya está en Spaces.
 
 ### Verificar
 
 ```bash
 systemctl status bascula-backup.timer
+systemctl is-enabled bascula-backup.timer    # debe decir "enabled", o no sobrevive un reinicio
 systemctl list-timers bascula-backup.timer   # próxima ejecución
 
 # IMPORTANTE: que el timer arranque NO prueba que el respaldo funcione — el
@@ -106,7 +130,8 @@ journalctl -u bascula-backup.service -n 30 --no-pager
 ```bash
 pm2 stop bascula-backend   # o el nombre que tenga el proceso en pm2 list
 cd /root/weight_software/backend
-# Desde Spaces: descargue el objeto backups/bascula-<timestamp>.db del bucket.
+# Desde Spaces: descargue backups/hourly/bascula-<timestamp>.db (última semana)
+# o backups/daily/bascula-<fecha>.db (días anteriores) del bucket.
 node scripts/restore-database.js backups/bascula-<timestamp>.db --confirm
 pm2 start bascula-backend
 ```
