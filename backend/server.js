@@ -2023,16 +2023,10 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
         }
         if (overwritingBruto) assertJustificationLength(justificacion);
 
-        // The second weight stays replaceable until FINALIZAR (ACTUALIZAR PESO
-        // 2), but every replacement leaves a row.
+        // The second weight stays replaceable from the scale until FINALIZAR
+        // (ACTUALIZAR), with no reason and no row; a typed one is logged below
+        // like any manual weight.
         const overwritingTara = hasTara && current.peso_tara != null;
-        const justificacionTara = overwritingTara && !overwritingBruto
-            ? justificationOrOldApp(
-                justificacion,
-                'SECOND_WEIGHT_LOCKED',
-                'El segundo peso ya está registrado. Incluya una justificación para reemplazarlo.'
-            )
-            : '';
 
         if (hasBruto) {
             await db.run('UPDATE camiones_en_patio SET peso_bruto = ?, origen_peso_bruto = ? WHERE id = ?', [pesoBruto, origenBruto, id]);
@@ -2043,16 +2037,16 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
 
         const row = await db.get('SELECT * FROM camiones_en_patio WHERE id = ?', [id]);
         const mappedTruck = mapTruck(row);
-        // Capturing a weight from the scale for the first time is routine and
-        // leaves no row; overwriting one, or typing one, does.
-        if (overwritingBruto || overwritingTara || esManual) {
+        // A weight from the scale is routine and leaves no row, even when it
+        // replaces the second one; overwriting the first, or typing one, does.
+        if (overwritingBruto || esManual) {
             await logAudit({
                 entity: 'camion_patio',
                 entityId: id,
                 action: overwritingBruto
                     ? 'sobrescribir_peso_bruto'
                     : overwritingTara ? 'reemplazar_peso_tara' : 'peso_manual',
-                justification: justificacion || justificacionTara,
+                justification: justificacion,
                 details: { pesoBruto, pesoTara, origenPesoBruto: origenBruto, origenPesoTara: origenTara },
                 before: mapTruck(current),
                 after: mappedTruck

@@ -288,7 +288,7 @@ function updateWeightDisplay(type, weight) {
 // the moment it's captured, but tara "remains intentionally editable until
 // the transaction is finalized" (see saveWeight()), so its box always tracks
 // the live scale, the same way PESO 1 does pre-capture, instead of freezing
-// at whatever was last saved. ACTUALIZAR PESO 2 then just saves the number
+// at whatever was last saved. ACTUALIZAR then just saves the number
 // already on screen, instead of the click itself being what fetches it.
 function updateLiveWeightPreview() {
     const brutoDisplay = document.getElementById('bruto-display');
@@ -312,9 +312,9 @@ function updateLiveWeightPreview() {
     taraDisplay.classList.toggle('text-gray-800', scaleUnavailable);
 }
 
-// `justificacion` is required for a typed weight and for replacing a second
-// weight already captured (ACTUALIZAR PESO 2); the server refuses or flags
-// either without one.
+// `justificacion` is required for a typed weight; the server refuses one
+// without it. Re-reading the second weight from the scale (ACTUALIZAR) needs
+// none.
 async function saveWeight(type, manualWeight = null, justificacion = '') {
     if (weightRequestInProgress) {
         mostrarNotificacion('Ya hay una operación de peso en curso.', 'error');
@@ -456,15 +456,6 @@ function handleBrutoClick(manualWeight = null, justificacion = '') {
 }
 
 function handleTaraClick(manualWeight = null, justificacion = '') {
-    // Replacing a second weight from the scale asks for the reason first; a
-    // typed one already brings its own from the Ingreso Manual box.
-    const replacingTara = activeTransaction.id && activeTransaction.pesoTara != null;
-    if (manualWeight == null && replacingTara && !justificacion) {
-        const problema = problemaLecturaBascula(getRequestedWeight(null));
-        if (problema) return mostrarNotificacion(problema, 'error');
-        abrirActionModal('replace_tara');
-        return undefined;
-    }
     return saveWeight('tara', manualWeight, justificacion);
 }
 
@@ -770,7 +761,7 @@ function actualizarEstadoBotonesPeso() {
             ? 'Leer nuevamente la báscula y reemplazar el segundo peso'
             : 'Leer y registrar el segundo peso de este vehículo';
     taraButton.innerHTML = taraAlreadyExists
-        ? '<span class="material-icons text-[18px]">sync</span> ACTUALIZAR PESO 2'
+        ? '<span class="material-icons text-[18px]">sync</span> ACTUALIZAR'
         : '<span class="material-icons text-[18px]">upload</span> PESO 2';
 }
 

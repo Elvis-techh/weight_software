@@ -180,7 +180,6 @@ function getActionModalCopy(action) {
     const copies = {
         manual_bruto: ['Ingreso Manual del Primer Peso', 'Ingrese el peso (LBS):', 'Ej. 20,500'],
         manual_tara: ['Ingreso Manual del Segundo Peso', 'Ingrese el peso (LBS):', 'Ej. 8,500'],
-        replace_tara: ['Reemplazar Segundo Peso', 'Justificación para reemplazar el segundo peso:', 'Ej. El camión no estaba completo sobre la báscula'],
         edit_sueldo: ['Cambiar Sueldo Base', 'Justificación para cambiar el sueldo base:', 'Ej. Aumento acordado desde el 1 de octubre'],
         jornada_pasada: ['Modificar Jornada Pasada', 'Justificación para modificar una jornada de hace más de un día:', 'Ej. No se registró a tiempo'],
         edit_extras: ['Modificar Extras', 'Justificación para los extras:', 'Ej. 4 horas extra el sábado'],
@@ -298,12 +297,6 @@ async function confirmarActionModal() {
                 const saved = action === 'manual_bruto'
                     ? await handleBrutoClick(weight, justificacionManual)
                     : await handleTaraClick(weight, justificacionManual);
-                if (saved === false) return;
-                break;
-            }
-
-            case 'replace_tara': {
-                const saved = await saveWeight('tara', null, value);
                 if (saved === false) return;
                 break;
             }
