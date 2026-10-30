@@ -1,5 +1,8 @@
 let weightRequestInProgress = false;
 
+const ALREADY_FINALIZED_MESSAGE =
+    'Este camión ya fue finalizado y está en Historial de Pesajes. Se sincronizará automáticamente al reconectar.';
+
 function normalizarCamionPatio(record = {}) {
     let casualSnapshot = record.casualSnapshot ?? record.casual_snapshot ?? null;
 
@@ -607,6 +610,13 @@ function eliminarDeCola(id, event) {
         );
     }
 
+    // applyOfflineQueueToPatio() keeps these out of the list; this is the
+    // backstop. Either delete path below would take the queued finalize with
+    // it — a weighing the customer already has a boleta for, never synced.
+    if (hasQueuedFinalize(queueId)) {
+        return mostrarNotificacion(ALREADY_FINALIZED_MESSAGE, 'error');
+    }
+
     // A truck whose own "create" hasn't synced yet exists only on this
     // machine — no server round trip (or justification) is needed to drop it,
     // just forget it and the queued operations that reference it.
@@ -658,6 +668,10 @@ function cargarDeCola(truckId) {
             'El vehículo no tiene un ID válido. Reinicie el servidor y recargue la aplicación.',
             'error'
         );
+    }
+    // Same backstop as eliminarDeCola(): opened, it could be finalized again.
+    if (hasQueuedFinalize(queueId)) {
+        return mostrarNotificacion(ALREADY_FINALIZED_MESSAGE, 'error');
     }
     const truck = camionesEnPatio.find(item => sameRecordId(item.id, queueId));
     if (!truck) return mostrarNotificacion('El vehículo ya no está en la cola.', 'error');

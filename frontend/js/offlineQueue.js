@@ -125,13 +125,25 @@ function getNextPredictedBoletaNumber() {
     return Math.max(confirmedMax, queuedMax) + 1;
 }
 
-// Re-creates the optimistic, not-yet-synced patio-queue rows and receipts
-// from a queue loaded off disk — needed after a restart (e.g. the app was
-// killed by the same outage that took the network down), since the data
-// fetched from the server can't reflect operations it never received.
-function rebuildOptimisticStateFromOfflineQueue() {
+// True while a finalize for this truck is still waiting in the queue: the
+// clerk already pressed FINALIZAR Y GUARDAR, so the truck belongs in
+// Historial de Pesajes only, whatever the server's patio list or its own
+// queued create still say.
+function hasQueuedFinalize(truckId) {
+    return offlineQueue.some(op => op.type === 'finalize' && sameRecordId(op.localTruckId, truckId));
+}
+
+// Lays the not-yet-synced patio operations over camionesEnPatio, whether it
+// was just fetched from the server (which can't know about them) or is empty
+// because that fetch failed offline. A truck with a queued finalize is left
+// out: putting it back after a restart showed it in the patio AND in
+// Historial, with FINALIZAR enabled a second time and the delete button one
+// click from throwing the queued finalize away.
+function applyOfflineQueueToPatio() {
+    camionesEnPatio = camionesEnPatio.filter(truck => !hasQueuedFinalize(truck.id));
+
     offlineQueue.forEach(op => {
-        if (op.type !== 'create') return;
+        if (op.type !== 'create' || hasQueuedFinalize(op.localTruckId)) return;
         if (camionesEnPatio.some(truck => sameRecordId(truck.id, op.localTruckId))) return;
 
         const localTruck = normalizarCamionPatio({
@@ -149,6 +161,14 @@ function rebuildOptimisticStateFromOfflineQueue() {
         if (index < 0) return;
         camionesEnPatio[index] = { ...camionesEnPatio[index], ...op.payload, pendingSync: true };
     });
+}
+
+// Re-creates the optimistic, not-yet-synced patio-queue rows and receipts
+// from a queue loaded off disk — needed after a restart (e.g. the app was
+// killed by the same outage that took the network down), since the data
+// fetched from the server can't reflect operations it never received.
+function rebuildOptimisticStateFromOfflineQueue() {
+    applyOfflineQueueToPatio();
 
     offlineQueue.forEach(op => {
         if (op.type !== 'finalize' || !op.transactionSnapshot) return;
@@ -279,12 +299,17 @@ async function finalizeAlreadyApplied(op) {
     // completed weighing instead of warning about it.
     if (isLocalOnlyTruckId(op.localTruckId)) return false;
 
+    // The raw server list, not fetchCamionesEnPatio(): that one leaves out
+    // every truck with a finalize still queued (applyOfflineQueueToPatio) —
+    // this op's truck included — so it would always look already gone.
+    let serverTrucks;
     try {
-        await fetchCamionesEnPatio();
+        serverTrucks = await apiRequest('/api/camiones-patio');
     } catch (_) {
         return false;
     }
-    if (camionesEnPatio.some(truck => sameRecordId(truck.id, op.localTruckId))) return false;
+    if (!Array.isArray(serverTrucks)) return false;
+    if (serverTrucks.some(truck => sameRecordId(normalizarCamionPatio(truck).id, op.localTruckId))) return false;
 
     // Truck confirmed gone — pull the real transaction list so the local
     // optimistic entry (added with pendingSync:true and a locally-predicted

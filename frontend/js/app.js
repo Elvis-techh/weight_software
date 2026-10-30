@@ -58,6 +58,9 @@ async function fetchCompanies() {
 async function fetchCamionesEnPatio() {
     const records = await apiRequest('/api/camiones-patio');
     camionesEnPatio = Array.isArray(records) ? records.map(normalizarCamionPatio) : [];
+    // A drain that stopped partway (a 429 during a reconnect burst, say)
+    // still leaves ops queued when the poll refetches right after it.
+    applyOfflineQueueToPatio();
     renderQueue();
 }
 
