@@ -254,29 +254,6 @@ body {
   line-height: 1;
 }
 
-/* An offline boleta's number is a local prediction until the server confirms
-   it, and the paper in the customer's hands has to say so. Empty otherwise. */
-.provisional-stamp {
-  width: fit-content;
-  margin: 2.5mm auto 0;
-  padding: 1mm 3mm;
-  border: 0.5mm solid #000;
-  font-size: 9pt;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  line-height: 1;
-}
-
-.provisional-stamp:empty {
-  display: none;
-}
-
-/* The stamp's height comes out of the gap above the signature, so neither
-   copy grows and the bottom one still fits the page. */
-.weights-section:has(.provisional-stamp:not(:empty)) + .signature-section {
-  margin-top: calc(var(--signature-gap) - 7.5mm);
-}
-
 .weights-table th:nth-child(1),
 .weights-table td:nth-child(1) { width: 16%; }
 .weights-table th:nth-child(2),

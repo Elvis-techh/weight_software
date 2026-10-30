@@ -5,7 +5,6 @@ const receiptData = {
   rtn: '01071974024269',
   numero: '',
   fechaDocumento: '',
-  provisional: '',
 
   conductor: '',
   placa: '',

@@ -22,16 +22,7 @@ function buildRow(row = {}) {
   const fechaCell = buildCell('col-fecha', `${row.fecha || ''}\n${row.hora || ''}`.trim());
   tr.appendChild(fechaCell);
 
-  const clienteCell = document.createElement('td');
-  clienteCell.className = 'col-cliente';
-  clienteCell.appendChild(document.createTextNode(row.cliente == null ? '' : String(row.cliente)));
-  if (row.pendingSync) {
-    const marker = document.createElement('span');
-    marker.className = 'pending-marker';
-    marker.textContent = ' *';
-    clienteCell.appendChild(marker);
-  }
-  tr.appendChild(clienteCell);
+  tr.appendChild(buildCell('col-cliente', row.cliente));
 
   tr.appendChild(buildCell('col-num col-neto', row.neto));
   tr.appendChild(buildCell('col-num col-toneladas', row.toneladas));
@@ -51,9 +42,6 @@ function setListadoData(data = {}) {
   const tbody = document.getElementById('listado-body');
   tbody.replaceChildren();
   (Array.isArray(data.rows) ? data.rows : []).forEach((row) => tbody.appendChild(buildRow(row)));
-
-  const footnote = document.getElementById('footnote');
-  footnote.hidden = !data.tienePendientes;
 }
 
 window.setListadoData = setListadoData;

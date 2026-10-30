@@ -6,7 +6,7 @@
 // showing/hiding/scaling the modal and wiring Cancelar/Imprimir/Guardar; each
 // caller supplies its own printAction() (and optionally saveAction()), which
 // does the real window.electronAPI.*() call and its own result/error
-// handling (pdf-fallback toast, pendingSync warning, etc).
+// handling (pdf-fallback toast, etc).
 const PRINT_PREVIEW_TEMPLATES = {
     receipt: { src: 'receipt/receipt.html', setter: 'setReceiptData', width: 794, height: 1123 },
     listado: { src: 'receipt/listado.html', setter: 'setListadoData', width: 794, height: 1123 },

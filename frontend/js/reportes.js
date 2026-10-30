@@ -185,16 +185,6 @@ function imprimirRecibo(id) {
         );
     }
 
-    // Finalized offline: the boleta number is this station's best local
-    // prediction, not yet confirmed by the server (see offlineQueue.js). Say
-    // so before it goes to paper, since it's the one thing that could change.
-    if (transaction.pendingSync) {
-        mostrarNotificacion(
-            `Boleta #${transaction.numeroBoleta} provisional: se generó sin conexión y aún no fue confirmada por el servidor.`,
-            'error'
-        );
-    }
-
     const esQuintal = transaction.unidad === 'quintal';
     // The printed quantity/price columns must match how this client is actually
     // billed — quintales for unidad === 'quintal', metric tons otherwise — since
@@ -208,9 +198,9 @@ function imprimirRecibo(id) {
     const payload = {
         numero: transaction.numeroBoleta ?? '',
         fechaDocumento: formatDateForDisplay(transaction.fecha),
-        // An offline boleta's number is a local prediction until the server
-        // confirms it. The paper has to say so, not just the toast above.
-        provisional: transaction.pendingSync ? 'BOLETA PROVISIONAL · NÚMERO SIN CONFIRMAR POR EL SERVIDOR' : '',
+        // A boleta finalized offline prints the station's predicted number
+        // with no mark on paper: the customer's copy is final. If the server
+        // later assigns a different one, the sync says so (offlineQueue.js).
         conductor: transaction.conductor === 'Desconocido' ? 'SC' : transaction.conductor,
         placa: transaction.placa,
         fechaEntrada: formatFechaHoraForReceipt(transaction.fechaEntrada, transaction.horaEntrada),
@@ -246,7 +236,6 @@ function construirPayloadListado() {
     const totalNeto = filteredData.reduce((sum, item) => sum + item.neto, 0);
     const totalToneladas = calculateMetricTons(totalNeto, { truncate: true });
     const totalDinero = filteredData.reduce((sum, item) => sum + item.total, 0);
-    const tienePendientes = filteredData.some(item => item.pendingSync);
 
     const rows = filteredData.map(transaction => {
         const fila = formatearFilaReporte(transaction);
@@ -257,8 +246,7 @@ function construirPayloadListado() {
             neto: fila.netoLabel,
             toneladas: fila.toneladasLabel,
             precioUnidad: fila.precioLabel,
-            total: fila.totalLabel,
-            pendingSync: Boolean(transaction.pendingSync)
+            total: fila.totalLabel
         };
     });
 
@@ -271,8 +259,7 @@ function construirPayloadListado() {
         rows,
         totalNeto: `${totalNeto.toLocaleString('en-US')} LBS`,
         totalToneladas: `${totalToneladas.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TON`,
-        totalDinero: `L ${formatMoney(totalDinero)}`,
-        tienePendientes
+        totalDinero: `L ${formatMoney(totalDinero)}`
     };
 }
 

@@ -153,13 +153,8 @@ body {
   page-break-inside: avoid;
 }
 
-.pending-marker {
-  color: #b45309;
-  font-weight: 700;
-}
-
 /* =========================
-   TOTALS / FOOTNOTE
+   TOTALS
    ========================= */
 /* A <div> after the table, not a <tfoot> — Chromium repeats <tfoot> on
    every printed page (same mechanism as thead), which is right for a
@@ -173,14 +168,6 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 3mm 6mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.footnote {
-  margin-top: 3mm;
-  font-size: 8.5pt;
-  color: var(--muted);
   break-inside: avoid;
   page-break-inside: avoid;
 }

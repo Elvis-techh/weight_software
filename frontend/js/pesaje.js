@@ -829,7 +829,7 @@ async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId
         numeroBoleta: predictedNumeroBoleta,
         // Mirrors what the server writes when the queued finalize replays: the
         // heavier of the two readings is the bruto, the lighter the tara, so a
-        // provisional boleta printed while offline matches the confirmed one.
+        // boleta printed while offline matches the confirmed one.
         pesoBruto: Math.max(toFiniteNumber(truck.pesoBruto), toFiniteNumber(truck.pesoTara)),
         pesoTara: Math.min(toFiniteNumber(truck.pesoBruto), toFiniteNumber(truck.pesoTara)),
         // Each origin follows its own weight through that swap.
@@ -913,7 +913,7 @@ async function guardarTransaccion() {
         limpiarFormulario();
         mostrarNotificacion(
             wentOffline
-                ? 'Sin conexión: transacción finalizada localmente con boleta provisional. Se confirmará al reconectar.'
+                ? 'Sin conexión: transacción guardada localmente. Se sincronizará automáticamente al reconectar.'
                 : 'Transacción finalizada y guardada exitosamente.',
             wentOffline ? 'error' : 'success'
         );
@@ -921,12 +921,9 @@ async function guardarTransaccion() {
         // Finalizing is nearly always followed by "print the boleta", so open
         // the same preview the print button in Historial de Pesajes opens, on
         // the record just saved — the operator confirms or cancels from there,
-        // so nothing prints without a deliberate click. A transaction
-        // finalized offline carries a provisional boleta number;
-        // imprimirRecibo() says so before the preview, exactly as it does for
-        // the manual button. Skipped outside the desktop app, where
-        // imprimirRecibo() can only report that printing is unavailable — an
-        // error toast after every save that nobody asked for.
+        // so nothing prints without a deliberate click. Skipped outside the
+        // desktop app, where imprimirRecibo() can only report that printing
+        // is unavailable — an error toast after every save that nobody asked for.
         if (typeof window.electronAPI?.printReceipt === 'function') {
             imprimirRecibo(savedTransaction.id);
         }
