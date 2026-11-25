@@ -57,6 +57,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return ipcRenderer.invoke('scale:test-connection', settings);
     },
 
+    // The window's zoom: 'in' or 'out' one step, 'reset' to 100 %, or no
+    // action to only read it. Resolves { percent, canZoomIn, canZoomOut }.
+    changeZoom(action) {
+        return ipcRenderer.invoke('zoom:change', action);
+    },
+
     printReceipt(data) {
         return ipcRenderer.invoke('receipt:print', data);
     },

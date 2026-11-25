@@ -162,6 +162,38 @@ function attachZoomInShortcut(win) {
     });
 }
 
+// The header's − 100 % + control (js/zoom.js). Nothing saves the level here:
+// Chromium already keeps it in this PC's userData folder and puts it back on
+// the next start. The boleta and listado windows load other files, so they
+// stay at 100 %.
+//
+// How far the buttons go: about 58 % to 173 %. Ctrl +/− and the View menu are
+// not held to this, so a step from outside the range only moves back toward it.
+const ZOOM_MIN_LEVEL = -3;
+const ZOOM_MAX_LEVEL = 3;
+
+function nextZoomLevel(level, action) {
+    if (action === 'in') return Math.max(level, Math.min(level + ZOOM_STEP, ZOOM_MAX_LEVEL));
+    if (action === 'out') return Math.min(level, Math.max(level - ZOOM_STEP, ZOOM_MIN_LEVEL));
+    if (action === 'reset') return 0;
+    return level;
+}
+
+function registerZoomIpc() {
+    // 'in', 'out' or 'reset'; with no action it only reports the current zoom.
+    handleFromApp('zoom:change', (event, action) => {
+        const contents = event.sender;
+        const current = contents.getZoomLevel();
+        const level = nextZoomLevel(current, action);
+        if (level !== current) contents.setZoomLevel(level);
+        return {
+            percent: Math.round(contents.getZoomFactor() * 100),
+            canZoomIn: level < ZOOM_MAX_LEVEL,
+            canZoomOut: level > ZOOM_MIN_LEVEL
+        };
+    });
+}
+
 // The app only ever shows its own files. Anything else (a stray drop, a future
 // link, a redirect) is refused before it loads, so the preload's API — the
 // outbox, the scale settings, the terminal token — is never handed to foreign
@@ -717,6 +749,7 @@ app.whenReady().then(() => {
     }
     currentScaleSettings = scaleSettings.loadSettings(app);
     registerScaleIpc();
+    registerZoomIpc();
     registerReceiptIpc();
     registerListadoIpc();
     registerCorapsaListadoIpc();
