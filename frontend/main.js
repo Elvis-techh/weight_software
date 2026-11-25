@@ -145,6 +145,23 @@ function attachEditContextMenu(win) {
     });
 }
 
+// Zoom comes from Electron's default View menu, but on a US keyboard its
+// zoom-in only answers to Ctrl+Shift+=, not to Ctrl and the "+" key alone. So
+// zoom-in is handled here for every way of typing it: "=" without Shift, and
+// "+" with or without it (numpad included). preventDefault() also keeps the
+// menu from getting the same press, so one press is always one step.
+const ZOOM_STEP = 0.5; // the step the menu's zoom uses
+
+function attachZoomInShortcut(win) {
+    win.webContents.on('before-input-event', (event, input) => {
+        // Alt is excluded because Windows reports AltGr as Ctrl+Alt.
+        if (input.type !== 'keyDown' || !input.control || input.alt || input.meta) return;
+        if (input.key !== '+' && !(input.key === '=' && !input.shift)) return;
+        event.preventDefault();
+        win.webContents.zoomLevel += ZOOM_STEP;
+    });
+}
+
 // The app only ever shows its own files. Anything else (a stray drop, a future
 // link, a redirect) is refused before it loads, so the preload's API — the
 // outbox, the scale settings, the terminal token — is never handed to foreign
@@ -210,6 +227,7 @@ function createWindow() {
     });
 
     attachEditContextMenu(mainWindow);
+    attachZoomInShortcut(mainWindow);
     lockDownNavigation(mainWindow);
 
     mainWindow.once('ready-to-show', () => mainWindow?.show());
