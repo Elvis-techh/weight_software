@@ -54,7 +54,9 @@ sandbox. Para empezar con una base vacía, borre la carpeta `backend/sandbox/`.
 ## Desplegar (después de las 7:00 p. m.)
 
 1. Probado en el sandbox, de preferencia con un respaldo reciente.
-2. **Servidor primero.** Suba los commits a `main` y, en el droplet
+2. **Servidor primero.** Los cambios llegan a `main` solo por pull request: suba
+   la rama, abra el pull request y únalo. Unirlo no despliega el servidor ni
+   publica una versión de la app. Si cambió el servidor, después, en el droplet
    (`/root/weight_software/backend`):
    ```bash
    node scripts/backup-database.js
@@ -65,9 +67,22 @@ sandbox. Para empezar con una base vacía, borre la carpeta `backend/sandbox/`.
    Luego abra la app real y revise el cambio. Para revertir:
    `git checkout <commit anterior>` y `pm2 restart bascula-backend`. Restaure el
    respaldo (`scripts/restore-database.js`) solo si los datos se dañaron.
-3. **Luego la app.** Suba la versión en `frontend/package.json`, haga commit y
-   publique la etiqueta: `git tag vX.Y.Z && git push origin vX.Y.Z`. GitHub
-   Actions publica la versión; la báscula la instala la próxima vez que se abra la
-   app (pregunta antes de reiniciar).
+3. **Luego la app.** La versión nueva también llega a `main` por pull request. En
+   una rama creada desde `main` actualizado, desde `frontend/`:
+   ```bash
+   npm version X.Y.Z --no-git-tag-version   # cambia package.json y package-lock.json
+   ```
+   Haga commit de los dos archivos, abra el pull request y únalo. Después, ponga
+   la etiqueta en ese `main` ya unido y publíquela:
+   ```bash
+   git switch main && git pull
+   git tag vX.Y.Z
+   ALLOW_RELEASE=1 git push origin vX.Y.Z
+   ```
+   El guardián `pre-push` de esta computadora rechaza una etiqueta `v*` sin
+   `ALLOW_RELEASE=1`. Úselo solo para publicar una versión y nunca se salte el
+   guardián con `--no-verify`. Con la etiqueta, GitHub Actions publica la versión;
+   la báscula la instala la próxima vez que se abra la app (pregunta antes de
+   reiniciar).
 4. Los cambios del servidor deben seguir funcionando con la app ya instalada, así
    el orden y la hora del despliegue nunca dejan a la báscula sin servicio.
