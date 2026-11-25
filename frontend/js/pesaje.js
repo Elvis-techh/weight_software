@@ -1,4 +1,9 @@
 let weightRequestInProgress = false;
+// The second weight FINALIZAR is saving. The screen holds it until that
+// request ends, so what is on screen is what gets saved.
+let segundoPesoEnGuardado = null;
+// USAR BÁSCULA was pressed: leave the typed second weight and follow the scale.
+let usarBasculaEnSegundoPeso = false;
 
 const ALREADY_FINALIZED_MESSAGE =
     'Este camión ya fue finalizado y está en Historial de Pesajes. Se sincronizará automáticamente al reconectar.';
@@ -95,9 +100,7 @@ function mostrarInfoCliente() {
     const editButton = document.getElementById('price-edit-button');
     if (editButton) editButton.classList.toggle('hidden', !getPriceEditContext() || isPriceEditLocked());
 
-    if (activeTransaction.pesoBruto != null && activeTransaction.pesoTara != null) {
-        calcularNetoYTotal();
-    }
+    calcularNetoYTotal();
 }
 
 // Registered (non-casual) clients only — a casual client has no row in `clientes` to persist
@@ -271,8 +274,42 @@ function problemaLecturaBascula(reading) {
     return '';
 }
 
+// A typed second weight stays on screen until the operator goes back to the
+// scale. One read from the scale and already stored on the truck (left by a
+// FINALIZAR that failed) does not: the screen follows the scale again.
+function tieneSegundoPesoManual() {
+    return !usarBasculaEnSegundoPeso
+        && activeTransaction.pesoTara != null
+        && activeTransaction.origenPesoTara === 'manual';
+}
+
+// The second weight FINALIZAR would save if pressed now: { weight, origen,
+// problema }, with `problema` saying why it can't be saved yet. null while
+// there is no number to show.
+function getSegundoPeso() {
+    if (!activeTransaction.id || activeTransaction.pesoBruto == null) return null;
+    if (segundoPesoEnGuardado) return segundoPesoEnGuardado;
+    if (tieneSegundoPesoManual()) {
+        return { weight: toFiniteNumber(activeTransaction.pesoTara), origen: 'manual', problema: '' };
+    }
+
+    const reading = getRequestedWeight(null);
+    const problema = problemaLecturaBascula(reading)
+        || (reading.weight > 0 ? '' : 'La báscula marca 0.');
+    const sinNumero = ['disconnected', 'invalid'].includes(reading.source)
+        || !reading.fresh || !(reading.weight > 0);
+    return sinNumero ? null : { weight: reading.weight, origen: 'bascula', problema };
+}
+
+function volverABasculaSegundoPeso() {
+    if (weightRequestInProgress) return;
+    usarBasculaEnSegundoPeso = true;
+    updateLiveWeightPreview();
+    actualizarEstadoBotonesPeso();
+}
+
 function setWeightButtonsBusy(busy) {
-    ['btn-bruto', 'btn-tara', 'btn-guardar'].forEach(id => {
+    ['btn-bruto', 'btn-tara-bascula', 'btn-guardar'].forEach(id => {
         const button = document.getElementById(id);
         if (button) button.dataset.busy = busy ? 'true' : 'false';
     });
@@ -286,13 +323,11 @@ function updateWeightDisplay(type, weight) {
     display.classList.add('text-gray-800');
 }
 
-// Mirrors the live scale reading into the bruto box, only while it's still
-// unlocked, and unconditionally into the tara box. Bruto is locked for good
-// the moment it's captured, but tara "remains intentionally editable until
-// the transaction is finalized" (see saveWeight()), so its box always tracks
-// the live scale, the same way PESO 1 does pre-capture, instead of freezing
-// at whatever was last saved. ACTUALIZAR then just saves the number
-// already on screen, instead of the click itself being what fetches it.
+// Mirrors the live scale reading into each weight box that is still open. The
+// first weight is locked the moment it's captured. The second follows the scale
+// until FINALIZAR Y GUARDAR saves it, so the net, the total and that button
+// are worked out again on every reading. It holds still only for a typed weight
+// and while a FINALIZAR is being saved.
 function updateLiveWeightPreview() {
     const brutoDisplay = document.getElementById('bruto-display');
     const taraDisplay = document.getElementById('tara-display');
@@ -310,14 +345,31 @@ function updateLiveWeightPreview() {
         brutoDisplay.classList.toggle('text-gray-800', scaleUnavailable);
     }
 
-    taraDisplay.textContent = liveText;
-    taraDisplay.classList.toggle('text-gray-400', !scaleUnavailable);
-    taraDisplay.classList.toggle('text-gray-800', scaleUnavailable);
+    const fijo = segundoPesoEnGuardado
+        || (tieneSegundoPesoManual() ? { weight: activeTransaction.pesoTara } : null);
+    if (fijo) {
+        updateWeightDisplay('tara', fijo.weight);
+    } else {
+        taraDisplay.textContent = liveText;
+        taraDisplay.classList.toggle('text-gray-400', !scaleUnavailable);
+        taraDisplay.classList.toggle('text-gray-800', scaleUnavailable);
+    }
+
+    const estado = document.getElementById('tara-estado');
+    if (estado) {
+        const abierto = Boolean(activeTransaction.id) && activeTransaction.pesoBruto != null;
+        estado.textContent = !abierto ? ''
+            : tieneSegundoPesoManual() ? 'Ingresado a mano'
+                : 'Sigue la báscula';
+    }
+    document.getElementById('btn-tara-bascula')?.classList.toggle('hidden', !tieneSegundoPesoManual());
+
+    calcularNetoYTotal();
 }
 
 // `justificacion` is required for a typed weight; the server refuses one
-// without it. Re-reading the second weight from the scale (ACTUALIZAR) needs
-// none.
+// without it. A second weight read from the scale is not saved here but by
+// FINALIZAR (guardarTransaccion).
 async function saveWeight(type, manualWeight = null, justificacion = '') {
     if (weightRequestInProgress) {
         mostrarNotificacion('Ya hay una operación de peso en curso.', 'error');
@@ -332,7 +384,7 @@ async function saveWeight(type, manualWeight = null, justificacion = '') {
         activeTransaction.pesoBruto != null
     ) {
         mostrarNotificacion(
-            'El primer peso ya está registrado y no puede modificarse. Actualice el segundo peso o finalice la transacción.',
+            'El primer peso ya está registrado y no puede modificarse. Solo puede cambiar el segundo peso o finalizar la transacción.',
             'error'
         );
         return false;
@@ -431,9 +483,10 @@ async function saveWeight(type, manualWeight = null, justificacion = '') {
         const index = camionesEnPatio.findIndex(item => sameRecordId(item.id, activeTransaction.id));
         if (index >= 0) camionesEnPatio[index] = { ...activeTransaction };
 
-        updateWeightDisplay(type, reading.weight);
+        if (type === 'tara') usarBasculaEnSegundoPeso = false;
+        if (type === 'bruto') updateWeightDisplay(type, reading.weight);
+        updateLiveWeightPreview();
         renderQueue();
-        calcularNetoYTotal();
         actualizarEstadoBotonesPeso();
         mostrarNotificacion(
             wentOffline
@@ -677,6 +730,7 @@ function cargarDeCola(truckId) {
     if (!truck) return mostrarNotificacion('El vehículo ya no está en la cola.', 'error');
 
     activeTransaction = { ...truck };
+    usarBasculaEnSegundoPeso = false;
 
     const clienteSelect = document.getElementById('cliente-select');
     if (truck.clienteId === 'casual') {
@@ -706,23 +760,20 @@ function cargarDeCola(truckId) {
 
 function updateWeightDisplayFromTransaction() {
     if (activeTransaction.pesoBruto != null) updateWeightDisplay('bruto', activeTransaction.pesoBruto);
-    if (activeTransaction.pesoTara != null) updateWeightDisplay('tara', activeTransaction.pesoTara);
-    // Any field still unlocked (null) is left to the live scale ticker so it
-    // keeps tracking the indicator instead of freezing on a placeholder.
+    // Everything else, the second weight included, is the live preview's job.
     updateLiveWeightPreview();
 }
 
 function actualizarEstadoBotonesPeso() {
     const brutoButton = document.getElementById('btn-bruto');
-    const taraButton = document.getElementById('btn-tara');
     const manualBrutoButton = document.getElementById('manual-bruto-button');
     const manualTaraButton = document.getElementById('manual-tara-button');
-    if (!brutoButton || !taraButton) return;
+    if (!brutoButton) return;
 
     const hasOpenTransaction = Boolean(activeTransaction.id);
     const brutoIsLocked = hasOpenTransaction && activeTransaction.pesoBruto != null;
     const taraAlreadyExists = hasOpenTransaction && activeTransaction.pesoTara != null;
-    // The second weighing can only be captured for a truck whose first one is
+    // The second weighing can only be typed for a truck whose first one is
     // already registered — it must never be the one that opens a transaction.
     const taraIsLocked = !hasOpenTransaction || activeTransaction.pesoBruto == null;
 
@@ -733,11 +784,9 @@ function actualizarEstadoBotonesPeso() {
     const liveReading = getLiveScaleReading();
     const scaleUnavailable = ['disconnected', 'invalid'].includes(liveReading.source) || !liveReading.isFresh;
 
-    // The first weighing is immutable after its capture. The second can always
-    // be read again and overwritten until FINALIZAR Y GUARDAR is pressed, but
-    // it cannot be the weight that opens a transaction.
+    // The first weighing is immutable after its capture. The second has no
+    // capture button: FINALIZAR Y GUARDAR saves it (see calcularNetoYTotal).
     brutoButton.disabled = brutoIsLocked || scaleUnavailable;
-    taraButton.disabled = taraIsLocked || scaleUnavailable;
 
     if (manualBrutoButton) {
         manualBrutoButton.disabled = brutoIsLocked;
@@ -765,18 +814,6 @@ function actualizarEstadoBotonesPeso() {
     brutoButton.title = brutoIsLocked
         ? 'El primer peso queda bloqueado después de registrarse.'
         : 'Leer y registrar el primer peso de este vehículo';
-
-    taraButton.classList.toggle('bg-gray-300', taraButton.disabled);
-    taraButton.classList.toggle('bg-gray-800', !taraButton.disabled);
-    taraButton.classList.toggle('cursor-not-allowed', taraButton.disabled);
-    taraButton.title = taraIsLocked
-        ? 'Registre el primer peso para habilitar el segundo.'
-        : taraAlreadyExists
-            ? 'Leer nuevamente la báscula y reemplazar el segundo peso'
-            : 'Leer y registrar el segundo peso de este vehículo';
-    taraButton.innerHTML = taraAlreadyExists
-        ? '<span class="material-icons text-[18px]">sync</span> ACTUALIZAR'
-        : '<span class="material-icons text-[18px]">upload</span> PESO 2';
 }
 
 // activeTransaction.pesoBruto/pesoTara hold the FIRST and SECOND weighings in
@@ -786,9 +823,10 @@ function actualizarEstadoBotonesPeso() {
 // bruto and which the tara is decided by size — here for the display, and again
 // on the server when the boleta is written.
 function calcularNetoYTotal() {
+    const segundo = getSegundoPeso();
     const primerPeso = toFiniteNumber(activeTransaction.pesoBruto);
-    const segundoPeso = toFiniteNumber(activeTransaction.pesoTara);
-    const hasBothWeights = activeTransaction.pesoBruto != null && activeTransaction.pesoTara != null;
+    const segundoPeso = toFiniteNumber(segundo?.weight);
+    const hasBothWeights = segundo !== null;
     const neto = hasBothWeights ? Math.abs(primerPeso - segundoPeso) : 0;
     const total = calculatePayment(neto, activeTransaction.precioAplicado, activeTransaction.unidad);
 
@@ -805,14 +843,18 @@ function calcularNetoYTotal() {
     }
 
     const saveButton = document.getElementById('btn-guardar');
-    // neto <= 0 now only means the two readings are identical — the scale never
-    // moved between them, so there is nothing to bill.
-    if (saveButton) saveButton.disabled = !activeTransaction.id || !hasBothWeights || neto <= 0;
+    // A reading from the scale only counts while it says PESO ESTABLE. neto <= 0
+    // means the two weighings are identical — the scale never moved between
+    // them, so there is nothing to bill.
+    if (saveButton) saveButton.disabled = !hasBothWeights || Boolean(segundo.problema) || neto <= 0;
 
     return { neto, total };
 }
 
-async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId) {
+// `pesoPendiente` is the queued second weight this finalize depends on, if the
+// server doesn't have it yet. Both are queued in one step, so neither a
+// reconnect nor a power cut can leave one without the other.
+async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId, pesoPendiente = null) {
     const predictedNumeroBoleta = getNextPredictedBoletaNumber();
     const localTransactionId = generateLocalId('tx');
 
@@ -843,7 +885,7 @@ async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId
     });
     transactionSnapshot.pendingSync = true;
 
-    await enqueueOp({
+    const finalizar = {
         opId: opId || generateLocalId('op'),
         type: 'finalize',
         localTruckId: truck.id,
@@ -852,22 +894,57 @@ async function finalizarTransaccionOffline(truck, fecha, hora, neto, total, opId
         localTransactionId,
         transactionSnapshot,
         createdAt: new Date().toISOString()
-    });
+    };
+    await enqueueOp(...(pesoPendiente ? [pesoPendiente, finalizar] : [finalizar]));
 
     return transactionSnapshot;
 }
 
-async function guardarTransaccion() {
-    if (weightRequestInProgress) return;
-    if (!activeTransaction.id || activeTransaction.pesoBruto == null || activeTransaction.pesoTara == null) {
-        return mostrarNotificacion('La transacción todavía no tiene ambos pesajes.', 'error');
+// Stores the second weight FINALIZAR just read from the scale on the truck, as
+// the finalize takes both weights from there. Returns false when the server
+// couldn't be reached, leaving the caller to queue it.
+async function guardarSegundoPesoEnPatio(payload) {
+    try {
+        const result = await apiRequest(
+            `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}`,
+            { method: 'PATCH', body: payload }
+        );
+        activeTransaction = normalizarCamionPatio(result?.camion || result);
+    } catch (error) {
+        if (!isConnectivityError(error)) throw error;
+        return false;
     }
 
-    const { neto, total } = calcularNetoYTotal();
-    if (neto <= 0) return mostrarNotificacion('El peso neto debe ser mayor que cero.', 'error');
+    const index = camionesEnPatio.findIndex(item => sameRecordId(item.id, activeTransaction.id));
+    if (index >= 0) camionesEnPatio[index] = { ...activeTransaction };
+    return true;
+}
+
+async function guardarTransaccion() {
+    if (weightRequestInProgress) return;
+    if (!activeTransaction.id || activeTransaction.pesoBruto == null) {
+        return mostrarNotificacion('La transacción todavía no tiene el primer peso.', 'error');
+    }
+
+    // Read once, at the press: this is the number on screen. The button is only
+    // enabled while it can be saved, but the scale may have moved since.
+    const segundo = getSegundoPeso();
+    if (!segundo || segundo.problema) {
+        const reading = getRequestedWeight(null);
+        return mostrarNotificacion(
+            segundo?.problema || problemaLecturaBascula(reading) || 'La báscula marca 0.',
+            'error'
+        );
+    }
+    if (Math.abs(toFiniteNumber(activeTransaction.pesoBruto) - segundo.weight) <= 0) {
+        return mostrarNotificacion('El peso neto debe ser mayor que cero.', 'error');
+    }
 
     weightRequestInProgress = true;
     setWeightButtonsBusy(true);
+    segundoPesoEnGuardado = segundo;
+    updateLiveWeightPreview();
+    const { neto, total } = calcularNetoYTotal();
 
     const fecha = getLocalIsoDate();
     const hora = getLocalTimeString();
@@ -886,11 +963,31 @@ async function guardarTransaccion() {
         // Same reasoning as saveWeight(): if this truck's own "create" hasn't
         // synced yet, the server has no record of activeTransaction.id and a
         // live finalize would 404 instead of queuing — go straight to the
-        // offline path so it lands behind the create in strict order.
-        if (isLocalOnlyTruckId(activeTransaction.id)) {
-            wentOffline = true;
-            savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total, opId);
-        } else {
+        // offline path so it lands behind the create in strict order. A truck
+        // with any other change still queued goes the same way: replayed after
+        // a live request, that change would overwrite the weight on screen.
+        wentOffline = isLocalOnlyTruckId(activeTransaction.id)
+            || offlineQueue.some(op => sameRecordId(op.localTruckId, activeTransaction.id));
+
+        // A typed second weight was stored when it was typed. One from the
+        // scale is stored now.
+        let pesoPendiente = null;
+        if (segundo.origen === 'bascula') {
+            const payload = { pesoTara: segundo.weight, origenPesoTara: 'bascula' };
+            if (wentOffline || !await guardarSegundoPesoEnPatio(payload)) {
+                wentOffline = true;
+                pesoPendiente = {
+                    opId: generateLocalId('op'),
+                    type: 'update',
+                    localTruckId: activeTransaction.id,
+                    payload,
+                    createdAt: new Date().toISOString()
+                };
+                activeTransaction = { ...activeTransaction, ...payload };
+            }
+        }
+
+        if (!wentOffline) {
             try {
                 const result = await apiRequest(
                     `/api/camiones-patio/${encodeURIComponent(activeTransaction.id)}/finalizar`,
@@ -901,8 +998,13 @@ async function guardarTransaccion() {
             } catch (error) {
                 if (!isConnectivityError(error)) throw error;
                 wentOffline = true;
-                savedTransaction = await finalizarTransaccionOffline(activeTransaction, fecha, hora, neto, total, opId);
             }
+        }
+
+        if (wentOffline) {
+            savedTransaction = await finalizarTransaccionOffline(
+                activeTransaction, fecha, hora, neto, total, opId, pesoPendiente
+            );
         }
 
         transaccionesData.unshift(savedTransaction);
@@ -933,11 +1035,17 @@ async function guardarTransaccion() {
     } finally {
         weightRequestInProgress = false;
         setWeightButtonsBusy(false);
+        segundoPesoEnGuardado = null;
+        updateLiveWeightPreview();
+        // The list may now hold a second weight stored by a finalize that failed.
+        renderQueue();
     }
 }
 
 function limpiarFormulario() {
     activeTransaction = createEmptyTransaction();
+    segundoPesoEnGuardado = null;
+    usarBasculaEnSegundoPeso = false;
 
     ['cliente-select', 'placa-input', 'conductor-input', 'flete-select'].forEach(id => {
         const element = document.getElementById(id);
@@ -955,12 +1063,7 @@ function limpiarFormulario() {
     document.getElementById('client-price-box').classList.add('hidden');
     actualizarClienteDisplayBox();
 
+    // Also clears the net and total and disables FINALIZAR.
     updateLiveWeightPreview();
-    document.getElementById('neto-display').textContent = '0 LBS';
-    const breakdown = document.getElementById('neto-breakdown');
-    if (breakdown) breakdown.textContent = '';
-    document.getElementById('total-pago-display').textContent = '0.00';
-    document.getElementById('btn-guardar').disabled = true;
-
     actualizarEstadoBotonesPeso();
 }

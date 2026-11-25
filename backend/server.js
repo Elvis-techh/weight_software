@@ -2023,8 +2023,8 @@ app.patch('/api/camiones-patio/:id', asyncHandler(async (req, res) => {
         }
         if (overwritingBruto) assertJustificationLength(justificacion);
 
-        // The second weight stays replaceable from the scale until FINALIZAR
-        // (ACTUALIZAR), with no reason and no row; a typed one is logged below
+        // The second weight stays replaceable from the scale until the truck is
+        // finalized, with no reason and no row; a typed one is logged below
         // like any manual weight.
         const overwritingTara = hasTara && current.peso_tara != null;
 

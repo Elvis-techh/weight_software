@@ -88,8 +88,9 @@ function renderPendingSyncBadge() {
     badge.classList.toggle('flex', count > 0);
 }
 
-async function enqueueOp(op) {
-    offlineQueue.push(op);
+// Several ops passed at once are queued and written to disk together.
+async function enqueueOp(...ops) {
+    offlineQueue.push(...ops);
     renderPendingSyncBadge();
     await persistOfflineQueue();
 }
