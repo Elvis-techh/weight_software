@@ -1868,6 +1868,9 @@
                                         class="text-[10px] text-gray-400 hover:text-blue-500 flex items-center gap-1 mt-1 text-left w-fit whitespace-nowrap"><span
                                             class="material-icons text-[12px]">keyboard</span> Ingreso Manual</button>
 
+                                    <span id="tara-estado"
+                                        class="text-[10px] font-bold text-gray-500 whitespace-nowrap"></span>
+
                                 </div>
 
                                 <div class="flex items-center gap-3">
@@ -1877,10 +1880,11 @@
 
                                         LBS</span>
 
-                                    <button id="btn-tara" onclick="handleTaraClick()"
-                                        class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
+                                    <button id="btn-tara-bascula" type="button" onclick="volverABasculaSegundoPeso()"
+                                        title="Dejar el peso ingresado a mano y volver a seguir la báscula"
+                                        class="hidden bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 flex items-center gap-1 text-sm">
 
-                                        <span class="material-icons text-[18px]">upload</span> PESO 2
+                                        <span class="material-icons text-[18px]">sync</span> USAR BÁSCULA
 
                                     </button>
 

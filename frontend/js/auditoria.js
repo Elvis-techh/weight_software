@@ -302,24 +302,57 @@ function renderAjusteGlobalAuditoria(movimiento) {
     `).join('')}</div>`;
 }
 
+// A truck registered with a typed first weight did not exist before, so its
+// 'peso_manual' row has no "before" to compare against. Its typed weights are
+// listed as moving from blank, the same way a typed second weight reads. It
+// still counts as an edit for the cards and the Filtrar menu, as on the server.
+function esPesoManualDeCamionNuevo(movimiento) {
+    return movimiento.accion === 'peso_manual' && !movimiento.antes;
+}
+
+function cambiosDeMovimiento(movimiento) {
+    if (!esPesoManualDeCamionNuevo(movimiento)) {
+        return Array.isArray(movimiento.cambios) ? movimiento.cambios : [];
+    }
+
+    const datos = movimiento.despues || movimiento.detalles || {};
+    return ['pesoBruto', 'origenPesoBruto', 'pesoTara', 'origenPesoTara']
+        .filter(campo => datos[campo] !== null && datos[campo] !== undefined)
+        .map(campo => ({ campo, antes: null, despues: datos[campo] }));
+}
+
+// There is no before and after to put side by side for a new truck, so its
+// whole record (plate, driver, customer, price) is listed once instead.
+function renderRegistroNuevoAuditoria(movimiento) {
+    return `<details class="mt-2 text-xs">
+        <summary class="cursor-pointer font-bold text-gray-500 hover:text-gray-700">Ver registro completo</summary>
+        <div class="mt-1">${renderSnapshotAuditoria(movimiento)}</div>
+    </details>`;
+}
+
 function renderListaCambios(movimiento) {
     if (movimiento.accion === 'ajuste_global') return renderAjusteGlobalAuditoria(movimiento);
     if (esMovimientoDeSnapshot(movimiento)) return renderSnapshotAuditoria(movimiento);
 
-    if (!Array.isArray(movimiento.cambios) || movimiento.cambios.length === 0) {
+    const cambios = cambiosDeMovimiento(movimiento);
+    if (cambios.length === 0) {
         // The save went through without actually altering any value — worth
         // showing rather than hiding, since the justification was still given.
         return '<span class="text-gray-400 italic">Sin cambios de valores.</span>';
     }
 
-    return `<div class="flex flex-col gap-1">${movimiento.cambios.map(cambio => `
+    const registro = esPesoManualDeCamionNuevo(movimiento)
+        ? renderRegistroNuevoAuditoria(movimiento)
+        : renderRegistroCompletoAuditoria(movimiento);
+
+    return `<div class="flex flex-col gap-1">${cambios.map(cambio => `
         <div class="flex flex-wrap items-baseline gap-1.5 text-xs">
             <span class="font-semibold text-gray-600">${escapeHtml(etiquetaCampoAuditoria(cambio.campo))}:</span>
             <span class="font-mono text-red-600 line-through decoration-red-300">${escapeHtml(formatearValorAuditoria(cambio.campo, cambio.antes))}</span>
             <span class="material-icons text-[14px] text-gray-400 leading-none">arrow_forward</span>
             <span class="font-mono font-bold text-green-700">${escapeHtml(formatearValorAuditoria(cambio.campo, cambio.despues))}</span>
         </div>
-    `).join('')}</div>${renderRegistroCompletoAuditoria(movimiento)}`;
+    `).join('')}</div>${registro}`;
 }
 
 // The field labels a row actually displays, so searching "precio" matches both
@@ -327,7 +360,7 @@ function renderListaCambios(movimiento) {
 function etiquetasVisiblesAuditoria(movimiento) {
     return esMovimientoDeSnapshot(movimiento)
         ? camposDelSnapshotAuditoria(movimiento).map(([campo]) => etiquetaCampoAuditoria(campo))
-        : (movimiento.cambios || []).map(cambio => etiquetaCampoAuditoria(cambio.campo));
+        : cambiosDeMovimiento(movimiento).map(cambio => etiquetaCampoAuditoria(cambio.campo));
 }
 
 // Oldest first, by the moment the change was logged. Ids break ties within the
