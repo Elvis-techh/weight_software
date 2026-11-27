@@ -81,8 +81,13 @@ sandbox. Para empezar con una base vacía, borre la carpeta `backend/sandbox/`.
    ```
    El guardián `pre-push` de esta computadora rechaza una etiqueta `v*` sin
    `ALLOW_RELEASE=1`. Úselo solo para publicar una versión y nunca se salte el
-   guardián con `--no-verify`. Con la etiqueta, GitHub Actions publica la versión;
-   la báscula la instala la próxima vez que se abra la app (pregunta antes de
-   reiniciar).
+   guardián con `--no-verify`.
+
+   Con la etiqueta, GitHub Actions inicia la publicación, pero queda **en espera**
+   hasta que usted la apruebe en el navegador: en GitHub, **Actions** → abra la
+   ejecución → **Review deployments** → marque `release` → **Approve and deploy**.
+   Antes de aprobar, revise que la etiqueta y el commit sean los que espera. Una
+   vez publicada la versión, la báscula la instala la próxima vez que se abra la
+   app (pregunta antes de reiniciar).
 4. Los cambios del servidor deben seguir funcionando con la app ya instalada, así
    el orden y la hora del despliegue nunca dejan a la báscula sin servicio.
