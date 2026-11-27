@@ -3,6 +3,10 @@ name: Release
 # Only runs when a version tag (e.g. v1.0.4) is pushed, or when triggered
 # manually from the Actions tab. Normal commits/pushes to main never trigger
 # this — it is fully separate from day-to-day development.
+#
+# The job uses the "release" environment, so it waits until a required reviewer
+# approves it. The reviewers, and the rule that only v* tags may use the
+# environment, are set in the repository's Settings, not in this file.
 on:
   push:
     tags:
@@ -15,15 +19,16 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    environment: release
     defaults:
       run:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20
           cache: npm
